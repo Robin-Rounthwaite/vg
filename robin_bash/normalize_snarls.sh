@@ -18,16 +18,38 @@
 export VG_FULL_TRACEBACK=1
 set -e
 
-##for testing GBWT:
+echo compiling!
 . ./source_me.sh && make -j 8
 echo running!
 
-#hg-oriented commands for working on aligning haplotype in middle of snarl. (snarl nodes 23493-23505).
-vg normalize -n test/robin_haplotypes/threads_in_middle_example/chr10_subgraph_0_new.hg >test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl.hg
-vg convert -a test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl.hg -V >test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl_from_hash.vg
-./bin/vg view -dpn test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl_from_hash.vg |
-    dot -Tsvg -o test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl_from_hash.svg
-chromium-browser test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl_from_hash.svg
+##running normalize_snarls on a full chromosome.
+VG_DIR=/public/groups/cgl/graph-genomes/jmonlong/hgsvc/haps/chr10
+TEST_DIR=test/robin_chromosomes/chr10
+FILE_BASENAME=hgsvc_chr10_construct
+
+# To produce .snarls:
+vg snarls VG_DIR/FILE_BASENAME.vg >TEST_DIR/FILE_BASENAME.snarls 
+echo "SNARLS MADE"
+# To produce .gbwt:
+vg index -x VG_DIR/FILE_BASENAME.xg -G TEST_DIR/FILE_BASENAME.gbwt -v VG_DIR/HGSVC.haps.chr10.vcf.gz VG_DIR/FILE_BASENAME.vg
+echo "GBWT MADE"
+# Convert .vg to .hg:
+vg convert -v VG_DIR/FILE_BASENAME.vg -A TEST_DIR/FILE_BASENAME.hg
+echo "CONVERTED VG TO HG"
+# Run normalize algorithm:
+vg normalize -n TEST_DIR/FILE_BASENAME.hg -g TEST_DIR/FILE_BASENAME.gbwt -s TEST_DIR/FILE_BASENAME.snarls >TEST_DIR/FILE_BASENAME_normalized.hg
+echo "NORMALIZED HG MADE"
+# convert .hg to .vg
+vg convert -a TEST_DIR/FILE_BASENAME_normalized.hg -V >TEST_DIR/FILE_BASENAME_normalized.vg
+#visualize. . . 
+
+
+# #hg-oriented commands for working on aligning haplotype in middle of snarl. (snarl nodes 23493-23505).
+# vg normalize -n test/robin_haplotypes/threads_in_middle_example/chr10_subgraph_0_new.hg >test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl.hg
+# vg convert -a test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl.hg -V >test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl_from_hash.vg
+# ./bin/vg view -dpn test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl_from_hash.vg |
+#     dot -Tsvg -o test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl_from_hash.svg
+# chromium-browser test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl_from_hash.svg
 
 # #for working on aligning haplotype in middle of snarl. (snarl nodes 23493-23505). [the last use of mod_main before using normalize_main].
 # ./bin/vg mod -F blah test/robin_haplotypes/threads_in_middle_example/chr10_subgraph_0_new.vg >test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap_snarl.vg
@@ -131,3 +153,4 @@ chromium-browser test/robin_haplotypes/threads_in_middle_example/cleaned_mid_hap
 # vg view -dpn chr10_subgraph_0_new.vg| \
 # dot -Tsvg -o chr10_subgraph_0_new_2.svg
 # chromium-browser chr10_subgraph_0_new_2.svg
+
