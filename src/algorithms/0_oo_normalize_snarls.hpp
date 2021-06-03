@@ -14,7 +14,7 @@ class SnarlNormalizer {
     virtual ~SnarlNormalizer() = default;
 
     SnarlNormalizer(MutablePathDeletableHandleGraph &graph, const gbwtgraph::GBWTGraph &haploGraph,
-                    const int& _max_handle_size, const int &max_alignment_size = INT_MAX, //TODO: add a _max_handle_length default length
+                    const int& max_handle_size, gbwt::GBWT gbwt_index, const int &max_alignment_size = INT_MAX, //TODO: add a _max_handle_length default length
                     const string &path_finder = "GBWT" /*alternative is "exhaustive"*/);
 
     virtual void normalize_top_level_snarls(ifstream &snarl_stream);
@@ -33,8 +33,11 @@ class SnarlNormalizer {
     int _max_alignment_size;
     int _max_handle_size;
     const string &_path_finder;
-    //todo: either make this an optional argument for the class, or remove as a debug var.
+    //todo: either make these an optional argument for the class, or remove as a debug var.
     bool _full_log_print = false; // for printing info that isn't necessarily something gone wrong.
+    
+    //todo: remove the following var if unneeded outside of debugging:
+    gbwt::GBWT _gbwt_index;
 
     //////////////////////////////////////////////////////////////////////////////////////
     // finding information on original graph:
@@ -49,6 +52,8 @@ class SnarlNormalizer {
     //////////////////////////////////////////////////////////////////////////////////////
     // creation of new graph:
     //////////////////////////////////////////////////////////////////////////////////////
+
+    VG align_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const unordered_set<string>& source_only_haplotypes, const unordered_set<string>& sink_only_haplotypes, const unordered_set<string>& other_haplotypes);
 
     VG align_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 
@@ -84,6 +89,9 @@ class SnarlNormalizer {
 
     pair<vector<handle_t>, vector<handle_t>>
     debug_get_sources_and_sinks(const HandleGraph &graph);
+
+    // void debug_investigate_snarl(id_t source_id, id_t sink_id, const bool backwards);
+    void debug_investigate_snarl(Snarl snarl);
 };
 }
 } // namespace vg

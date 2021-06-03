@@ -76,7 +76,7 @@ int main_normalize(int argc, char **argv) {
              {"paths_right_to_left", no_argument, 0, 'p'},
              {"max_alignment_size", required_argument, 0, 'm'},
              {"evaluate", no_argument, 0, 'e'},
-             {"snarl_sizes", required_argument, 0, 'i'},
+             {"snarl_sizes", required_argument, 0, 'i'}, //argument is output file name //todo: change
              {"snarl_sizes_skip_source_sink", no_argument, 0, 'k'},
              {"max_handle_size", required_argument, 0, 'h'}, // currently, default is INT_MAX. This is for compatibility with changes in graph size measures (0_snarl_analyzer). Eventually should change to handle size standard. 
              {"handles_in_snarl", no_argument, 0, 'x'}, // used in conjunction with arguments source and sink. Will print all the node ids in between source and sink, inclusive.
@@ -188,7 +188,7 @@ int main_normalize(int argc, char **argv) {
         auto start = chrono::high_resolution_clock::now();
 
         algorithms::SnarlNormalizer normalizer =
-            algorithms::SnarlNormalizer(*graph, haploGraph, max_alignment_size, max_handle_size);
+            algorithms::SnarlNormalizer(*graph, haploGraph, max_handle_size, *gbwt, max_alignment_size);
 
         if (normalize_type == "all")
         {

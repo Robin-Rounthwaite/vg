@@ -2,27 +2,26 @@
 
 #include "0_oo_normalize_snarls.hpp"
 #include "0_snarl_sequence_finder.hpp"
-// #include <algorithm>
+#include "0_snarl_realigner.cpp"
 #include <string>
-
-// #include <deps/seqan/include/seqan/align.h>
-// #include <deps/seqan/include/seqan/graph_align.h>
-// #include <deps/seqan/include/seqan/graph_msa.h>
-#include <seqan/align.h>
-#include <seqan/graph_align.h>
-#include <seqan/graph_msa.h>
 
 #include <gbwtgraph/gbwtgraph.h>
 
 #include "../gbwt_helper.hpp"
 #include "../handle.hpp"
-#include "../msa_converter.hpp"
 #include "../snarls.hpp"
-#include "../vg.hpp"
 
 #include "../types.hpp"
 #include "extract_containing_graph.hpp"
 
+
+#include <seqan/align.h>
+#include <seqan/graph_align.h>
+#include <seqan/graph_msa.h>
+
+#include "../msa_converter.hpp"
+
+#include <traversal_finder.hpp>
 /*
 TODO: allow for snarls that have haplotypes that begin or end in the middle of the snarl
 
@@ -48,9 +47,11 @@ namespace algorithms{
 SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const gbwtgraph::GBWTGraph &haploGraph,
                                  const int& max_handle_size, 
+                                 gbwt::GBWT gbwt_index,
                                  const int &max_alignment_size /*= MAX_INT*/,
                                  const string &path_finder /*= "GBWT"*/)
     : _haploGraph(haploGraph), _graph(graph), _max_alignment_size(max_alignment_size),
+      _gbwt_index(gbwt_index),
       _max_handle_size(max_handle_size), _path_finder(path_finder) {}
 
 
@@ -86,26 +87,30 @@ void SnarlNormalizer::normalize_top_level_snarls(ifstream &snarl_stream) {
     pair<int, int> snarl_sequence_change;
 
     // //todo: debug_code
-    // int stop_size = 1;
-    // int num_snarls_touched = 0;
+    int stop_size = 2;
+    int num_snarls_touched = 0;
 
     // int skip_first_few = 7;
     // int skipped = 0;
     int snarl_num = 0;
     for (auto roots : snarl_roots) {
+        if (roots->start().node_id() != 157206 && roots->start().node_id() != 157209 && roots->start().node_id() != 157212) //note: only set up to norm first two.
+        {
+            continue;
+        }
         snarl_num++;
         // if (skipped < skip_first_few){
         //     skipped++;
         //     continue;
         // }
         
-        // if (num_snarls_touched == stop_size){
-        //     break;
-        // } else {
-        //     num_snarls_touched++;
-        // }
-        // //todo: debug_print:
-        // cerr << "normalizing snarl number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
+        if (num_snarls_touched == stop_size){
+            break;
+        } else {
+            num_snarls_touched++;
+        }
+        //todo: debug_print:
+        cerr << "normalizing snarl number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
 
         if (_full_log_print)
         {
@@ -123,6 +128,7 @@ void SnarlNormalizer::normalize_top_level_snarls(ifstream &snarl_stream) {
             //         << " source: " << roots->start().node_id()
             //         << " sink: " << roots->end().node_id() << endl;
 
+            debug_investigate_snarl(*roots);
             one_snarl_error_record = normalize_snarl(roots->start().node_id(), roots->end().node_id(), roots->start().backward());
             if (!(one_snarl_error_record[0] || one_snarl_error_record[1] ||
                     one_snarl_error_record[2] || one_snarl_error_record[3] ||
@@ -186,6 +192,27 @@ void SnarlNormalizer::normalize_top_level_snarls(ifstream &snarl_stream) {
     // outGraph.serialize_to_ostream(cout);
 
     delete snarl_manager;
+}
+
+void SnarlNormalizer::debug_investigate_snarl(Snarl snarl)
+{
+    // SubHandleGraph snarl = extract_subgraph(_graph, source_id, sink_id, backwards);
+    GBWTTraversalFinder traversal_finder = GBWTTraversalFinder(_graph, _gbwt_index);
+    std::pair<std::vector<vg::SnarlTraversal, std::allocator<vg::SnarlTraversal>>, std::vector<std::vector<std::size_t, std::allocator<std::size_t>>, std::allocator<std::vector<std::size_t, std::allocator<std::size_t>>>>> traversals =
+    traversal_finder.find_gbwt_traversals(snarl);
+
+    //convert the traversal to a string:
+    int trav_num;
+    for (auto trav : traversals.first)
+    {
+        cerr << "traversal number: " << trav_num << endl;
+        trav_num++;
+        const google::protobuf::RepeatedPtrField<vg::Visit> visits = trav.visit();
+        for (auto vis : visits) 
+        {
+            cerr << "visit node id: " << vis.node_id() << endl;
+        }
+    }
 }
 
 /**
@@ -330,10 +357,6 @@ vector<int> SnarlNormalizer::normalize_snarl(id_t source_id, id_t sink_id, const
     // TODO: also, limits the number of haplotypes to be aligned, since snarl starting at
     // TODO:    2049699 with 258 haplotypes is taking many minutes.
     if (get<1>(haplotypes).empty() && get<0>(haplotypes).size() < _max_alignment_size)
-        // the following bool check was to ensure that all the handles in the handlegraph 
-        // are touched by the gbwt. Turns out, though, that this isn't necessary. If we 
-        // assume that all seq info is in gbwt, the gbwt is all we need to worry about.:
-        // && get<2>(haplotypes).size() == handles_in_snarl.size()) {
         {
         // Get the embedded paths in the snarl from _graph, to move them to new_snarl.
         // Any embedded paths not in gbwt are aligned in the new snarl.
@@ -391,13 +414,14 @@ vector<int> SnarlNormalizer::normalize_snarl(id_t source_id, id_t sink_id, const
                 }
             }
         }
-        // cerr << "haps in haplotypes: " << endl;
-        // for (string hap : get<0>(haplotypes))
-        // {
-        //     cerr << hap << endl;
-        // }
+        cerr << "haps in haplotypes: " << endl;
+        for (string hap : get<0>(haplotypes))
+        {
+            cerr << hap << endl;
+        }
         // Align the new snarl:
-        VG new_snarl = align_source_to_sink_haplotypes(get<0>(haplotypes));
+        //todo: add the proper haplotypes to the proper sections of align_haplotypes.
+        VG new_snarl = align_haplotypes(get<0>(haplotypes), get<0>(haplotypes), get<0>(haplotypes), get<0>(haplotypes));
 
         // count the number of bases in the snarl.
         new_snarl.for_each_handle([&](const handle_t handle) {
@@ -472,27 +496,28 @@ vector<int> SnarlNormalizer::normalize_snarl(id_t source_id, id_t sink_id, const
 }
 
 
-// Given a vector of haplotypes of format vector< handle_t >, returns a vector of
-// haplotypes of
-//      format string (which is the concatenated sequences in the handles).
-// Arguments:
-//      _haploGraph: a gbwtgraph::GBWTGraph which contains the handles in vector< handle_t
-//      > haplotypes. haplotypte_handle_vectors: a vector of haplotypes in vector<
-//      handle_t > format.
-// Returns: a vector of haplotypes of format string (which is the concatenated sequences
-// in the handles).
-unordered_set<string> SnarlNormalizer::format_handle_haplotypes_to_strings(
-    const vector<vector<handle_t>> &haplotype_handle_vectors) {
-    unordered_set<string> haplotype_strings;
-    for (vector<handle_t> haplotype_handles : haplotype_handle_vectors) {
-        string hap;
-        for (handle_t &handle : haplotype_handles) {
-            hap += _graph.get_sequence(handle);
-        }
-        haplotype_strings.emplace(hap);
-    }
-    return haplotype_strings;
+VG SnarlNormalizer::align_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const unordered_set<string>& source_only_haplotypes, const unordered_set<string>& sink_only_haplotypes, const unordered_set<string>& other_haplotypes) 
+{
+    //todo: add the proper haplotypes to the proper sections of align_haplotypes. Currently passing all source_to_sink_haps to each argument.
+    //first, align the source-to-sink haplotypes using seqan to create a graph.
+    VG new_snarl = align_source_to_sink_haplotypes(source_to_sink_haplotypes);
+
+
+    // // if there are haplotypes besides source-to-sink haps, convert new_snarl to a dozeu-compatible format
+    // // and align all other haplotypes to the dozeu graph, updating the graph as we go.
+    // if (source_only_haplotypes.size() != 0 || sink_only_haplotypes.size() != 0 || other_haplotypes.size() != 0) 
+    // {
+    //     dozeu_align_to_graph()
+    // }
+
+
+
+    // convert the dozeu graph back to a handlegraph.
+
+    return new_snarl;
 }
+        // dozeu_align_to_graph()
+
 
 // TODO: eventually change to deal with haplotypes that start/end in middle of snarl.
 // Aligns haplotypes to create a new _graph using MSAConverter's seqan converter.
@@ -503,7 +528,8 @@ unordered_set<string> SnarlNormalizer::format_handle_haplotypes_to_strings(
 // Returns:
 //      VG object representing the newly realigned snarl.
 VG SnarlNormalizer::align_source_to_sink_haplotypes(
-    const unordered_set<string>& source_to_sink_haplotypes) {
+    const unordered_set<string>& source_to_sink_haplotypes) 
+{
     // cerr << "align_source_to_sink_haplotypes" << endl;
     // cerr << " haplotypes in source_to_sink_haplotypes: " << endl;
     // for (string hap : source_to_sink_haplotypes) {
@@ -633,6 +659,29 @@ VG SnarlNormalizer::align_source_to_sink_haplotypes(
     }
 
     return snarl;
+}
+
+
+// Given a vector of haplotypes of format vector< handle_t >, returns a vector of
+// haplotypes of
+//      format string (which is the concatenated sequences in the handles).
+// Arguments:
+//      _haploGraph: a gbwtgraph::GBWTGraph which contains the handles in vector< handle_t
+//      > haplotypes. haplotypte_handle_vectors: a vector of haplotypes in vector<
+//      handle_t > format.
+// Returns: a vector of haplotypes of format string (which is the concatenated sequences
+// in the handles).
+unordered_set<string> SnarlNormalizer::format_handle_haplotypes_to_strings(
+    const vector<vector<handle_t>> &haplotype_handle_vectors) {
+    unordered_set<string> haplotype_strings;
+    for (vector<handle_t> haplotype_handles : haplotype_handle_vectors) {
+        string hap;
+        for (handle_t &handle : haplotype_handles) {
+            hap += _graph.get_sequence(handle);
+        }
+        haplotype_strings.emplace(hap);
+    }
+    return haplotype_strings;
 }
 
 /** For each handle in a given _graph, divides any handles greater than max_size into
@@ -915,6 +964,10 @@ void SnarlNormalizer::integrate_snarl(SubHandleGraph &old_snarl,
         path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(embedded_paths[i].second))) == sink_id);
 
         embedded_paths[i] = move_path_to_new_snarl(embedded_paths[i], temp_snarl_leftmost_id, temp_snarl_rightmost_id, path_spans_left_right, !backwards, make_pair(source_id, sink_id));
+        // if (embedded_paths[i].size() == 0)
+        // {
+        //     cerr << "embedded path is empty. FIX!" << endl;
+        // }
     }
 
     // Destroy the old snarl.

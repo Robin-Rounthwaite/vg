@@ -23,9 +23,17 @@ names = ["source", "sink", "size"]
 ### before_norm = pd.read_csv("~/paten_lab/vg/robin-graphs/yeast_subset/yeast_subset.snarls_new.skip_source_sink_seq.snarl_sizes.txt", sep="\t", names=names) #using updated snarl calculation, since vg snarls output has changed in past year.
 ### after_norm = pd.read_csv("~/paten_lab/vg/robin-graphs/yeast_subset/yeast_subset.normalized.skip_source_sink_seq.snarl_sizes.txt", sep="\t", names=names)
 
-before_norm = pd.read_csv("/home/robin/paten_lab/vg/robin-graphs/nygc/nygc_snp1kg_grch38.snarl_sizes.txt", sep="\t", names=names, nrows=10000) #using updated snarl calculation, since vg snarls output has changed in past year.
-after_norm = pd.read_csv("/home/robin/paten_lab/vg/robin-graphs/nygc/nygc_snp1kg_grch38.normalized.snarl_sizes.txt", sep="\t", names=names, nrows=10000)
+# yeast, including proper after_norm with merged split snarls, and moving after_norm to after_norm_split
+# before_norm = pd.read_csv("~/paten_lab/vg/robin-graphs/yeast_subset/yeast_subset.snarl_new_sizes.txt", sep="\t", names=names) #using updated snarl calculation, since vg snarls output has changed in past year.
+# after_norm = pd.read_csv("~/paten_lab/vg/robin-graphs/yeast_subset/yeast_subset.normalized.merged-split-snarls.snarl-sizes.txt", sep="\t", names=names)
+#should be after_norm_split, now:
+# after_norm = pd.read_csv("~/paten_lab/vg/robin-graphs/yeast_subset/yeast_subset.normalized.snarl_sizes.txt", sep="\t", names=names)
 
+
+# main nygc chr21:
+before_norm = pd.read_csv("~/paten_lab/vg/robin-graphs/nygc/chr21-vcf-gbwt/nygc_snp1kg_grch38.rrounthw-made.chr21.snarl-sizes.txt", sep="\t", names=names, nrows=10000) #using updated snarl calculation, since vg snarls output has changed in past year.
+# after_norm = pd.read_csv("~/paten_lab/vg/robin-graphs/nygc/chr21-vcf-gbwt/nygc_snp1kg_grch38.rrounthw-made.chr21.normalized.snarl-sizes.txt", sep="\t", names=names, nrows=10000)
+after_norm = pd.read_csv("~/paten_lab/vg/robin-graphs/nygc/chr21-vcf-gbwt/nygc_snp1kg_grch38.rrounthw-made.chr21.normalized.with-split-snarls.snarl-sizes.txt", sep="\t", names=names, nrows=10000)
 
 #%%
 """
@@ -77,7 +85,7 @@ NOTE: maybe the difference is because of snarls that were never normalized, + do
     exists in the total graph. which suggests that counts are substantially off for in-snarl
     counting.
 
-    For now, I think I should proceed with my data analysis. I'm short on time, and the
+    For now, I think I should proceed wi"th my data analysis. I'm short on time, and the
     few tests I checked in on seemed accurate. Analysis should still give interesting data
     on what snarls are interesting.
     
@@ -129,6 +137,7 @@ snarls_that_split = col.defaultdict(int) #key: source of original snarl, value: 
 after_i = 0
 # plot_every_other = 1000000 #for very large datasets, only plot some points. NOTE: not functional rn.
 for before_i in range(len(before_norm["source"])):
+    # print(after_i, len(after_norm))
     # if before_i%plot_every_other==0:
 
     before_source = before_norm["source"][before_i]
@@ -140,6 +149,7 @@ for before_i in range(len(before_norm["source"])):
         snarl_size_before_after[before_source][1] += after_norm["size"][after_i]
         snarls_that_split[before_source] += 1
         after_i += 1
+    # print("after_i", after_i, "before_source", before_source)
     
     #we've reached the last snarl in after_norm that corresponds to the the current snarl in before_norm.
     snarl_size_before_after[before_source][1] += after_norm["size"][after_i]
@@ -230,9 +240,12 @@ for x in snarl_size_change_without_splits.values():
         same += 1
     if x > 0:
         grow += 1
-print(shrink, same, grow)
+print("shrink", shrink, "same", same, "grow", grow)
 # print(len([x if x < 0 for x in snarl_size_change_without_splits.values()]))
 #%%
+"""
+only runnable if you have split-snarls.
+"""
 shrink_splits = list(snarl_size_change_only_splits.values())
 most_shrink_split = min(shrink_splits)
 most_shrink_split_i = shrink_splits.index(most_shrink_split)
@@ -318,7 +331,7 @@ print(after_norm.loc[snarl_nums[max_change_i][1]])
 # finding example snarls by entry_size and entry_size_change_percent.
 entry_i = 0
 for entry_size, entry_size_change_percent in zip(size, size_change_percent):
-    if entry_size < 100 and entry_size > 30 and entry_size_change_percent >= 10:
+    if entry_size > 30 and entry_size < 100 and entry_size_change_percent >= -15 and entry_size_change_percent <= -2:
         print("entry", entry_i)
         print(entry_size, entry_size_change_percent, snarl_nums[entry_i])
         print(before_norm.loc[snarl_nums[entry_i][0]])
@@ -328,6 +341,13 @@ for entry_size, entry_size_change_percent in zip(size, size_change_percent):
     entry_i += 1
 print("finished")
 
+#%%
+# how many snarls are greater than X in size?
+count = int()
+for entry_size in size:
+    if entry_size > 60:
+        count+=1 
+print(count)
 #%%
 # narrowing down the options by trying to match up & remove snarls that have immediate neighbors in the "increased in size" snarl group.
 #update: unfortunately, seems like the narrowing down failed. The growing snarls aren't coming from borders with shrinking ones?! I think I did this wrong...

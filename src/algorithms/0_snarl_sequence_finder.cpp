@@ -1,34 +1,5 @@
 #include "0_snarl_sequence_finder.hpp"
 
-// #include "0_oo_normalize_snarls.hpp"
-// #include "0_snarl_sequence_finder.hpp"
-// #include <algorithm>
-// #include <string>
-
-// #include <seqan/align.h>
-// #include <seqan/graph_align.h>
-// #include <seqan/graph_msa.h>
-
-// #include <gbwtgraph/gbwtgraph.h>
-
-// #include "../gbwt_helper.hpp"
-// #include "../handle.hpp"
-// #include "../msa_converter.hpp"
-// #include "../snarls.hpp"
-// #include "../vg.hpp"
-// #include "is_acyclic.hpp"
-
-// #include "../types.hpp"
-// #include "extract_containing_graph.hpp"
-
-// #include <algorithm>
-
-// #include "../msa_converter.hpp"
-// #include "vg.hpp"
-
-// #include "topological_sort.hpp"
-
-
 #include <gbwtgraph/gbwtgraph.h>
 #include "../handle.hpp"
 #include "../subgraph.hpp"
@@ -80,7 +51,7 @@ SnarlSequenceFinder::find_gbwt_haps() {
     vector<handle_t> source_handle_vec(1, source_handle);
     gbwt::SearchState source_state = _haploGraph.get_state(source_handle);
     haplotype_queue.push_back(make_pair(source_handle_vec, source_state));
-
+    cerr << "is the source_state empty? " << source_state.empty() << endl;
     // touched_handles contains all handles that have been touched by the
     // depth first search below, for later use in other_haplotypes_to_strings, which
     // identifies paths that didn't stretch from source to sink in the snarl.
@@ -93,7 +64,7 @@ SnarlSequenceFinder::find_gbwt_haps() {
 
     // sometimes a gbwt thread will indicate a connection between two handles that doesn't
     // actually exist in the _graph. These connections need to be ignored.
-    unordered_set<edge_t> incorrect_connections;
+    // unordered_set<edge_t> incorrect_connections;
 
     // for every partly-extracted thread, extend the thread until it either reaches
     // the sink of the snarl or the end of the thread.
@@ -122,6 +93,11 @@ SnarlSequenceFinder::find_gbwt_haps() {
                                      next_searches.push_back(next_search);
                                      return true;
                                  });
+        cerr << "cur_haplotype most recent handle is:" << _graph.get_id(cur_haplotype.first.back()) << endl;
+        for (auto next_search : next_searches)
+        {
+            cerr << "next search refers to:" << _haploGraph.get_id(_haploGraph.node_to_handle(next_search.node)) << endl;
+        }
 
         // if next_searches > 1, then we need to make multiple new haplotypes to be
         // recorded in haplotype_queue or one of the finished haplotype_handle_vectors.
@@ -213,11 +189,15 @@ SnarlSequenceFinder::find_gbwt_haps() {
             touched_handles.emplace(next_handle);
         }
     }
+    cerr << "touched handles size: " << touched_handles.size() << endl;
 
     // Find any haplotypes starting from handles not starting at the source, but which
     // still start somewhere inside the snarl.
     vector<vector<handle_t>> haplotypes_not_starting_at_source =
         find_haplotypes_not_at_source(touched_handles);
+
+    cerr<< "haplotypes not starting at source size: " << haplotypes_not_starting_at_source.size() << endl;
+    cerr<< "haplotypes from source to sink: " << haplotypes_from_source_to_sink.size() << endl;
 
     // move haplotypes_not_starting_at_source into other_haplotypes:
     other_haplotypes.reserve(other_haplotypes.size() +
@@ -291,6 +271,7 @@ SnarlSequenceFinder::find_haplotypes_not_at_source(unordered_set<handle_t> &touc
         // Are there any new threads starting at this handle?
         gbwt::SearchState new_search =
             _haploGraph.index->prefix(_haploGraph.handle_to_node(handle));
+        cerr << "is new_search empty?" << new_search.empty() << endl;
         if (!new_search.empty()) {
             // Then add them to haplotype_queue.
             _haploGraph.follow_paths(
@@ -523,6 +504,7 @@ SnarlSequenceFinder::find_embedded_paths() {
     //todo: move the following to unit tests:
     unordered_set<string> path_names;
     for (auto path : paths_in_snarl) {
+        //TODO: delete this print altogether once we get compatibility with sequence-inside-snarls.
         if (!(_graph.get_id(_graph.get_handle_of_step(path.first)) == _source_id)) {
             cerr << "************in UNIT_TEST for find_embedded_paths************" << endl;
             cerr << "in snarl with source: " << _source_id << " and sink " << _sink_id << ":" << endl;
@@ -531,9 +513,10 @@ SnarlSequenceFinder::find_embedded_paths() {
         if (!(_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) == _sink_id)) {
             cerr << "************in UNIT_TEST for find_embedded_paths************" << endl;
             cerr << "in snarl with source: " << _source_id << " and sink " << _sink_id << ":" << endl;
-            cerr << "path " << _graph.get_path_name(_graph.get_path_handle_of_step(path.second)) << " doesn't end at sink of snarl. " << " source: " << _sink_id << "; end of path: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) << endl;
+            cerr << "path " << _graph.get_path_name(_graph.get_path_handle_of_step(path.second)) << " doesn't end at sink of snarl. " << " sink: " << _sink_id << "; end of path: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) << endl;
             cerr << "note that the 'true' end of the path is one step further than the sink. Print statement above corrects for that convention." << endl;
         }
+
         if (!(path_names.find(_graph.get_path_name(_graph.get_path_handle_of_step(path.first))) == path_names.end())) {
             cerr << "************in UNIT_TEST for find_embedded_paths************" << endl;
             cerr << "in snarl with source: " << _source_id << " and sink " << _sink_id << ":" << endl;
