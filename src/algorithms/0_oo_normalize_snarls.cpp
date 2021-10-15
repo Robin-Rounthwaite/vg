@@ -573,7 +573,7 @@ vector<vector<const Snarl *> > SnarlNormalizer::cluster_snarls(const vector<cons
         
         cur_snarl++;
     }
-    //check to see if the snarl_cluster at the ned is empty. If so, discard it.
+    //check to see if the snarl_cluster at the end is empty. If so, discard it.
     if (snarl_clusters.back().size() == 0)
     {
         snarl_clusters.pop_back();
