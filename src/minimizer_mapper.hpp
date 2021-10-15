@@ -218,9 +218,9 @@ protected:
         int32_t candidates_per_window; // How many minimizers compete to be the best (index's w), or 1 for syncmers.  
         double score; // Scores as 1 + ln(hard_hit_cap) - ln(hits).
 
-        // Sort the minimizers in descending order by score.
+        // Sort the minimizers in descending order by score and group identical minimizers together.
         inline bool operator< (const Minimizer& another) const {
-            return (this->score > another.score);
+            return (this->score > another.score || (this->score == another.score && this->value.key < another.value.key));
         }
         
         /// Get the starting position of the given minimizer on the forward strand.
@@ -247,6 +247,11 @@ protected:
         }
     };
     
+    /// Convert an integer distance, with limits standing for no distance, to a
+    /// double annotation that can safely be parsed back from JSON into an
+    /// integer if it is integral.
+    double distance_to_annotation(int64_t distance) const;
+    
     /// The information we store for each seed.
     typedef SnarlSeedClusterer::Seed Seed;
 
@@ -265,8 +270,12 @@ protected:
     
     /// We have a clusterer
     SnarlSeedClusterer clusterer;
-
+    
+    /// We have a distribution for read fragment lengths that takes care of
+    /// knowing when we've observed enough good ones to learn a good
+    /// distribution.
     FragmentLengthDistribution fragment_length_distr;
+    /// We may need to complain exactly once that the distribution is bad.
     atomic_flag warned_about_bad_distribution = ATOMIC_FLAG_INIT;
 
 //-----------------------------------------------------------------------------

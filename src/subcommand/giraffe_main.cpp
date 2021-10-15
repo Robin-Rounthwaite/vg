@@ -332,6 +332,7 @@ void help_giraffe(char** argv) {
     << "  -R, --read-group NAME         add this read group" << endl
     << "  -o, --output-format NAME      output the alignments in NAME format (gam / gaf / json / tsv / SAM / BAM / CRAM) [gam]" << endl
     << "  --ref-paths FILE              ordered list of paths in the graph, one per line or HTSlib .dict, for HTSLib @SQ headers" << endl
+    << "  -P, --prune-low-cplx          prune short and low complexity anchors during linear format realignment" << endl
     << "  -n, --discard                 discard all output alignments (for profiling)" << endl
     << "  --output-basename NAME        write output to a GAM file beginning with the given prefix for each setting combination" << endl
     << "  --report-name NAME            write a TSV of output file and mapping speed to the given file" << endl
@@ -483,6 +484,8 @@ int main_giraffe(int argc, char** argv) {
 
     // For HTSlib formats, where do we get sequence header info?
     std::string ref_paths_name;
+    // And shoudl we drop low complexity anchors when surjectng?
+    bool prune_anchors = false;
 
     // Map algorithm names to rescue algorithms
     std::map<std::string, MinimizerMapper::RescueAlgorithm> rescue_algorithms = {
@@ -519,6 +522,7 @@ int main_giraffe(int argc, char** argv) {
             {"read-group", required_argument, 0, 'R'},
             {"output-format", required_argument, 0, 'o'},
             {"ref-paths", required_argument, 0, OPT_REF_PATHS},
+            {"prune-low-cplx", no_argument, 0, 'P'},
             {"discard", no_argument, 0, 'n'},
             {"output-basename", required_argument, 0, OPT_OUTPUT_BASENAME},
             {"report-name", required_argument, 0, OPT_REPORT_NAME},
@@ -551,7 +555,7 @@ int main_giraffe(int argc, char** argv) {
         };
 
         int option_index = 0;
-        c = getopt_long (argc, argv, "hZ:x:g:H:m:s:d:pG:f:iM:N:R:o:nb:c:C:D:F:e:a:S:u:v:w:Ot:r:A:L:",
+        c = getopt_long (argc, argv, "hZ:x:g:H:m:s:d:pG:f:iM:N:R:o:Pnb:c:C:D:F:e:a:S:u:v:w:Ot:r:A:L:",
                          long_options, &option_index);
 
 
@@ -713,6 +717,10 @@ int main_giraffe(int argc, char** argv) {
                 
             case OPT_REF_PATHS:
                 ref_paths_name = optarg;
+                break;
+                
+            case 'P':
+                prune_anchors = true;
                 break;
 
             case 'n':
@@ -1040,26 +1048,33 @@ int main_giraffe(int argc, char** argv) {
     }
     
     // The IndexRegistry doesn't try to infer index files based on the
-    // basename, so do that here.
-    unordered_map<string, string> indexes_and_extensions = {
-        {"Giraffe GBZ", "gbz"},
-        {"XG", "xg"},
-        {"Giraffe GBWT", "gbwt"},
-        {"GBWTGraph", "gg"},
-        {"Giraffe Distance Index", "dist"},
-        {"Minimizers", "min"}
+    // basename, so do that here. We can have multiple extension options that
+    // we try in order of priority.
+    unordered_map<string, vector<string>> indexes_and_extensions = {
+        {"Giraffe GBZ", {"giraffe.gbz", "gbz"}},
+        {"XG", {"xg"}},
+        {"Giraffe GBWT", {"gbwt"}},
+        {"GBWTGraph", {"gg"}},
+        {"Giraffe Distance Index", {"dist"}},
+        {"Minimizers", {"min"}}
     };
     for (auto& completed : registry.completed_indexes()) {
         // Drop anything we already got from the list
         indexes_and_extensions.erase(completed);
     }
-    for (auto& index_and_extension : indexes_and_extensions) {
-        string inferred_filename = registry.get_prefix() + "." + index_and_extension.second;
-        if (ifstream(inferred_filename).is_open()) {
-            // A file with the appropriate name exists and we can read it
-            registry.provide(index_and_extension.first, inferred_filename);
-            // Report it because this may not be desired behavior
-            cerr << "Guessing that " << inferred_filename << " is " << index_and_extension.first << endl;
+    for (auto& index_and_extensions : indexes_and_extensions) {
+        // For each index type
+        for (auto& extension : index_and_extensions.second) {
+            // For each extension in priority order
+            string inferred_filename = registry.get_prefix() + "." + extension;
+            if (ifstream(inferred_filename).is_open()) {
+                // A file with the appropriate name exists and we can read it
+                registry.provide(index_and_extensions.first, inferred_filename);
+                // Report it because this may not be desired behavior
+                cerr << "Guessing that " << inferred_filename << " is " << index_and_extensions.first << endl;
+                // Skip other extension options for the index
+                break;
+            }
         }
     }
 
@@ -1194,6 +1209,10 @@ int main_giraffe(int argc, char** argv) {
 
         if (show_progress && interleaved) {
             cerr << "--interleaved" << endl;
+        }
+        
+        if (show_progress && prune_anchors) {
+            cerr << "--prune-low-cplx" << endl;
         }
 
         if (show_progress) {
@@ -1372,7 +1391,9 @@ int main_giraffe(int argc, char** argv) {
             // We send along the positional graph when we have it, and otherwise we send the GBWTGraph which is sufficient for GAF output.
             unique_ptr<AlignmentEmitter> alignment_emitter = discard_alignments ?
                 make_unique<NullAlignmentEmitter>() :
-                get_alignment_emitter("-", output_format, paths, thread_count, path_position_graph ? (const HandleGraph*)path_position_graph : (const HandleGraph*)&(gbz->graph));
+                get_alignment_emitter("-", output_format, paths, thread_count,
+                    path_position_graph ? (const HandleGraph*)path_position_graph : (const HandleGraph*)&(gbz->graph),
+                    ALIGNMENT_EMITTER_FLAG_HTS_PRUNE_SUSPICIOUS_ANCHORS * prune_anchors);
             
 #ifdef USE_CALLGRIND
             // We want to profile the alignment, not the loading.
@@ -1405,6 +1426,15 @@ int main_giraffe(int argc, char** argv) {
                     if (is_ready && !distribution_was_ready) {
                         // It has become ready now.
                         distribution_was_ready = true;
+                        
+                        if (show_progress) {
+                            // Report that it is now ready
+                            #pragma omp critical (cerr)
+                            {
+                                cerr << "Using fragment length estimate: " << minimizer_mapper.get_fragment_length_mean() << " +/- " << minimizer_mapper.get_fragment_length_stdev() << endl;
+                            }
+                        }
+                        
                         // Remember when now is.
                         all_threads_start = std::chrono::system_clock::now();
                     }
@@ -1428,7 +1458,7 @@ int main_giraffe(int argc, char** argv) {
 #ifdef __linux__
                     ensure_perf_for_thread();
 #endif
-                    
+
                     pair<vector<Alignment>, vector<Alignment>> mapped_pairs = minimizer_mapper.map_paired(aln1, aln2, ambiguous_pair_buffer);
                     if (!mapped_pairs.first.empty() && !mapped_pairs.second.empty()) {
                         //If we actually tried to map this paired end
