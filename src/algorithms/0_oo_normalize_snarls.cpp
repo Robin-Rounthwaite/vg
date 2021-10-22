@@ -53,11 +53,12 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const int &max_handle_size,
                                  const int &batch_size,
                                  const int &max_snarl_spacing,
+                                 const int &threads,
                                  const int &max_alignment_size, /*= MAX_INT*/
                                  const string &path_finder, /*= "GBWT"*/
                                  const bool &debug_print /*= false*/)
     : _graph(graph), _gbwt(gbwt), _max_alignment_size(max_alignment_size),
-      _max_handle_size(max_handle_size), _batch_size(batch_size), _max_snarl_spacing(max_snarl_spacing), _path_finder(path_finder), _gbwt_graph(gbwt_graph),
+      _max_handle_size(max_handle_size), _batch_size(batch_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder), _gbwt_graph(gbwt_graph),
       _debug_print(debug_print){}
 
 
@@ -113,6 +114,7 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
     // int skipped = 0;
 
     // get_all_gbwt_sequences(1, 15, false);
+    cerr << "has node before? " << _gbwt_graph.has_node(gbwt::Node::encode(7405162, false)) << endl;
 
     int snarl_num = 0;
     // for (auto roots : snarl_roots) 
@@ -181,7 +183,7 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
             // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
             cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
         }
-        else if (snarl_num%10000 == 0)
+        else if (snarl_num==1 || snarl_num%10000 == 0)
         {
             // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
             cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
@@ -350,7 +352,12 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
     //todo: use weakly_connected below for multithreading
     // handlegraph::algorithms::weakly_connected_components(_graph)
     // gbwtgraph::weakly_connected_components(_graph);
-    gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
+
+
+    
+    
+    gbwt::GBWT output_gbwt = apply_gbwt_changelog();
+    // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
     cerr << "finished generating gbwt." << endl;
     
     // //todo: debug-code for checking that I can build the gbwt_graph:
@@ -380,6 +387,103 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
 
 
 }
+
+////////////////////////////////////////////////////////////
+/// Use the gbwt_changelog to perform paralellized rebuild_gbwt():
+////////////////////////////////////////////////////////////
+
+
+gbwt::GBWT SnarlNormalizer::apply_gbwt_changelog()
+{
+    // is the changelog in _graph ids? Or gbwt ids? If gbwt ids, use the gbwt weakly_connected_components. If it's the graph, I need to compute the connected components before changing it.
+    // Uh, but actually the gbwt algorithm is gonna be expecting gbwt ids. So basically, use the gbwt info.
+    
+    // vector<unordered_set<nid_t>> components = gbwtgraph::weakly_connected_components(&_gbwt_graph);
+    vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&_gbwt_graph);
+    // vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&_graph); // this was using the handlegraph algorithm, but I think we want the gbwt's view of the connected components.
+
+    std::unordered_map<nid_t, size_t> node_to_job = get_node_to_job(components);
+
+    std::vector<RebuildJob> jobs = divide_changelog_into_jobs(node_to_job, components); 
+
+    RebuildParameters rebuild_parameters = set_parameters();
+    
+    gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, jobs, node_to_job, rebuild_parameters);
+    //todo: remove temporary non-parallelized rebuild_gbwt.
+    // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
+    return output_gbwt;
+}
+
+std::unordered_map<nid_t, size_t> SnarlNormalizer::get_node_to_job(const vector<unordered_set<nid_t>>& weakly_connected_components)
+{
+    // cerr << "weakly_connected_components.size()" << weakly_connected_components.size() << endl;
+    std::unordered_map<nid_t, size_t> node_to_job;
+    for (int i=0; i!= weakly_connected_components.size(); i++)
+    {
+        // cerr << "i" << i << endl;
+        for (nid_t node : weakly_connected_components[i])
+        {
+            // cerr << "node in i" << node << endl;
+            node_to_job[node] = i;
+        }
+    }
+    return node_to_job;
+}
+
+std::vector<RebuildJob> SnarlNormalizer::divide_changelog_into_jobs(const std::unordered_map<nid_t, size_t>& node_to_job, const vector<unordered_set<nid_t>>& weakly_connected_components)
+{
+    std::vector<RebuildJob> jobs(weakly_connected_components.size());
+    // cerr << "jobs.size()" << jobs.size() << endl;   
+    // cerr << "jobs[0].size() " << jobs[0].mappings.size() << endl;
+
+    for (pair<gbwt::vector_type, gbwt::vector_type> change : _gbwt_changelog)
+    {
+        // RebuildJob job;
+        // cerr << "change.first.front() " << change.first.front() << endl;
+        // cerr << "change.first.front() in node_id form. " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(change.first.front())) << endl;
+        // cerr << "The node id from gbwt::Node::id: " << gbwt::Node::id(change.first.front()) << endl;
+        // cerr << "does ndoe_to_job have the id when in change.first.front() in node_id form? " << node_to_job.at(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(change.first.front()))) << endl;
+        // cerr << "node_to_job.contains(change.first.front())" << node_to_job.contains(change.first.front()) << endl;
+        RebuildJob& cur_job = jobs[node_to_job.at(gbwt::Node::id(change.first.front()))];
+        cur_job.mappings.push_back(change); //todo: make sure that I'm still correct in placing the gbwt::node in here, not the node id. I'm pretty sure I'm right.
+        cur_job.total_size++;
+        // cerr << "uh oh" << endl;
+    }
+    // cerr << "jobs[0].size() " << jobs[0].mappings.size() << endl;
+    return jobs;
+}
+
+RebuildParameters SnarlNormalizer::set_parameters()
+{
+    RebuildParameters parameters;
+    parameters.num_jobs = _threads; //todo: add option for this to constructor.
+    parameters.show_progress = _debug_print;
+    return parameters;
+    //todo: implement Jouni's advice for the batch_size and sample_interval. Advice:
+    /*
+    * From Jouni:
+    * The defaults should be fine in most cases.
+    * If the threads are particularly long and memory usage is not a problem, you may want to increase the batch size to ~20x the length of the longest threads.
+    */
+    // parameters.batch_size = ???;
+    // parameters.sample_interval = ???;
+    // /// Maximum number of parallel construction jobs.
+    // size_t num_jobs = 1;
+
+    // /// Print progress information to stderr.
+    // bool show_progress = false;
+
+    // /// Size of the GBWT construction buffer in nodes.
+    // gbwt::size_type batch_size = gbwt::DynamicGBWT::INSERT_BATCH_SIZE;
+
+    // /// Sample interval for locate queries.
+    // gbwt::size_type sample_interval = gbwt::DynamicGBWT::SAMPLE_INTERVAL;
+}
+
+
+////////////////////////////////////////////////////////////
+/// Data preprocessing, as encapsulated in get_normalize_regions():
+////////////////////////////////////////////////////////////
 
 //snarls_adjacent used to identify if two snarls overlap at one of their boundary nodes.
 bool SnarlNormalizer::snarls_adjacent(const Snarl& snarl_1, const Snarl& snarl_2) 
@@ -651,6 +755,12 @@ vector<pair<id_t, id_t>> SnarlNormalizer::get_normalize_regions(const vector<con
     return convert_snarl_clusters_to_regions(snarl_clusters);
 }
 
+
+////////////////////////////////////////////////////////////
+/// Normalization of a single snarl:
+////////////////////////////////////////////////////////////
+
+
 /**
  * Normalize a single snarl defined by a source and sink. Only extracts and realigns 
  * sequences found in the gbwt. 
@@ -769,6 +879,11 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
             gbwt::vector_type hap_ids;
             for (handle_t &handle : hap_handles) 
             {
+                if (_gbwt_graph.get_id(handle) == 7405162)
+                {
+                    cerr << "id of node: " << _gbwt_graph.get_id(handle) << endl;
+                    cerr << "sequence of node: " << _gbwt_graph.get_sequence(handle) << endl;
+                }
                 // cerr << "id of node: " << _gbwt_graph.get_id(handle) << endl;
                 // cerr << "sequence of node: " << _gbwt_graph.get_sequence(handle) << endl;
                 hap_ids.emplace_back(_gbwt_graph.handle_to_node(handle));

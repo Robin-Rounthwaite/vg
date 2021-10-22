@@ -16,6 +16,7 @@ class SnarlNormalizer {
                     const int& max_handle_size, 
                     const int& batch_size,
                     const int& max_snarl_spacing,
+                    const int& threads,
                     const int &max_alignment_size = INT_MAX, //TODO: add a _max_handle_length default length
                     const string &path_finder = "GBWT", /*alternative is "exhaustive"*/
                     const bool &debug_print = false);
@@ -46,8 +47,8 @@ class SnarlNormalizer {
     const int &_batch_size;
     const int &_max_snarl_spacing;
     const string &_path_finder;
-    bool _debug_print; // for printing info that isn't necessarily something gone wrong.
-
+    const bool &_debug_print; // for printing info that isn't necessarily something gone wrong.
+    const int &_threads;
     //////////////////////////////////////////////////////////////////////////////////////
     // finding information on original graph:
     //////////////////////////////////////////////////////////////////////////////////////
@@ -99,6 +100,16 @@ class SnarlNormalizer {
     vector<handle_t> extend_possible_paths(vector<pair<vector<handle_t>, int>> &possible_path_starts, const string &path_str, const handle_t &leftmost_handle, const handle_t &rightmost_handle, const pair<bool, bool> &path_spans_left_right, const pair<id_t, id_t> &main_graph_source_and_sink);
 
     pair<step_handle_t, step_handle_t> move_path_to_new_snarl(const pair<step_handle_t, step_handle_t> & old_path, const id_t &source, const id_t &sink, const pair<bool, bool> &path_spans_left_right, const bool &path_directed_left_to_right, const pair<id_t, id_t> &main_graph_source_and_sink);
+
+    // updating the gbwt:
+    gbwt::GBWT apply_gbwt_changelog();
+
+    std::unordered_map<nid_t, size_t> get_node_to_job(const vector<unordered_set<nid_t>>& weakly_connected_components);
+
+    std::vector<RebuildJob> divide_changelog_into_jobs(const std::unordered_map<nid_t, size_t>& node_to_job, const vector<unordered_set<nid_t>>& weakly_connected_components);
+
+    RebuildParameters set_parameters();
+    
 
     //////////////////////////////////////////////////////////////////////////////////////
     // format-type switching:
