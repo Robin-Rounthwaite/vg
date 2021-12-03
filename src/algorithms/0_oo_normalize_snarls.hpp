@@ -19,6 +19,7 @@ class SnarlNormalizer {
                     const int& threads,
                     const int &max_alignment_size = INT_MAX, //TODO: add a _max_handle_length default length
                     const string &path_finder = "GBWT", /*alternative is "exhaustive"*/
+                    const bool &disable_gbwt_update = false,
                     const bool &debug_print = false);
 
 
@@ -47,6 +48,7 @@ class SnarlNormalizer {
     const int &_batch_size;
     const int &_max_snarl_spacing;
     const string &_path_finder;
+    const bool &_disable_gbwt_update;
     const bool &_debug_print; // for printing info that isn't necessarily something gone wrong.
     const int &_threads;
     //////////////////////////////////////////////////////////////////////////////////////

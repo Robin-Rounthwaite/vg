@@ -55,6 +55,12 @@ SnarlSequenceFinder::SnarlSequenceFinder(const PathHandleGraph & graph,
 */
 tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<handle_t>>
 SnarlSequenceFinder::find_gbwt_haps() {
+    // cerr << "checking that the nodes of interest exist: " << endl;
+    // for (int node : {803859, 803860, 803852, 803851, 803850})
+    // {
+    //     cerr << "node_id, has_node, node min, node max: " << node << " " << _gbwt_graph.has_node(gbwt::Node::encode(node, false)) << " " << _gbwt_graph.min_node_id() << " " << _gbwt_graph.max_node_id() << endl;
+    // }
+    // cerr << "803856 -> 803852 edge exist? " << _gbwt_graph.has_edge(_gbwt_graph.get_handle(803856), _gbwt_graph.get_handle(803852)) << endl;
     // If snarl has been fed to us backwards, run the algorithm with righmost_id as source
     // and vice-versa. Otherwise, keep source as leftmost_id.
     id_t leftmost_id = _source_id;

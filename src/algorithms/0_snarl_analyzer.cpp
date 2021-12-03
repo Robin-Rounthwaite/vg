@@ -4,14 +4,78 @@
 namespace vg {
 namespace algorithms{
 
-void print_handles_in_snarl(const HandleGraph& graph, const id_t& source, const id_t& sink)
+void print_handles_in_snarl(const HandleGraph& graph, const id_t& source, const id_t& sink, const int& max_search_dist, int autostop/*=20*/)
 {
+    // vector<int> mapping_nodes { 803806, 803807, 803809, 803810, 803812, 803813, 803815, 803816, 803817, 803818, 803821, 803822, 803823, 803824, 803825, 803826, 803827, 803828, 803829, 803830, 803831, 803832, 803833, 803834 };
+    // for (id_t node : mapping_nodes)
+    // {
+    //     cerr << "printing info for node " << node << ":" << endl;
+    //     cerr << "node next:" << endl;
+    //     graph.follow_edges(graph.get_handle(node), false, [&](const handle_t &next) {
+    //         cerr << "     " << graph.get_id(next) << " ";
+    //     });
+    //     cerr << endl;
+    //     cerr << "node prev:" << endl;
+    //     graph.follow_edges(graph.get_handle(node), true, [&](const handle_t &next) {
+    //         cerr << "     " << graph.get_id(next) << " ";
+    //     });
+    //     cerr << endl;
+    //     cerr << endl;
+    // }
+    
+    // cerr << "source size: " << graph.get_sequence(graph.get_handle(source)).size() << endl;
+    // cerr << "source next:" << endl;
+    // graph.follow_edges(graph.get_handle(source), false, [&](const handle_t &next) {
+    //     cerr << "     " << graph.get_id(next) << " ";
+    // });
+    // cerr << endl;
+    // cerr << "source prev:" << endl;
+    // graph.follow_edges(graph.get_handle(source), true, [&](const handle_t &next) {
+    //     cerr << "     " << graph.get_id(next) << " ";
+    // });
+    // cerr << endl;
+    // cerr << "sink next:" << endl;
+    // graph.follow_edges(graph.get_handle(sink), false, [&](const handle_t &next) {
+    //     cerr << "     " << graph.get_id(next) << " ";
+    // });
+    // cerr << endl;
+    // cerr << "sink prev:" << endl;
+    // graph.follow_edges(graph.get_handle(sink), true, [&](const handle_t &next) {
+    //     cerr << "     " << graph.get_id(next) << " ";
+    // });
+    // cerr << endl;
+    
+    if (!graph.has_node(source))
+    {
+        cerr << "graph does not contain node " << source << ". exiting." << endl;
+        exit(1);
+    }
+    else if (!graph.has_node(sink))
+    {
+        cerr << "graph does not contain node " << sink << ". exiting." << endl;
+        exit(1);
+    }
     //Note: extract_subgraph here assumes that the source is leftmost node of the region.
     //todo: somehow avoid that assumption? Can I look up the snarl in snarl_roots, for example?
-    SubHandleGraph snarl = extract_subgraph(graph, source, sink, false);
+    cerr << "searching with leftmost handle as " << source << " and rightmost handle as " << sink << endl;
+    // int max_search_dist = 500*32; // 500 standard handles.
+    SubHandleGraph snarl = extract_subgraph(graph, source, sink, false, max_search_dist, autostop);
+    if (snarl.get_node_count() == 0){
+        cerr << "failed to extract sequence; exceeded max size. Trying opposite orientation." << endl;
+        snarl = extract_subgraph(graph, source, sink, true, max_search_dist, autostop);
+        if (snarl.get_node_count() == 0)
+        {
+            cerr << "failed to extract sequence; exceeded max size. Neither orientation had the far node within " << max_search_dist << " bases. However, both nodes exist in the graph." << endl;
+            exit(1);
+        }
+    } 
+
+    
     // cout << "node ids of snarl with source " << source << " and sink " << sink << endl; 
+    int cur_search_dist = 0;
     snarl.for_each_handle([&](const handle_t handle) 
     {
+        cur_search_dist += graph.get_sequence(handle).size();
         cout << graph.get_id(handle) << " ";
     });
 }
@@ -25,7 +89,7 @@ SnarlAnalyzer::SnarlAnalyzer(const HandleGraph& graph, ifstream &snarl_stream, b
 
     vector<const Snarl *> snarl_roots = snarl_manager->top_level_snarls();
     for (auto roots : snarl_roots) {
-        SubHandleGraph snarl = extract_subgraph(graph, roots->start().node_id(), roots->end().node_id(), roots->start().backward());
+        SubHandleGraph snarl = extract_subgraph(graph, roots->start().node_id(), roots->end().node_id(), roots->start().backward(), INT_MAX, -1); //note: autostop disabled becauses rightmost handle is guaranteed to be a sink.
 
         int snarl_size = 0;
         if (skip_source_sink) // skip the source and sink to avoid double-counting of seq.
@@ -85,13 +149,16 @@ void SnarlAnalyzer::output_snarl_sizes(string& file_name)
 //      _graph: a pathhandlegraph containing the snarl with embedded paths.
 //      source_id: the source of the snarl of interest.
 //      sink_id: the sink of the snarl of interest.
+//      autostop: stop extraction of subgraph after finding the rightmost handle in the graph, and then adding up to autostop handles to the graph. (if the rightmost handle is not a sink for the graph). Set to -1 to disable.
 // Returns:
 //      a SubHandleGraph containing only the handles in _graph that are between start_id
 //      and sink_id.
 SubHandleGraph extract_subgraph(const HandleGraph &graph,
                                                  id_t source_id,
                                                  id_t sink_id,
-                                                 const bool backwards) 
+                                                 const bool backwards,
+                                                 int max_search_dist,
+                                                 int autostop) 
 {
     // cerr << "extract_subgraph has source and sink: " << source_id << " " << sink_id << endl; 
     // because algorithm moves left to right, determine leftmost and rightmost nodes.
@@ -113,6 +180,8 @@ SubHandleGraph extract_subgraph(const HandleGraph &graph,
     // make empty subgraph
     SubHandleGraph subgraph = SubHandleGraph(&graph);
 
+    int cur_search_dist = 0;
+
     unordered_set<id_t> visited;  // to avoid counting the same node twice.
     unordered_set<id_t> to_visit; // nodes found that belong in the subgraph.
 
@@ -120,6 +189,7 @@ SubHandleGraph extract_subgraph(const HandleGraph &graph,
     handle_t leftmost_handle = graph.get_handle(leftmost_id);
     subgraph.add_handle(leftmost_handle);
     visited.insert(graph.get_id(leftmost_handle));
+    cur_search_dist += graph.get_sequence(leftmost_handle).size();
 
     // look only to the right of leftmost_handle
     graph.follow_edges(leftmost_handle, false, [&](const handle_t &handle) {
@@ -129,11 +199,24 @@ SubHandleGraph extract_subgraph(const HandleGraph &graph,
         }
     });
 
+    int autostop_count = -1;
     /// explore the rest of the snarl:
-    while (to_visit.size() != 0) {
+    while (to_visit.size() != 0 && autostop_count!=autostop) {
         // remove cur_handle from to_visit
         unordered_set<id_t>::iterator cur_index = to_visit.begin();
         handle_t cur_handle = graph.get_handle(*cur_index);
+        if (graph.get_id(cur_handle) == rightmost_id && autostop_count == -1 && autostop != -1) // when autostop == -1, it's disabled.
+        {
+            autostop_count = 1;
+        }
+        if (autostop_count != -1 && autostop != -1)
+        {
+            if (autostop_count == autostop)
+            {
+                break; // we have found the rightmost node, and afterwards extended the graph by autostop handles. End graph extension.
+            }
+            autostop_count++;
+        }
 
         to_visit.erase(cur_index);
 
@@ -141,8 +224,15 @@ SubHandleGraph extract_subgraph(const HandleGraph &graph,
         visited.insert(graph.get_id(cur_handle));
 
         subgraph.add_handle(cur_handle);
+        if (cur_search_dist >= max_search_dist)
+        {
+            cerr << "exceeded max_search_dist. Returning empty SubHandleGraph" << endl;
+            return SubHandleGraph(&graph);
+        }
+        cur_search_dist += graph.get_sequence(cur_handle).size();
 
-        if (graph.get_id(cur_handle) != rightmost_id) { // don't iterate past rightmost node!
+
+        if (graph.get_id(cur_handle) != rightmost_id) { // don't iterate past rightmost node! (note: this code doesn't work if there are multiple paths past the rightmost node region. Hence the autostop feature.)
             // look for all nodes connected to cur_handle that need to be added
             // looking to the left,
             graph.follow_edges(cur_handle, true, [&](const handle_t &handle) {

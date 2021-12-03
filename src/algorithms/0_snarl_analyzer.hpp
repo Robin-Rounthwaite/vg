@@ -40,8 +40,10 @@ class SnarlAnalyzer {
   SubHandleGraph extract_subgraph(const HandleGraph &graph,
                                                 id_t source_id,
                                                 id_t sink_id,
-                                                const bool backwards);
+                                                const bool backwards,
+                                                int max_search_dist, 
+                                                int autostop);
 
-void print_handles_in_snarl(const HandleGraph& graph, const id_t& source, const id_t& sink);
+void print_handles_in_snarl(const HandleGraph& graph, const id_t& source, const id_t& sink, const int& max_search_dist, int autostop=20);
 
 }}

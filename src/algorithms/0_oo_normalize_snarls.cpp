@@ -56,10 +56,11 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const int &threads,
                                  const int &max_alignment_size, /*= MAX_INT*/
                                  const string &path_finder, /*= "GBWT"*/
+                                 const bool &disable_gbwt_update, /*= false*/
                                  const bool &debug_print /*= false*/)
     : _graph(graph), _gbwt(gbwt), _max_alignment_size(max_alignment_size),
       _max_handle_size(max_handle_size), _batch_size(batch_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder), _gbwt_graph(gbwt_graph),
-      _debug_print(debug_print){}
+      _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
 
 
 /**
@@ -82,7 +83,23 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
     // vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(small_test);
 
     vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
+    // vector<pair<id_t, id_t>> debug_normalize_regions;
     
+    // int target_node = 803849;
+    // cerr << "normalize regions containing: " << target_node << endl;
+    // for (int i = 0 ; i != normalize_regions.size() ; i++)
+    // {
+    //     if (normalize_regions[i].first <= target_node && target_node <= normalize_regions[i].second)
+    //     {
+    //         debug_normalize_regions.push_back(normalize_regions[i]);
+    //         cerr << "iter " << i << ": " << normalize_regions[i].first << " " << normalize_regions[i].second << endl;
+    //     }
+    // }
+    // normalize_regions = debug_normalize_regions;
+    // cerr << "size of normalize_regions: " << normalize_regions.size() << endl;
+    // cerr << "debug exit" << endl;
+    // exit(0);
+
     int num_snarls_normalized = 0;
     int num_snarls_skipped = 0;
     
@@ -356,9 +373,18 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
 
     
     
-    gbwt::GBWT output_gbwt = apply_gbwt_changelog();
-    // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
-    cerr << "finished generating gbwt." << endl;
+    if (!_disable_gbwt_update)
+    {
+         gbwt::GBWT output_gbwt = apply_gbwt_changelog();
+        // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
+        cerr << "finished generating gbwt." << endl;
+        return output_gbwt;
+    }
+    else
+    {
+        gbwt::GBWT empty_gbwt;
+        return empty_gbwt;
+    }
     
     // //todo: debug-code for checking that I can build the gbwt_graph:
     // cerr << "making new gbwt graph." << endl;
@@ -383,7 +409,6 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
     // vg::io::VPKG::save(*dynamic_cast<bdsg::HashGraph *>(outGraph.get()), cout);
     // outGraph.serialize_to_ostream(cout);
 
-    return output_gbwt;
 
 
 }
@@ -824,10 +849,10 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
     int num_handles_in_snarl = 0;
     snarl.for_each_handle([&](const handle_t handle){
         num_handles_in_snarl++;
-        if (num_handles_in_snarl >= 3)
-        {
-            return;
-        }
+        // if (num_handles_in_snarl >= 3)
+        // {
+        //     return;
+        // }
     });
     if (num_handles_in_snarl <= _batch_size+1)
     {
@@ -857,6 +882,13 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
     if (_path_finder == "GBWT") {
         tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<handle_t>>
             gbwt_haplotypes = sequence_finder.find_gbwt_haps();
+
+        // cerr << "all handles touched by find_gbwt_haps:" << endl;
+        // for (handle_t handle : get<2>(gbwt_haplotypes))
+        // {
+        //     cerr << _graph.get_id(handle) << endl;
+        // }
+        // cerr << endl;
 
         // cerr << "various sizes: " << get<0>(gbwt_haplotypes).size() << " " << get<1>(gbwt_haplotypes).size() << " " << get<2>(gbwt_haplotypes).size() << endl;
 
@@ -1123,7 +1155,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
                 << "\tsize before: " << error_record[4] << " size after: " << error_record[5]
                 << endl;
         }
-    } else if (error_record[5] <= 0) {
+    } else if (!error_record[0] && error_record[5] <= 0) {
         cerr << "normalized snarl size is <= zero: " << error_record[5] << endl;
         cerr << "snarl number: " << snarl_num << endl;
     }
@@ -1671,6 +1703,7 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
         Alignment alignment;
         alignment.set_sequence(path.second);
         aligner.align_global_banded(alignment, new_snarl,0, false);
+        // cerr << "gbwt path being sent to new graph: " << endl;
         // cerr << "ALIGNMENT PATH FOR " << path << ":" << endl;
         gbwt::vector_type alignment_full_path;
         for (auto mapping : alignment.path().mapping())
@@ -1678,7 +1711,7 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
             // gbwt::Node::encode(id, is_reverse)
             // mapping.position().
             alignment_full_path.emplace_back(gbwt::Node::encode(mapping.position().node_id(), mapping.position().is_reverse()));
-            // cerr << "mapping.position().node_id() " << mapping.position().node_id() << endl;
+            // cerr << "mapping.position().node_id() " << mapping.position().node_id() << _graph.get_sequence(_graph.get_handle( mapping.position().node_id() )) << endl;
         }
         _gbwt_changelog.emplace_back(path.first, alignment_full_path);
         // cerr << pb2json(alignment.path()) << endl << alignment.query_position() << endl << alignment.path().mapping().begin() << endl << endl;
