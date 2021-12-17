@@ -280,9 +280,9 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
          << full_error_record[1] << "),\n"
         //  << " there were handles not connected by the gbwt info ("
         //  << full_error_record[2] << " snarls),\n" 
-         << "the snarl was cyclic (" << full_error_record[3] << " snarls),\n"
-         << "or the snarl was trivial - composed of only one or two nodes ("
-         << full_error_record[6] << " snarls)."
+         << "the snarl was cyclic (" << full_error_record[3] << " snarls)."
+        //  << "or the snarl was trivial - composed of only one or two nodes (" //removed because trivial snarls are now removed in the clustering stage, which are not tracked..
+        //  << full_error_record[6] << " snarls)."
          << endl;
     cerr << "amount of sequence in normalized snarls before normalization: "
          << snarl_sequence_change.first << endl;
@@ -854,18 +854,18 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
         //     return;
         // }
     });
-    if (num_handles_in_snarl <= _batch_size+1)
-    {
-        // cerr << "trivial, so skipping." << endl;
-        // if (_debug_print)
-        // {
-        //     cerr << "snarl with source " << source_id << " and sink " << sink_id << " has"
-        //         << " only " << num_handles_in_snarl << " nodes. Skipping normalization of"
-        //         << " trivial snarl." << endl;
-        // }
-        error_record[6] += 1;
-        return error_record;
-    }
+    // if (num_handles_in_snarl <= _batch_size+1) //note: this calculation of trivial snarls is incorrect. This is because the batch size is not a correct indicator of trivial-snarl-batch size. Sometimes, a snarl cluster is smaller than _batch_size, because it was cut off early (because there was too large a gap between snarls, for example). All undesired trivial snarls should have been removed in the clustering stage.
+    // {
+    //     // cerr << "trivial, so skipping." << endl;
+    //     // if (_debug_print)
+    //     // {
+    //     //     cerr << "snarl with source " << source_id << " and sink " << sink_id << " has"
+    //     //         << " only " << num_handles_in_snarl << " nodes. Skipping normalization of"
+    //     //         << " trivial snarl." << endl;
+    //     // }
+    //     error_record[6] += 1;
+    //     return error_record;
+    // }
 
     // cerr << "num_handles_in_snarl: " << num_handles_in_snarl << endl;
 
@@ -985,7 +985,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
     // TODO:    of the snarl. Get rid of this once alignment issue is addressed!
     // TODO: also, limits the number of haplotypes to be aligned, since snarl starting at
     // TODO:    2049699 with 258 haplotypes is taking many minutes.
-    if (get<1>(haplotypes).empty() && get<0>(haplotypes).size() < _max_alignment_size)
+    if (get<1>(haplotypes).empty() && get<0>(haplotypes).size() <= _max_alignment_size)
         // the following bool check was to ensure that all the handles in the handlegraph 
         // are touched by the gbwt. Turns out, though, that this isn't necessary. If we 
         // assume that all seq info is in gbwt, the gbwt is all we need to worry about.:
