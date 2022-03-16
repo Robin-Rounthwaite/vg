@@ -25,6 +25,11 @@
 
 #include "multipath_mapper.hpp"
 
+#define USE_CALLGRIND
+#ifdef USE_CALLGRIND
+#include <valgrind/callgrind.h>
+#endif
+
 /*
 TODO: allow for snarls that have haplotypes that begin or end in the middle of the snarl
 
@@ -57,8 +62,8 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const int &max_alignment_size, /*= MAX_INT*/
                                  const string &path_finder, /*= "GBWT"*/
                                  const bool &disable_gbwt_update, /*= false*/
-                                 const bool &debug_print /*= false*/)
-    : _graph(graph), _gbwt(gbwt), _max_alignment_size(max_alignment_size),
+                                const bool &debug_print /*= false*/)
+: _graph(graph), _gbwt(gbwt), _max_alignment_size(max_alignment_size),
       _max_handle_size(max_handle_size), _batch_size(batch_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder), _gbwt_graph(gbwt_graph),
       _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
 
@@ -372,7 +377,10 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
 
 
     
-    
+    #ifdef USE_CALLGRIND
+        // We want to profile the alignment, not the loading.
+        CALLGRIND_START_INSTRUMENTATION;
+    #endif
     if (!_disable_gbwt_update)
     {
          gbwt::GBWT output_gbwt = apply_gbwt_changelog();
