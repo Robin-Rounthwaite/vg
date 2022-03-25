@@ -25,10 +25,10 @@
 
 #include "multipath_mapper.hpp"
 
-#define USE_CALLGRIND
-#ifdef USE_CALLGRIND
-#include <valgrind/callgrind.h>
-#endif
+// #define USE_CALLGRIND
+// #ifdef USE_CALLGRIND
+// #include <valgrind/callgrind.h>
+// #endif
 
 /*
 TODO: allow for snarls that have haplotypes that begin or end in the middle of the snarl
@@ -377,10 +377,10 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
 
 
     
-    #ifdef USE_CALLGRIND
-        // We want to profile the alignment, not the loading.
-        CALLGRIND_START_INSTRUMENTATION;
-    #endif
+    // #ifdef USE_CALLGRIND
+    //     // We want to profile the alignment, not the loading.
+    //     CALLGRIND_START_INSTRUMENTATION;
+    // #endif
     if (!_disable_gbwt_update)
     {
          gbwt::GBWT output_gbwt = apply_gbwt_changelog();
