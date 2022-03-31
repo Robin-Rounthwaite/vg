@@ -72,7 +72,7 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
  * Iterates over all top-level snarls in _graph, and normalizes them.
  * @param snarl_stream file stream from .snarl.pb output of vg snarls
 */
-gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_roots) {
+tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_roots) {
     //Extend each of the normalize_regions to encompass multiple snarls from snarl_roots, if batch_size > 1.
     //normalize_regions is a pair indicating: leftmost_id, rightmost_id. Note this is equivalent to a snarl of source_id=leftmost_id, sink_id=rightmost_id, backward=false.
     // select a subset of snarls for debugging purposes.
@@ -296,6 +296,8 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
 
     cerr << "generating gbwt for normalized graph..." << endl;
 
+    tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = make_tuple(_gbwt_graph, _gbwt_changelog, _gbwt);
+    return gbwt_update_items;
     // cerr << "_gbwt_changelog size: " << _gbwt_changelog.size() << endl;
 
     // for (auto& entry : _gbwt_changelog)
@@ -381,18 +383,18 @@ gbwt::GBWT SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_
     //     // We want to profile the alignment, not the loading.
     //     CALLGRIND_START_INSTRUMENTATION;
     // #endif
-    if (!_disable_gbwt_update)
-    {
-         gbwt::GBWT output_gbwt = apply_gbwt_changelog();
-        // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
-        cerr << "finished generating gbwt." << endl;
-        return output_gbwt;
-    }
-    else
-    {
-        gbwt::GBWT empty_gbwt;
-        return empty_gbwt;
-    }
+    // if (!_disable_gbwt_update)
+    // {
+    //      gbwt::GBWT output_gbwt = apply_gbwt_changelog();
+    //     // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
+    //     cerr << "finished generating gbwt." << endl;
+    //     return output_gbwt;
+    // }
+    // else
+    // {
+    //     gbwt::GBWT empty_gbwt;
+    //     return empty_gbwt;
+    // }
     
     // //todo: debug-code for checking that I can build the gbwt_graph:
     // cerr << "making new gbwt graph." << endl;

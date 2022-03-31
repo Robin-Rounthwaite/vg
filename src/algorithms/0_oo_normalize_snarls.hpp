@@ -23,7 +23,7 @@ class SnarlNormalizer {
                     const bool &debug_print = false);
 
 
-    virtual gbwt::GBWT normalize_snarls(const vector<const Snarl *>& snarl_roots);
+    virtual tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> normalize_snarls(const vector<const Snarl *>& snarl_roots);
 
     virtual vector<int> normalize_snarl(const id_t& source_id, const id_t& sink_id, const bool& backwards, const int& snarl_num);
 

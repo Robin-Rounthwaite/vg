@@ -20,6 +20,7 @@
 
 #include "../algorithms/0_oo_normalize_snarls.hpp"
 #include "../algorithms/0_snarl_analyzer.hpp"
+#include "../algorithms/0_update_gbwt_wrapper.hpp"
 
 #include "../snarls.hpp"
 
@@ -29,7 +30,10 @@ using namespace std;
 using namespace vg;
 using namespace vg::subcommand;
 
-pair<shared_ptr<MutablePathDeletableHandleGraph>, gbwt::GBWT> run_norm(vector<const Snarl *> snarl_roots, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph_file, int max_handle_size, int max_alignment_size, int batch_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print){
+//todo: remove disable_gbwt_update option.
+gbwt::GBWT run_norm(vector<const Snarl *> snarl_roots, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph_file, int max_handle_size, int max_alignment_size, int batch_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print)
+// tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> run_norm(vector<const Snarl *> snarl_roots, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph_file, int max_handle_size, int max_alignment_size, int batch_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print)
+{
   // getting graph of any type, except non-mutable graphs (e.g., xg)
   shared_ptr<MutablePathDeletableHandleGraph> graph;
   get_input_file(optind, argc, argv, [&](istream &in) {
@@ -72,12 +76,50 @@ pair<shared_ptr<MutablePathDeletableHandleGraph>, gbwt::GBWT> run_norm(vector<co
     gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_file);
     gbwt_graph->set_gbwt(*gbwt);
   }
+        //todo: integrate this into norm. And make the handlegraph into a non-shared pointer.
+        //todo: return gbwt_update ingredients, then call update outside this function.
+  // Save the modified graph
+  vg::io::save_handle_graph(graph.get(), std::cout);
+
 
   algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
     *graph, *gbwt, *gbwt_graph, max_handle_size, batch_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", disable_gbwt_update, debug_print);
 
-  gbwt::GBWT normalized_gbwt = normalizer.normalize_snarls(snarl_roots);
-  return make_pair(graph, normalized_gbwt);
+  tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = normalizer.normalize_snarls(snarl_roots);
+  
+  // free memory:
+  if (!graph.unique()) //todo: verify this is never true
+  {
+    cerr <<" --------------------------------------error: graph ptr is not unique. Fix code." << endl;
+  }
+  graph.reset();
+  snarl_roots.clear();
+  
+  if (!disable_gbwt_update)
+  {
+    gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
+    return normalized_gbwt;
+  }
+  else
+  {
+    gbwt::GBWT empty_gbwt;
+    return empty_gbwt;
+  }
+  // gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
+  
+  // return gbwt_update_items;
+
+  // if (disable_gbwt_update) 
+  // {
+  //   gbwt::GBWT empty_gbwt;
+  //   return make_pair(graph, empty_gbwt);
+  // }
+  // else
+  // {
+  //   gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
+  //   return make_pair(graph, normalized_gbwt);
+  // }
+  // gbwt::GBWT normalized_gbwt = normalizer.normalize_snarls(snarl_roots);
 }
 
 //binary search:
@@ -196,7 +238,7 @@ int main_normalize(int argc, char **argv) {
   string gbwt;
   string gbwt_graph;
   string snarls;
-  string output_gbwt = "normalized.gbwt";
+  string output_gbwt_name = "normalized.gbwt";
   string normalize_type = "all";
   int source = NULL; // todo: do something other than NULL to avoid the compiler
                      // warnings.
@@ -268,7 +310,7 @@ int main_normalize(int argc, char **argv) {
       break;
 
     case 'o':
-      output_gbwt = optarg;
+      output_gbwt_name = optarg;
       break;
 
     case 'n':
@@ -402,14 +444,9 @@ int main_normalize(int argc, char **argv) {
     // gbwt::GBWT normalized_gbwt;
     // pair<MutablePathDeletableHandleGraph, gbwt::GBWT> output = make_pair(*graph, normalized_gbwt);
     
-    //standard, normalize all snarls:
-    if (start_snarl_num == 0 && end_snarl_num == 0)
+    if (start_snarl_num != 0 || end_snarl_num != 0)
     {
-      output = run_norm(snarl_roots, optind, argc, argv, gbwt, gbwt_graph, max_handle_size, max_alignment_size, batch_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
-    }
-    //normalize select snarls:
-    else
-    {
+      //prepare to normalize select snarls:
       //check that start and end are valid:
       if (start_snarl_num >= end_snarl_num)
       {
@@ -422,13 +459,50 @@ int main_normalize(int argc, char **argv) {
       }
       
       vector<const Snarl *> chosen_snarls(snarl_roots.begin() + start_snarl_num, snarl_roots.begin() + end_snarl_num); 
-
+      snarl_roots = chosen_snarls; //todo: will this properly overwrite snarl_roots with a "deep" copy of chosen_snarls? 
       cerr << "of snarl selection that is " << chosen_snarls.size() << " long, first snarl selected has source: " << (*chosen_snarls.front()).start().node_id() << " and sink: " << (*chosen_snarls.front()).end().node_id() << endl; 
-      output = run_norm(chosen_snarls, optind, argc, argv, gbwt, gbwt_graph, max_handle_size, max_alignment_size, batch_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
     }
+    //run norm
+    gbwt::GBWT output_gbwt = run_norm(snarl_roots, optind, argc, argv, gbwt, gbwt_graph, max_handle_size, max_alignment_size, batch_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
+    //if updating gbwt required, update gbwt.
+    // if (!disable_gbwt_update)
+    // {
+    //   gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
+    //   save_gbwt(normalized_gbwt, output_gbwt, true);
+    // }
+
+
+    // //standard, normalize all snarls:
+    // if (start_snarl_num == 0 && end_snarl_num == 0)
+    // {
+    //   output = run_norm(snarl_roots, optind, argc, argv, gbwt, gbwt_graph, max_handle_size, max_alignment_size, batch_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
+    // }
+    // //normalize select snarls:
+    // else
+    // {
+    //   //check that start and end are valid:
+    //   if (start_snarl_num >= end_snarl_num)
+    //   {
+    //     cerr << "error:[vg normalize] start_snarl_num >= end_snarl_num."  << endl;
+    //     exit(1);
+    //   }
+    //   else if (end_snarl_num > snarl_roots.size())
+    //   {
+    //     cerr << "WARNING:[vg normalize] end_snarl_num greater than snarl_roots.size(). Will normalize starting at start_snarl_num and ending at last snarl in snarl_roots." << endl;
+    //   }
+      
+    //   vector<const Snarl *> chosen_snarls(snarl_roots.begin() + start_snarl_num, snarl_roots.begin() + end_snarl_num); 
+    //   snarl_roots = chosen_snarls;
+    //   cerr << "of snarl selection that is " << chosen_snarls.size() << " long, first snarl selected has source: " << (*chosen_snarls.front()).start().node_id() << " and sink: " << (*chosen_snarls.front()).end().node_id() << endl; 
+    //   output = run_norm(chosen_snarls, optind, argc, argv, gbwt, gbwt_graph, max_handle_size, max_alignment_size, batch_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
+
+    //   // Save the modified graph
+    //   vg::io::save_handle_graph(output.first.get(), std::cout);
+
+    // }
     if (!disable_gbwt_update)
     {
-      save_gbwt(output.second, output_gbwt, true);
+      save_gbwt(output_gbwt, output_gbwt_name, true);
     }
 
     // Record end time
@@ -436,8 +510,8 @@ int main_normalize(int argc, char **argv) {
     chrono::duration<double> elapsed = finish - start;
     cerr << "Elapsed time: " << elapsed.count() << " s" << endl;
 
-    // Save the modified graph
-    vg::io::save_handle_graph(output.first.get(), std::cout);
+    // // Save the modified graph
+    // vg::io::save_handle_graph(output.first.get(), std::cout);
   }
 
   // snarl_analyzer identifies the size of every top-level snarl, outputs in a
