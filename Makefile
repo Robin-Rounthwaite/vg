@@ -293,6 +293,7 @@ BBHASH_DIR=deps/BBHash
 MIO_DIR=deps/mio
 ATOMIC_QUEUE_DIR=deps/atomic_queue
 SEQAN_DIR=deps/seqan
+ABPOA_DIR=deps/abpoa
 
 # Dependencies that go into libvg's archive
 # These go in libvg but come from dependencies
@@ -711,6 +712,10 @@ $(INC_DIR)/seqan/align.h: $(SEQAN_DIR)/include/*
 # mkdir -p $(SEQAN_DIR)/release_clang37
 # cd $(SEQAN_DIR)/release_clang37
 # cmake ../../my_project -DCMAKE_CXX_COMPILER=clang++-3.7
+
+# abpoa
+$(INC_DIR)/abpoa.h: $(ABPOA_DIR)/include/*
+	+. ./source_me.sh && cp -r $(ABPOA_DIR)/include/ $(CWD)/$(INC_DIR)/
 
 # The xg repo has a cmake build system based all around external projects, and
 # we need it to use our installed versions of everything instead.
