@@ -122,6 +122,7 @@ gbwt::GBWT run_norm(vector<const Snarl *> snarl_roots, int optind, int argc, cha
   // gbwt::GBWT normalized_gbwt = normalizer.normalize_snarls(snarl_roots);
 }
 
+
 //binary search:
 void binary_search_norm(vector<const Snarl *> chosen_snarls, int snarl_start, int snarl_end, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph, int max_handle_size, int max_alignment_size, int batch_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print) // pass 0 and chosen_snarls.size() for first snarl_start/end. 
 {
