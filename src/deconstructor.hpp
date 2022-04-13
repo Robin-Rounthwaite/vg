@@ -41,12 +41,12 @@ public:
                      int ploidy,
                      bool include_nested,
                      int context_jaccard_window,
+                     bool untangle_traversals,
                      bool keep_conflicted,
                      bool strict_conflicts,
                      const unordered_map<string, pair<string, int>>* path_to_sample_phase = nullptr,
                      const unordered_map<string, int>* sample_ploidy = nullptr,
-                     gbwt::GBWT* gbwt = nullptr,
-                     const unordered_map<nid_t, pair<nid_t, size_t>>* translation = nullptr); 
+                     gbwt::GBWT* gbwt = nullptr);
     
 private:
 
@@ -55,12 +55,12 @@ private:
     bool deconstruct_site(const Snarl* site) const;
 
     // convert traversals to strings.  returns mapping of traversal (offset in travs) to allele
-    vector<int> get_alleles(vcflib::Variant& v, const vector<SnarlTraversal>& travs, int ref_path_idx,
+    vector<int> get_alleles(vcflib::Variant& v,
+                            const pair<vector<SnarlTraversal>,
+                                       vector<pair<step_handle_t, step_handle_t>>>& path_travs,
+                            int ref_path_idx,
                             const vector<bool>& use_trav,
                             char prev_char, bool use_start) const;
-
-    // add a traversal to the VCF info field in the format of a GFA W-line or GAF path
-    void add_allele_path_to_info(vcflib::Variant& v, int allele, const SnarlTraversal& trav, bool reversed, bool one_based) const;
     
     // write traversal path names as genotypes
     void get_genotypes(vcflib::Variant& v, const vector<string>& names, const vector<int>& trav_to_allele,
@@ -86,8 +86,25 @@ private:
     // underlying index. 
     tuple<bool, handle_t, size_t> get_gbwt_path_position(const SnarlTraversal& trav, const gbwt::size_type& thread) const;
 
-    // get a snarl name, using trnaslation if availabe
-    string snarl_name(const Snarl* snarl) const;
+    // gets a sorted node id context for a given path
+    vector<nid_t> get_context(
+        const pair<vector<SnarlTraversal>,
+                   vector<pair<step_handle_t, step_handle_t>>>& path_travs,
+        const int& trav_idx) const;
+
+    // the underlying context-getter
+    vector<nid_t> get_context(
+        step_handle_t start_step,
+        step_handle_t end_step) const;
+
+    // compares node contexts
+    double context_jaccard(const vector<nid_t>& target,
+                           const vector<nid_t>& query) const;
+
+    // specialization for enc_vectors
+    double context_jaccard(
+        const dac_vector<>& target,
+        const vector<nid_t>& query) const;
     
     // toggle between exhaustive and path restricted traversal finder
     bool path_restricted = false;
@@ -113,6 +130,10 @@ private:
     // which makes the lru cache fairly effective
     size_t lru_size = 10; 
     vector<LRUCache<gbwt::size_type, shared_ptr<unordered_map<handle_t, size_t>>>*> gbwt_pos_caches;
+    /// We need to keep track of what OMP parallelism level we made the cache
+    /// list for, so we can make sure to bail out if we end up trying to use
+    /// the wrong level's thread numbers.
+    size_t gbwt_pos_caches_level = std::numeric_limits<size_t>::max();
     // infer ploidys from gbwt when possible
     unordered_map<string, pair<int, int>> gbwt_sample_to_phase_range;
 
@@ -134,20 +155,33 @@ private:
     // target window size for determining the correct reference position for allele traversals with path jaccard
     int path_jaccard_window = 10000;
 
+    // should we add positional untangling of traversals in the AP field
+    bool untangle_allele_traversals = false;
+
     // should we be strict about flagging and removing conflicted phases?
     bool strict_conflict_checking = false;
-
-    // recurse on child snarls
-    bool include_nested = false;
 
     // show path info mapping paths to genotypes (very verbose)
     bool show_path_info = false;
 
     // should we keep conflicted genotypes or not
     bool keep_conflicted_genotypes = false;
+};
 
-    // optional node translation to apply to snarl names in variant IDs
-    const unordered_map<nid_t, pair<nid_t, size_t>>* translation;
+// helpel for measuring set intersectiond and union size
+template <typename T>
+class count_back_inserter {
+    size_t &count;
+public:
+    typedef void value_type;
+    typedef void difference_type;
+    typedef void pointer;
+    typedef void reference;
+    typedef std::output_iterator_tag iterator_category;
+    count_back_inserter(size_t &count) : count(count) {};
+    void operator=(const T &){ ++count; }
+    count_back_inserter &operator *(){ return *this; }
+    count_back_inserter &operator++(){ return *this; }
 };
 
 }

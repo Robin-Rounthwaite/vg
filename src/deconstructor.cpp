@@ -17,17 +17,21 @@ Deconstructor::~Deconstructor(){
 }
 
 /**
- * Takes in a vector of snarltraversals
- * returns their sequences as a vector<string>
- * returns a boolean hasRef
- * if a reference path is present, hasRef is set to true and the first
- * string in the vector is the reference allele
- * otherwise, hasRef is set to false and all strings are alt alleles.
+ * Takes in a vector of snarltraversals, an index of the ref path among them, a
+ * vector of flags for traversals to actually use, the character before all the
+ * traversals, and a flag for whether the start should be used (???).
+ *
+ * Returns a vector where entires are which allele number a traversal in travs
+ * ought to become in the VCF. If a traversal is flagged off, it gets a -1.
  */
-vector<int> Deconstructor::get_alleles(vcflib::Variant& v, const vector<SnarlTraversal>& travs, int ref_path_idx,
+vector<int> Deconstructor::get_alleles(vcflib::Variant& v,
+                                       const pair<vector<SnarlTraversal>,
+                                                  vector<pair<step_handle_t, step_handle_t>>>& path_travs,
+                                       int ref_path_idx,
                                        const vector<bool>& use_trav,
                                        char prev_char, bool use_start) const {
 
+    auto& travs = path_travs.first;
     assert(ref_path_idx >=0 && ref_path_idx < travs.size());
 
     // map strings to allele numbers (and their traversal)
@@ -49,7 +53,6 @@ vector<int> Deconstructor::get_alleles(vcflib::Variant& v, const vector<SnarlTra
         }
         return toUppercase(allele);
     };
-       
 
     // set the reference allele
     string ref_allele = trav_to_string(travs.at(ref_path_idx));
@@ -84,14 +87,38 @@ vector<int> Deconstructor::get_alleles(vcflib::Variant& v, const vector<SnarlTra
     assert(allele_idx.size() > 0);
     v.alt.resize(allele_idx.size() - 1);
 
-    // init the traversal info
-    v.info["AT"].resize(allele_idx.size());
+    // if we should flip the traversals
+    bool reversed = !use_start;
+    //if (reversed) {
+    //    cerr << "it's reversed!!!" << endl;
+    //}
 
+    // we're going to go through the allele traversals
+    // for each, we should find the set of supporting paths
+    // we will use them to untangle the reference positions
+    // using the same context mapping typically used for record positions
+    // AP field (allele positions)
+    // same pattern as AT except the steps are listed [>|<][id]_[start]_[end]+
+    // id is the node id and start/end give the 1-based, half-open reference coordinates of the node
+    // we establish these by making a reference context per node in the reference allele through the site
+    // for each step where the reference touches the node more than once
+    // (in cases where it's only once, this is trivial)
+    // then we compare each reference matching step inside
+    // (todo: this should be done only for top level bubbles)
+
+    vector<int> allele_idx_unfolded(allele_idx.size());
+    for (auto& ai_pair : allele_idx) {
+        int allele_no = ai_pair.second.first;
+        int allele_trav_no = ai_pair.second.second;
+        allele_idx_unfolded[allele_no] = allele_trav_no;
+    }
+
+    // record the alleles in the VCF record
     for (auto ai_pair : allele_idx) {
         string allele_string = ai_pair.first;
         int allele_no = ai_pair.second.first;
         int allele_trav_no = ai_pair.second.second;
-        if (!use_start) {
+        if (reversed) {
             reverse_complement_in_place(allele_string);
         }
         if (!substitution) {
@@ -103,9 +130,153 @@ vector<int> Deconstructor::get_alleles(vcflib::Variant& v, const vector<SnarlTra
         } else {
             v.ref = allele_string;
         }
+    }
 
-        // update the traversal info
-        add_allele_path_to_info(v, allele_no, travs[allele_trav_no], !use_start, !substitution); 
+    if (untangle_allele_traversals) {
+
+        // set up for reference position context mapping across allele traversals
+        path_handle_t ref_path = graph->get_path_handle_of_step(path_travs.second.at(ref_path_idx).first);
+        unordered_map<nid_t, vector<pair<uint64_t, dac_vector<>>>> ref_dup_nodes;
+        unordered_map<nid_t, nid_t> ref_simple_pos;
+        {
+            auto& trav = travs.at(ref_path_idx);
+            for (size_t i = 0; i < trav.visit_size(); ++i) {
+                size_t j = !reversed ? i : trav.visit_size() - 1 - i;
+                const Visit& visit = trav.visit(j);
+                nid_t node_id = visit.node_id();
+                if (ref_simple_pos.find(node_id) != ref_simple_pos.end()) continue;
+                if (ref_dup_nodes.find(node_id) != ref_dup_nodes.end()) continue;
+                handle_t h = graph->get_handle(node_id);
+                // count reference occurrences on node
+                step_handle_t ref_step;
+                uint64_t ref_step_count = 0;
+                graph->for_each_step_on_handle(
+                    h, [&](const step_handle_t& step) {
+                        auto p = graph->get_path_handle_of_step(step);
+                        if (p == ref_path) {
+                            ++ref_step_count;
+                            ref_step = step;
+                        }
+                    });
+                if (ref_step_count > 1) {
+                    //ref_dup_nodes[node_id] = make_pair(ref_context);
+                    ref_dup_nodes[node_id] = {};
+                    auto& contexts = ref_dup_nodes[node_id];
+                    //vector<pair<uint64_t, vector<nid_t>>> contexts;
+                    graph->for_each_step_on_handle(
+                        h, [&](const step_handle_t& step) {
+                            auto p = graph->get_path_handle_of_step(step);
+                            if (p == ref_path) {
+                                contexts.emplace_back();
+                                auto& c = contexts.back();
+                                c.first = graph->get_position_of_step(step);
+                                c.second = get_context(step, step);
+                            }
+                        });
+                    //
+                } else if (ref_step_count == 1) {
+                    auto pos = graph->get_position_of_step(ref_step) + 1;
+                    auto len = graph->get_length(graph->get_handle_of_step(ref_step));
+                    ref_simple_pos[node_id] = pos;
+                }
+            }
+        }
+
+        // set up the UT field for our reference-relative traversal position untangling
+        auto& ut_field = v.info["UT"];
+        ut_field.resize(allele_idx.size());
+
+#pragma omp parallel for schedule(dynamic,1)
+        for (size_t i = 0; i < allele_idx_unfolded.size(); i++) {
+            int allele_no = i;
+            int allele_trav_no = allele_idx_unfolded[i];
+            auto start_step = path_travs.second.at(allele_trav_no).first;
+            auto end_step = path_travs.second.at(allele_trav_no).second;
+            auto start_pos = graph->get_position_of_step(start_step);
+            auto end_pos = graph->get_position_of_step(end_step);
+            bool flip_path = start_pos > end_pos;
+            if (flip_path) {
+                std::swap(start_step, end_step);
+            }
+            path_handle_t path = graph->get_path_handle_of_step(start_step);
+            std::vector<step_handle_t> steps;
+            for (auto s = start_step; ;
+                 s = graph->get_next_step(s)) {
+                steps.push_back(s);
+                if (s == end_step) break;
+                if (!graph->has_next_step(s)) break;
+            }
+            if (steps.front() != start_step || steps.back() != end_step) {
+                //cerr << "warning!" << endl;
+                // something went wrong
+                ut_field[allele_no] = ".";
+                continue;
+            }
+            if (flip_path) {
+                std::reverse(steps.begin(), steps.end());
+            }
+            // update the traversal info
+            stringstream trav_pos_info;
+            //string& trav_pos_info = ut_field[allele_no];
+            for (auto& step : steps) {
+                handle_t h = graph->get_handle_of_step(step);
+                nid_t node_id = graph->get_id(h);
+                bool step_rev = graph->get_is_reverse(h) != reversed;
+                trav_pos_info << (reversed ? "<" : ">") << node_id << "_";
+                if (allele_no == 0) { // special case the reference allele
+                    auto pos = graph->get_position_of_step(step) + 1;
+                    auto len = graph->get_length(graph->get_handle_of_step(step));
+                    trav_pos_info << pos << "_" << pos+len;
+                } else { // for non-reference alleles
+                    auto f = ref_simple_pos.find(node_id);
+                    if (f != ref_simple_pos.end()) {
+                        // we have a single reference position at this node
+                        auto pstart = f->second + 1;
+                        auto pend = pstart + graph->get_length(h);
+                        trav_pos_info << pstart << "_" << pend;
+                    } else {
+                        auto d = ref_dup_nodes.find(node_id);
+                        if (d == ref_dup_nodes.end()) {
+                            // no reference position at this node
+                            trav_pos_info << "._.";
+                        } else {
+                            // multiple reference positions at this node
+                            // compare the reference contexts of each step to our
+                            // path context to determine reference position assignment
+                            // ... first we get our path's context
+                            auto path_context = get_context(step, step);
+                            auto& ref_contexts = d->second;
+                            //cerr << "path context size " << path_context.size() << endl;
+                            // check vs. the contexts
+                            double best_jaccard = -1;
+                            uint64_t best_pos = 0;
+                            for (auto& c : ref_contexts) {
+                                auto& ref_context = c.second;
+                                auto& ref_pos = c.first;
+                                double j = context_jaccard(ref_context, path_context);
+                                if (j > best_jaccard) {
+                                    best_jaccard = j;
+                                    best_pos = ref_pos;
+                                }
+                            }
+                            trav_pos_info << best_pos+1 << "_" << best_pos+1+graph->get_length(h);
+                        }
+                    }
+                }
+            }
+            // save the untangled traversal field
+            ut_field[allele_no] = trav_pos_info.str();
+        }
+    } else {
+        // init the traversal info
+        v.info["AT"].resize(allele_idx.size());
+        for (auto ai_pair : allele_idx) {
+            string allele_string = ai_pair.first;
+            int allele_no = ai_pair.second.first;
+            int allele_trav_no = ai_pair.second.second;
+            // update the traversal info
+            add_allele_path_to_info(v, allele_no, travs[allele_trav_no], reversed, !substitution);
+        }
     }
 
     // shift our variant back if it's an indel
@@ -117,50 +288,6 @@ vector<int> Deconstructor::get_alleles(vcflib::Variant& v, const vector<SnarlTra
     v.updateAlleleIndexes();
 
     return trav_to_allele;
-}
-
-void Deconstructor::add_allele_path_to_info(vcflib::Variant& v, int allele, const SnarlTraversal& trav,
-                                            bool reversed, bool one_based) const {
-    auto& trav_info = v.info["AT"];
-    assert(allele < trav_info.size());
-
-    vector<int> nodes;
-    nodes.reserve(trav.visit_size());
-    const Visit* prev_visit = nullptr;
-    unordered_map<nid_t, pair<nid_t, size_t>>::const_iterator prev_trans;
-    
-    for (size_t i = 0; i < trav.visit_size(); ++i) {
-        size_t j = !reversed ? i : trav.visit_size() - 1 - i;
-        const Visit& visit = trav.visit(j);
-        nid_t node_id = visit.node_id();
-        bool skip = false;
-        // todo: check one_based? (we kind of ignore that when writing the snarl name, so maybe not pertienent)
-        if (translation) {
-            auto i = translation->find(node_id);
-            if (i == translation->end()) {
-                throw runtime_error("Error [vg deconstruct]: Unable to find node " + std::to_string(node_id) + " in translation file");
-            }
-            if (prev_visit) {
-                nid_t prev_node_id = prev_visit->node_id();
-                if (prev_trans->second.first == i->second.first && node_id != prev_node_id) {
-                    // here is a case where we have two consecutive nodes that map back to
-                    // the same source node.
-                    // todo: sanity check! (could verify if translation node properly covered)
-                    skip = true;
-                }
-            }
-            node_id = i->second.first;
-            prev_trans = i;
-        }
-
-        if (!skip) {
-            bool vrev = visit.backward() != reversed;
-            trav_info[allele] += (vrev ? "<" : ">");
-            trav_info[allele] += std::to_string(node_id);
-        }
-        prev_visit = &visit;
-    }
-    
 }
 
 void Deconstructor::get_genotypes(vcflib::Variant& v, const vector<string>& names,
@@ -378,7 +505,90 @@ pair<vector<int>, bool> Deconstructor::choose_traversals(const string& sample_na
     bool conflict = phasing_conflict || allele_frequencies.size() - zero_count > sample_ploidy;
     return make_pair(most_frequent_travs, conflict);
 }
-    
+
+
+// todo refactor if we need to reuse elsewhere in vg
+// implemented inline for development
+// assumes sorted input
+double Deconstructor::context_jaccard(
+    const vector<nid_t>& target,
+    const vector<nid_t>& query) const {
+    size_t node_isec = 0;
+    std::set_intersection(target.begin(), target.end(),
+                          query.begin(), query.end(),
+                          count_back_inserter<nid_t>(node_isec));
+    size_t node_union = 0;
+    std::set_union(target.begin(), target.end(),
+                   query.begin(), query.end(),
+                   count_back_inserter<nid_t>(node_union));
+    return (double)node_isec / (double)node_union;
+}
+
+double Deconstructor::context_jaccard(
+    const dac_vector<>& target,
+    const vector<nid_t>& query) const {
+    size_t node_isec = 0;
+    std::set_intersection(target.begin(), target.end(),
+                          query.begin(), query.end(),
+                          count_back_inserter<nid_t>(node_isec));
+    size_t node_union = 0;
+    std::set_union(target.begin(), target.end(),
+                   query.begin(), query.end(),
+                   count_back_inserter<nid_t>(node_union));
+    return (double)node_isec / (double)node_union;
+}
+
+vector<nid_t> Deconstructor::get_context(
+    step_handle_t start_step,
+    step_handle_t end_step) const {
+    if (graph->get_position_of_step(start_step)
+        > graph->get_position_of_step(end_step)) {
+        std::swap(start_step, end_step);
+    }
+    // by definition, our start and end are shared among all traversals
+    // we establish a graph context sketch including the nodes traversed in the bubble
+    // and flanks upstream and downstream of path_jaccard_window bp
+    vector<nid_t> context;
+    step_handle_t curr = start_step;
+    const int check_distance = this->path_jaccard_window; // how far we look in each direction
+    int distance_checked = 0;
+    while (distance_checked < check_distance && graph->has_previous_step(curr)) {
+        curr = graph->get_previous_step(curr);
+        auto h = graph->get_handle_of_step(curr);
+        context.push_back(graph->get_id(h));
+        distance_checked += graph->get_length(h);
+    }
+    // add the nodes in the bubble
+    if (start_step != end_step) {
+        curr = start_step;
+        context.push_back(graph->get_id(graph->get_handle_of_step(curr)));
+        while (graph->has_next_step(curr) &&
+               curr != end_step) {
+            curr = graph->get_next_step(curr);
+            context.push_back(graph->get_id(graph->get_handle_of_step(curr)));
+        }
+    }
+    distance_checked = 0;
+    curr = end_step;
+    while (distance_checked < check_distance && graph->has_next_step(curr)) {
+        curr = graph->get_next_step(curr);
+        auto h = graph->get_handle_of_step(curr);
+        context.push_back(graph->get_id(h));
+        distance_checked += graph->get_length(h);
+    }
+    std::sort(context.begin(), context.end());
+    return context;
+}
+
+vector<nid_t> Deconstructor::get_context(
+    const pair<vector<SnarlTraversal>,
+               vector<pair<step_handle_t, step_handle_t>>>& path_travs,
+    const int& trav_idx) const {
+    step_handle_t start_step = path_travs.second[trav_idx].first;
+    step_handle_t end_step = path_travs.second[trav_idx].second;
+    return get_context(start_step, end_step);
+}
+
 bool Deconstructor::deconstruct_site(const Snarl* snarl) const {
 
     auto contents = snarl_manager->shallow_contents(snarl, *graph, false);
@@ -560,194 +770,127 @@ bool Deconstructor::deconstruct_site(const Snarl* snarl) const {
 #pragma omp critical (cerr)
         cerr << "Multiple ref traversals!" << endl;
 #endif
-        // todo refactor if we need to reuse elsewhere in vg
-        // implemented inline for development
-        // assumes sorted input
-        auto context_jaccard = [](const vector<nid_t>& target,
-                                  const vector<nid_t>& query) {
-            // XXX horribly inefficient
-            // these can be computed without storing the node ids
-            vector<nid_t> node_isec;
-            std::set_intersection(target.begin(), target.end(),
-                                  query.begin(), query.end(),
-                                  std::back_inserter(node_isec));
-            vector<nid_t> node_union;
-            std::set_union(target.begin(), target.end(),
-                           query.begin(), query.end(),
-                           std::back_inserter(node_union));
-            return (double)node_isec.size() / (double)node_union.size();
-        };
-
-        auto get_context = [&path_travs,this](const int& trav_idx) {
-            step_handle_t start_step = path_travs.second[trav_idx].first;
-            step_handle_t end_step = path_travs.second[trav_idx].second;
-            if (graph->get_position_of_step(start_step)
-                > graph->get_position_of_step(end_step)) {
-                std::swap(start_step, end_step);
+        {
+            vector<vector<nid_t>> ref_contexts(ref_travs.size());
+#pragma omp parallel for schedule(dynamic,1)
+            for (size_t i = 0; i < ref_travs.size(); ++i) {
+                auto& trav_id = ref_travs[i];
+                ref_contexts[i] = get_context(path_travs, trav_id);
             }
-            // by definition, our start and end are shared among all traversals
-            // we establish a graph context sketch including the nodes traversed in the bubble
-            // and flanks upstream and downstream of path_jaccard_window bp
-            vector<nid_t> context;
-            step_handle_t curr = start_step;
-            const int check_distance = this->path_jaccard_window; // how far we look in each direction
-            int distance_checked = 0;
-            while (distance_checked < check_distance && graph->has_previous_step(curr)) {
-                curr = graph->get_previous_step(curr);
-                auto h = graph->get_handle_of_step(curr);
-                context.push_back(graph->get_id(h));
-                distance_checked += graph->get_length(h);
+            // now for each traversal, we compute and equivalent context and match it to a ref context
+            // using a jaccard metric over node ids
+#pragma omp parallel for schedule(dynamic,1)
+            for (size_t i = 0; i < path_travs.first.size(); ++i) {
+                vector<nid_t> context = get_context(path_travs, i);
+                // map jaccard metric to the index of the ref_trav
+                vector<pair<double, int>> ref_mappings;
+                for (uint64_t j = 0; j < ref_travs.size(); ++j) {
+                    ref_mappings.push_back(make_pair(
+                                               context_jaccard(
+                                                   ref_contexts[j],
+                                                   context),
+                                               ref_travs[j]));
+                }
+                std::sort(ref_mappings.begin(), ref_mappings.end());
+                // the best is the last, which has the highest jaccard
+                path_trav_to_ref_trav[i] = ref_mappings.back().second;
             }
-            // add the nodes in the bubble
-            curr = start_step;
-            context.push_back(graph->get_id(graph->get_handle_of_step(curr)));
-            while (graph->has_next_step(curr) &&
-                   curr != end_step) {
-                curr = graph->get_next_step(curr);
-                context.push_back(graph->get_id(graph->get_handle_of_step(curr)));
-            }
-            distance_checked = 0;
-            curr = end_step;
-            while (distance_checked < check_distance && graph->has_next_step(curr)) {
-                curr = graph->get_next_step(curr);
-                auto h = graph->get_handle_of_step(curr);
-                context.push_back(graph->get_id(h));
-                distance_checked += graph->get_length(h);
-            }
-            std::sort(context.begin(), context.end());
-            return context;
-        };
-
-        vector<vector<nid_t>> ref_contexts(ref_travs.size());
-#pragma omp parallel for
-        for (size_t i = 0; i < ref_travs.size(); ++i) {
-            auto& trav_id = ref_travs[i];
-            ref_contexts[i] = get_context(trav_id);
-        }
-        // now for each traversal, we compute and equivalent context and match it to a ref context
-        // using a jaccard metric over node ids
-#pragma omp parallel for
-        for (size_t i = 0; i < path_travs.first.size(); ++i) {
-            vector<nid_t> context = get_context(i);
-            // map jaccard metric to the index of the ref_trav
-            vector<pair<double, int>> ref_mappings;
-            for (uint64_t j = 0; j < ref_travs.size(); ++j) {
-                ref_mappings.push_back(make_pair(
-                                           context_jaccard(
-                                               ref_contexts[j],
-                                               context),
-                                           ref_travs[j]));
-            }
-            std::sort(ref_mappings.begin(), ref_mappings.end());
-            // the best is the last, which has the highest jaccard
-            path_trav_to_ref_trav[i] = ref_mappings.back().second;
         }
     }
 
     // we write a variant for every reference traversal
     // (optionally) selecting the subset of path traversals that are 1:1
-#pragma omp parallel for
+//#pragma omp parallel for
     for (size_t i = 0; i < ref_travs.size(); ++i) {
-        auto& ref_trav_idx = ref_travs[i];
-        auto& ref_trav_offset = ref_offsets[i];
+//#pragma omp task firstprivate(i)
+        {
+            auto& ref_trav_idx = ref_travs[i];
+            auto& ref_trav_offset = ref_offsets[i];
 
-        const SnarlTraversal& ref_trav = path_travs.first[ref_trav_idx];
+            const SnarlTraversal& ref_trav = path_travs.first[ref_trav_idx];
 
-        vcflib::Variant v;
-        v.quality = 60;
+            vcflib::Variant v;
+            v.quality = 60;
 
-        // write variant's sequenceName (VCF contig)
-        v.sequenceName = ref_trav_name;
+            // write variant's sequenceName (VCF contig)
+            v.sequenceName = ref_trav_name;
 
-        // Map our snarl endpoints to oriented positions in the embedded path in the graph
-        handle_t first_path_handle;
-        size_t first_path_pos;
-        bool use_start;
-        if (ref_trav_idx < first_gbwt_trav_idx) {
-            step_handle_t start_step = path_travs.second[ref_trav_idx].first;
-            step_handle_t end_step = path_travs.second[ref_trav_idx].second;
-            handle_t start_handle = graph->get_handle_of_step(start_step);
-            handle_t end_handle = graph->get_handle_of_step(end_step);
-            size_t start_pos = graph->get_position_of_step(start_step);
-            size_t end_pos = graph->get_position_of_step(end_step);
-            use_start = start_pos < end_pos;
-            first_path_handle = use_start ? start_handle : end_handle;
-            first_path_pos = use_start ? start_pos : end_pos;
-        } else {
-            //assert(false);
-            std::tie(use_start, first_path_handle, first_path_pos) = get_gbwt_path_position(ref_trav, trav_thread_ids[ref_trav_idx]);
+            // Map our snarl endpoints to oriented positions in the embedded path in the graph
+            handle_t first_path_handle;
+            size_t first_path_pos;
+            bool use_start;
+            if (ref_trav_idx < first_gbwt_trav_idx) {
+                step_handle_t start_step = path_travs.second[ref_trav_idx].first;
+                step_handle_t end_step = path_travs.second[ref_trav_idx].second;
+                handle_t start_handle = graph->get_handle_of_step(start_step);
+                handle_t end_handle = graph->get_handle_of_step(end_step);
+                size_t start_pos = graph->get_position_of_step(start_step);
+                size_t end_pos = graph->get_position_of_step(end_step);
+                use_start = start_pos < end_pos;
+                first_path_handle = use_start ? start_handle : end_handle;
+                first_path_pos = use_start ? start_pos : end_pos;
+            } else {
+                //assert(false);
+                std::tie(use_start, first_path_handle, first_path_pos) = get_gbwt_path_position(ref_trav, trav_thread_ids[ref_trav_idx]);
 #ifdef debug
-            cerr << "got " << use_start << " " << graph->get_id(first_path_handle) << ":" << graph->get_is_reverse(first_path_handle)
-                 << " " << first_path_pos << " from gbwt for " << ref_trav_name << endl;
+                cerr << "got " << use_start << " " << graph->get_id(first_path_handle) << ":" << graph->get_is_reverse(first_path_handle)
+                     << " " << first_path_pos << " from gbwt for " << ref_trav_name << endl;
 #endif
-        }
-        // Get the first visit of our snarl traversal
-        const Visit& first_trav_visit = use_start ? ref_trav.visit(0) : ref_trav.visit(ref_trav.visit_size() - 1);
-
-        char prev_char;
-        if ((use_start && first_trav_visit.backward() == graph->get_is_reverse(first_path_handle)) ||
-            (!use_start && first_trav_visit.backward() != graph->get_is_reverse(first_path_handle))) {
-            // Our path and traversal have consistent orientation.  leave off the end of the start node going forward
-            first_path_pos += graph->get_length(first_path_handle);
-            prev_char = ::toupper(graph->get_sequence(first_path_handle)[graph->get_length(first_path_handle) - 1]);
-        } else {
-            // They are flipped: leave off the beginning of the start node going backward
-            prev_char = reverse_complement(::toupper(graph->get_sequence(first_path_handle)[0]));
-        }
-        
-        // shift from 0-based to 1-based for VCF
-        first_path_pos += 1;
-
-        v.position = first_path_pos + ref_trav_offset;
-
-        v.id = snarl_name(snarl);
-        
-        // Convert the snarl traversals to strings and add them to the variant
-        vector<bool> use_trav(path_travs.first.size());
-        if (path_trav_to_ref_trav.size()) {
-            for (uint64_t i = 0; i < use_trav.size(); ++i) {
-                use_trav[i] = (ref_trav_idx == path_trav_to_ref_trav[i]);
             }
-        } else {
-            for (uint64_t i = 0; i < use_trav.size(); ++i) {
-                use_trav[i] = true;
+            // Get the first visit of our snarl traversal
+            const Visit& first_trav_visit = use_start ? ref_trav.visit(0) : ref_trav.visit(ref_trav.visit_size() - 1);
+
+            char prev_char;
+            if ((use_start && first_trav_visit.backward() == graph->get_is_reverse(first_path_handle)) ||
+                (!use_start && first_trav_visit.backward() != graph->get_is_reverse(first_path_handle))) {
+                // Our path and traversal have consistent orientation.  leave off the end of the start node going forward
+                first_path_pos += graph->get_length(first_path_handle);
+                prev_char = ::toupper(graph->get_sequence(first_path_handle)[graph->get_length(first_path_handle) - 1]);
+            } else {
+                // They are flipped: leave off the beginning of the start node going backward
+                prev_char = reverse_complement(::toupper(graph->get_sequence(first_path_handle)[0]));
             }
-        }
+            
+            // shift from 0-based to 1-based for VCF
+            first_path_pos += 1;
 
-        vector<int> trav_to_allele = get_alleles(v, path_travs.first, ref_trav_idx,
-                                                 use_trav,
-                                                 prev_char, use_start);
+            v.position = first_path_pos + ref_trav_offset;
 
-        // Fill in the genotypes
-        if (path_restricted || gbwt_trav_finder.get()) {
-            get_genotypes(v, path_trav_names, trav_to_allele, trav_thread_ids);
-        }
-
-        // Fill in some snarl hierarchy information
-        if (include_nested) {
-            // would be nicer to do this constant time!
-            size_t level = 0;
-            for (const Snarl* cur = snarl; !snarl_manager->is_root(cur); cur = snarl_manager->parent_of(cur)) {
-                ++level;
+            v.id = print_snarl(*snarl);
+            
+            // Convert the snarl traversals to strings and add them to the variant
+            vector<bool> use_trav(path_travs.first.size());
+            if (path_trav_to_ref_trav.size()) {
+                for (uint64_t i = 0; i < use_trav.size(); ++i) {
+                    use_trav[i] = (ref_trav_idx == path_trav_to_ref_trav[i]);
+                }
+            } else {
+                for (uint64_t i = 0; i < use_trav.size(); ++i) {
+                    use_trav[i] = true;
+                }
             }
-            v.info["LV"].push_back(std::to_string(level));
-            if (level > 0) {
-                const Snarl* parent = snarl_manager->parent_of(snarl);
-                string parent_id = snarl_name(parent);
-                v.info["PS"].push_back(parent_id);
-            } 
-        }
 
-        // we only bother printing out sites with at least 1 non-reference allele
-        if (!std::all_of(trav_to_allele.begin(), trav_to_allele.end(), [](int i) { return (i == 0 || i == -1); })) {
+            vector<int> trav_to_allele = get_alleles(v, path_travs,
+                                                     ref_trav_idx,
+                                                     use_trav,
+                                                     prev_char, use_start);
+
+            // Fill in the genotypes
             if (path_restricted || gbwt_trav_finder.get()) {
-                // run vcffixup to add some basic INFO like AC
-                vcf_fixup(v);
+                get_genotypes(v, path_trav_names, trav_to_allele, trav_thread_ids);
             }
-#pragma omp critical (add_variant)
-            add_variant(v);
+
+            // we only bother printing out sites with at least 1 non-reference allele
+            if (!std::all_of(trav_to_allele.begin(), trav_to_allele.end(), [](int i) { return (i == 0 || i == -1); })) {
+                if (path_restricted || gbwt_trav_finder.get()) {
+                    // run vcffixup to add some basic INFO like AC
+                    vcf_fixup(v);
+                }
+                add_variant(v);
+            }
         }
-    }    
+    }
+//#pragma omp taskwait
     return true;
 }
 
@@ -759,12 +902,12 @@ void Deconstructor::deconstruct(vector<string> ref_paths, const PathPositionHand
                                 int ploidy,
                                 bool include_nested,
                                 int context_jaccard_window,
+                                bool untangle_traversals,
                                 bool keep_conflicted,
                                 bool strict_conflicts,
                                 const unordered_map<string, pair<string, int>>* path_to_sample_phase,
                                 const unordered_map<string, int>* sample_ploidys,
-                                gbwt::GBWT* gbwt,
-                                const unordered_map<nid_t, pair<nid_t, size_t>>* translation) {
+                                gbwt::GBWT* gbwt) {
 
     this->graph = graph;
     this->snarl_manager = snarl_manager;
@@ -775,24 +918,24 @@ void Deconstructor::deconstruct(vector<string> ref_paths, const PathPositionHand
     this->ref_paths = set<string>(ref_paths.begin(), ref_paths.end());
     this->include_nested = include_nested;
     this->path_jaccard_window = context_jaccard_window;
-    this->translation = translation;
+    this->untangle_allele_traversals = untangle_traversals;
     this->keep_conflicted_genotypes = keep_conflicted;
     this->strict_conflict_checking = strict_conflicts;
     assert(path_to_sample_phase == nullptr || path_restricted || gbwt);
     if (gbwt) {
         this->gbwt_pos_caches.resize(get_thread_count(), nullptr);
+        this->gbwt_pos_caches_level = omp_get_level() + 1;
         for (size_t i = 0; i < this->gbwt_pos_caches.size(); ++i) {
             if (this->gbwt_pos_caches[i] == nullptr) {
                 this->gbwt_pos_caches[i] = new LRUCache<gbwt::size_type, shared_ptr<unordered_map<handle_t, size_t>>>(lru_size);
             }
         }
-    } else {
-        // this allows us to run in parallel inside of each site deconstruction
-        // there is now a path jaccard check that can be expensive in deep graphs
-        // however, it breaks the LRUCache thread id assumptions
-        // so it is not suitable for GBWT based deconstruction
-        omp_set_max_active_levels(2);
     }
+
+    // the need to use nesting is due to a problem with omp tasks and shared state
+    // which results in extremely high memory costs (ex. ~10x RAM for 2 threads vs. 1)
+    omp_set_nested(1);
+    omp_set_max_active_levels(3);
 
     // Keep track of the non-reference paths in the graph.  They'll be our sample names
     sample_names.clear();
@@ -859,7 +1002,11 @@ void Deconstructor::deconstruct(vector<string> ref_paths, const PathPositionHand
         stream << "##INFO=<ID=LV,Number=1,Type=Integer,Description=\"Level in the snarl tree (0=top level)\">" << endl;
         stream << "##INFO=<ID=PS,Number=1,Type=String,Description=\"ID of variant corresponding to parent snarl\">" << endl;
     }
-    stream << "##INFO=<ID=AT,Number=R,Type=String,Description=\"Allele Traversal as path in graph\">" << endl;
+    if (untangle_allele_traversals) {
+        stream << "##INFO=<ID=UT,Number=R,Type=String,Description=\"Untangled allele Traversal with reference node start and end positions, format: [>|<][id]_[start|.]_[end|.], with '.' indicating non-reference nodes.\">" << endl;
+    } else {
+        stream << "##INFO=<ID=AT,Number=R,Type=String,Description=\"Allele Traversal as path in graph\">" << endl;
+    }
     set<string> gbwt_ref_paths;
     for(auto& refpath : ref_paths) {
         if (graph->has_path(refpath)) {
@@ -941,14 +1088,22 @@ void Deconstructor::deconstruct(vector<string> ref_paths, const PathPositionHand
             }
         });
 
+//#pragma omp parallel
+//#pragma omp single
+    {
 #pragma omp parallel for schedule(dynamic,1)
-    for (size_t i = 0; i < snarls_todo.size(); i++) {
-        auto& snarl = snarls_todo[i];
-        deconstruct_site(snarl);
+        for (size_t i = 0; i < snarls_todo.size(); i++) {
+//#pragma omp task firstprivate(i)
+            {
+                auto& snarl = snarls_todo[i];
+                deconstruct_site(snarl);
+            }
+        }
     }
-    
+//#pragma omp taskwait
+
     // write variants in sorted order
-    write_variants(cout);
+    write_variants(cout, snarl_manager);
 }
 
 bool Deconstructor::check_max_nodes(const Snarl* snarl) const  {
@@ -1003,25 +1158,6 @@ vector<SnarlTraversal> Deconstructor::explicit_exhaustive_traversals(const Snarl
     return out_travs;
 }
 
-string Deconstructor::snarl_name(const Snarl* snarl) const {
-    nid_t start_node = snarl->start().node_id();
-    nid_t end_node = snarl->end().node_id();
-    if (translation) {
-        auto i = translation->find(start_node);
-        if (i == translation->end()) {
-            throw runtime_error("Error [vg deconstruct]: Unable to find node " + std::to_string(start_node) + " in translation file");
-        }
-        start_node = i->second.first;
-        i = translation->find(end_node);
-        if (i == translation->end()) {
-            throw runtime_error("Error [vg deconstruct]: Unable to find node " + std::to_string(end_node) + " in translation file");
-        }
-        end_node = i->second.first;
-    }
-    return (snarl->start().backward() ? "<" : ">") + std::to_string(start_node) +
-        (snarl->end().backward() ? "<" : ">") + std::to_string(end_node);
-}
-
 tuple<bool, handle_t, size_t> Deconstructor::get_gbwt_path_position(const SnarlTraversal& trav, const gbwt::size_type& thread) const {
 
     // scan the whole thread in order to get the path positions -- there's no other way unless we build an index a priori
@@ -1045,6 +1181,9 @@ tuple<bool, handle_t, size_t> Deconstructor::get_gbwt_path_position(const SnarlT
     int64_t end_offset = -1;
     int64_t offset = 0;
 
+    // Find the cache to use. Make sure we made it the right width for the OMP
+    // team we are actually on.
+    assert(this->gbwt_pos_caches_level == omp_get_level());
     LRUCache<gbwt::size_type, shared_ptr<unordered_map<handle_t, size_t>>>* gbwt_pos_cache =
         gbwt_pos_caches[omp_get_thread_num()];
     
@@ -1073,6 +1212,5 @@ tuple<bool, handle_t, size_t> Deconstructor::get_gbwt_path_position(const SnarlT
 
     return rval;
 }
-
 }
 

@@ -255,10 +255,7 @@ namespace vg {
                 IntegratedSnarlFinder bubble_finder(graph);
                 SnarlManager snarl_manager = bubble_finder.find_snarls_parallel();
 
-                // Configure GCSA temp directory to the system temp directory
-                gcsa::TempFile::setDirectory(temp_file::get_dir());
-                
-                // And make it quiet
+                // Make GCSA quiet
                 gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
                 
                 // Make pointers to fill in
@@ -274,7 +271,8 @@ namespace vg {
                 xg_index.from_path_handle_graph(graph);              
 
                 // Make a multipath mapper to map against the graph.
-                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx); 
+                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx);
+                multipath_mapper.suppress_mismapping_detection = true;
                 
                 vector<string> reads = {"GCATCTGAGCCC"};
                 vector<Alignment> alns = {reads.size(), Alignment()};
@@ -368,9 +366,7 @@ namespace vg {
                 CactusSnarlFinder bubble_finder(graph);
                 SnarlManager snarl_manager = bubble_finder.find_snarls();
 
-                // Configure GCSA temp directory to the system temp directory
-                gcsa::TempFile::setDirectory(temp_file::get_dir());
-                // And make it quiet
+                // Make GCSA quiet
                 gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
                 
                 // Make pointers to fill in
@@ -385,7 +381,8 @@ namespace vg {
                 xg_index.from_path_handle_graph(graph);              
 
                 // Make a multipath mapper to map against the graph.
-                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx); 
+                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx);
+                multipath_mapper.suppress_mismapping_detection = true;
                 
                 vector<string> reads = {"GGGCCCAGCTGG"};
                 vector<Alignment> alns = {reads.size(), Alignment()};
@@ -493,9 +490,7 @@ namespace vg {
 				IntegratedSnarlFinder bubble_finder(graph);
                 SnarlManager snarl_manager = bubble_finder.find_snarls_parallel();
 
-                // Configure GCSA temp directory to the system temp directory
-                gcsa::TempFile::setDirectory(temp_file::get_dir());
-                // And make it quiet
+                // Make GCSA quiet
                 gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
                 
                 // Make pointers to fill in
@@ -512,7 +507,8 @@ namespace vg {
                 xg_index.from_path_handle_graph(graph);              
 
                 // Make a multipath mapper to map against the graph.
-                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx); 
+                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx);
+                multipath_mapper.suppress_mismapping_detection = true;
                 
                 //vector<string> reads = {"GCATCTGAGCCC","GCATCTGAGCCC","GCAGCTGAACCC","GCAGCTGAACCC"}; //TGGA
                 vector<string> reads = {"GCATCTGAGCCC","GCATCTGAGCCC","GCATCTGAACCC", "GCATCTGAACCC"};//TGTA
@@ -627,9 +623,7 @@ namespace vg {
                     IntegratedSnarlFinder bubble_finder(graph);
                     SnarlManager snarl_manager = bubble_finder.find_snarls_parallel();
 
-                    // Configure GCSA temp directory to the system temp directory
-                    gcsa::TempFile::setDirectory(temp_file::get_dir());
-                    // And make it quiet
+                    // Make GCSA quiet
                     gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
                     
                     // Make pointers to fill in
@@ -646,7 +640,8 @@ namespace vg {
                     xg_index.from_path_handle_graph(graph);               //xg::XG xg_index();
                     
                     // Make a multipath mapper to map against the graph.
-                    MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx); 
+                    MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx);
+                    multipath_mapper.suppress_mismapping_detection = true;
 
                     
                     vector<string> reads = {"GCATCTGAGCCC", "GCATCTGAGCCC", "GCAGCTGAACCC", "GCAGCTGAACCC","GCAGCTGAACCC", "GCAGCTGAACCC", "GCAGCTGAGCCC", "GCAGCTGAGCCC"};
@@ -787,9 +782,7 @@ namespace vg {
                 IntegratedSnarlFinder bubble_finder(graph);
                 SnarlManager snarl_manager = bubble_finder.find_snarls_parallel();
 
-                // Configure GCSA temp directory to the system temp directory
-                gcsa::TempFile::setDirectory(temp_file::get_dir());
-                // And make it quiet
+                // Make GCSA quiet
                 gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
                 
                 // Make pointers to fill in
@@ -806,7 +799,8 @@ namespace vg {
                 xg_index.from_path_handle_graph(graph);               //xg::XG xg_index();
                 
                 // Make a multipath mapper to map against the graph.
-                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx); 
+                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx);
+                multipath_mapper.suppress_mismapping_detection = true;
 
                 
                 vector<string> reads = {"GCATCTGAGCCC","GCATCTGAGCCC", "GCATCTGAGCCC", "GCAGCTGAACCC", "GCAGCTGAACCC","GCAGCTGAACCC", "GCAGCTGAACCC", "GCAGCTGAGCCC", "GCAGCTGAGCCC","GCATCTGAACCC" };
@@ -908,9 +902,7 @@ namespace vg {
 				IntegratedSnarlFinder bubble_finder(graph);
                 SnarlManager snarl_manager = bubble_finder.find_snarls_parallel();
 
-                // Configure GCSA temp directory to the system temp directory
-                gcsa::TempFile::setDirectory(temp_file::get_dir());
-                // And make it quiet
+                // Make GCSA quiet
                 gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
                 
                 // Make pointers to fill in
@@ -927,7 +919,8 @@ namespace vg {
                 xg_index.from_path_handle_graph(graph);               //xg::XG xg_index();
                 
                 // Make a multipath mapper to map against the graph.
-                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx); 
+                MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx);
+                multipath_mapper.suppress_mismapping_detection = true;
 
                 
                 vector<string> reads = {"GCATCTGAGCCC", "GCATCTGAGCCC", "GCAGCTGAACCC", "GCAGCTGAACCC","GCAGCTGAACCC", "GCAGCTGAACCC", "GCAGCTGAGCCC", "GCAGCTGAGCCC"};
@@ -1068,9 +1061,7 @@ namespace vg {
             IntegratedSnarlFinder bubble_finder(graph);
             SnarlManager snarl_manager = bubble_finder.find_snarls_parallel();
 
-            // Configure GCSA temp directory to the system temp directory
-            gcsa::TempFile::setDirectory(temp_file::get_dir());
-            // And make it quiet
+            // Make GCSA quiet
             gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
             
             // Make pointers to fill in
@@ -1085,7 +1076,8 @@ namespace vg {
             xg_index.from_path_handle_graph(graph);              
 
             // Make a multipath mapper to map against the graph.
-            MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx); 
+            MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx);
+            multipath_mapper.suppress_mismapping_detection = true;
             
             vector<string> reads = {"GGGCCCAGCTGG", "GGGCCCAGCTGGTCTGAGCCC", "GGGCCCAGCTGGTCTGAGCCC", 
                                     "GGGTACCCTGGTCTGAGCCC", "CTGGTCTGAGCCC", "GGGCCCTGCTGGGCTGAGCCC", 
@@ -1247,9 +1239,7 @@ namespace vg {
             IntegratedSnarlFinder bubble_finder(graph);
             SnarlManager snarl_manager = bubble_finder.find_snarls_parallel();
 
-            // Configure GCSA temp directory to the system temp directory
-            gcsa::TempFile::setDirectory(temp_file::get_dir());
-            // And make it quiet
+            // Make GCSA quiet
             gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
             
             // Make pointers to fill in
@@ -1264,7 +1254,8 @@ namespace vg {
             xg_index.from_path_handle_graph(graph);              
 
             // Make a multipath mapper to map against the graph.
-            MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx); 
+            MultipathMapper multipath_mapper(&xg_index, gcsaidx, lcpidx);
+            multipath_mapper.suppress_mismapping_detection = true;
             
             vector<string> reads = {"GGGCCCAGCTGG", "GGGCCCAGCTGGTCTGAGCCC", "GGGCCCAGCTGGTCTGAGCCC", 
                                     "GGGTACCCTGGTCTGAGCCC", "CTGGTCTGAGCCC", "GGGCCCTGCTGGGCTGAGCCC", 

@@ -18,7 +18,6 @@ namespace unittest {
 class TestMultipathMapper : public MultipathMapper {
 public:
     using MultipathMapper::MultipathMapper;
-    using MultipathMapper::multipath_map_internal;
     using MultipathMapper::attempt_unpaired_multipath_map_of_pair;
     using MultipathMapper::align_to_cluster_graphs;
     using MultipathMapper::align_to_cluster_graph_pairs;
@@ -130,9 +129,7 @@ TEST_CASE( "MultipathMapper::query_cluster_graphs works", "[multipath][mapping][
     VG graph;
     graph.extend(proto_graph);
     
-    // Configure GCSA temp directory to the system temp directory
-    gcsa::TempFile::setDirectory(temp_file::get_dir());
-    // And make it quiet
+    // Make GCSA quiet
     gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
     
     // Make pointers to fill in
@@ -285,9 +282,7 @@ TEST_CASE( "MultipathMapper can map to a one-node graph", "[multipath][mapping][
     VG graph;
     graph.extend(proto_graph);
     
-    // Configure GCSA temp directory to the system temp directory
-    gcsa::TempFile::setDirectory(temp_file::get_dir());
-    // And make it quiet
+    // Make GCSA quiet
     gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
     
     // Make pointers to fill in
@@ -306,6 +301,7 @@ TEST_CASE( "MultipathMapper can map to a one-node graph", "[multipath][mapping][
     // Lower the max mapping quality so that it thinks it can find unambiguous mappings of
     // short sequences
     mapper.max_mapping_quality = 10;
+    mapper.suppress_mismapping_detection = true;
     
     SECTION( "MultipathMapper can map a short fake read" ) {
 
@@ -437,9 +433,7 @@ TEST_CASE( "MultipathMapper can work on a bigger graph", "[multipath][mapping][m
     VG graph;
     graph.extend(proto_graph);
     
-    // Configure GCSA temp directory to the system temp directory
-    gcsa::TempFile::setDirectory(temp_file::get_dir());
-    // And make it quiet
+    // Make GCSA quiet
     gcsa::Verbosity::set(gcsa::Verbosity::SILENT);
     
     // Make pointers to fill in
@@ -458,6 +452,7 @@ TEST_CASE( "MultipathMapper can work on a bigger graph", "[multipath][mapping][m
     // Lower the max mapping quality so that it thinks it can find unambiguous mappings of
     // short sequences
     mapper.max_mapping_quality = 10;
+    mapper.suppress_mismapping_detection = true;
     
     
     SECTION( "topologically_order_subpaths works within a node" ) {    

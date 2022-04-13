@@ -250,6 +250,8 @@ std::vector<std::vector<gbwt::size_type>> partition_gbwt_sequences(const gbwt::G
             auto iter = node_to_job.find(node);
             if (iter != node_to_job.end()) {
                 result[iter->second].push_back(sequence);
+            } else if (start.first == gbwt::ENDMARKER) {
+                result[0].push_back(sequence);
             }
         }
     }
@@ -440,7 +442,8 @@ std::vector<gbwt::size_type> threads_for_contig(const gbwt::GBWT& gbwt_index, co
 
 std::string insert_gbwt_path(MutablePathHandleGraph& graph, const gbwt::GBWT& gbwt_index, gbwt::size_type id, std::string path_name) {
 
-    gbwt::size_type sequence_id = gbwt::Path::encode(id, false);
+    gbwt::size_type sequence_id = gbwt_index.bidirectional() ? gbwt::Path::encode(id, false) : id;
+
     if (sequence_id >= gbwt_index.sequences()) {
         std::cerr << "error: [insert_gbwt_path()] invalid path id: " << id << std::endl;
         return "";
@@ -468,7 +471,7 @@ std::string insert_gbwt_path(MutablePathHandleGraph& graph, const gbwt::GBWT& gb
 Path extract_gbwt_path(const HandleGraph& graph, const gbwt::GBWT& gbwt_index, gbwt::size_type id) {
 
     Path result;
-    gbwt::size_type sequence_id = gbwt::Path::encode(id, false);
+    gbwt::size_type sequence_id = gbwt_index.bidirectional() ? gbwt::Path::encode(id, false) : id;
     if (sequence_id >= gbwt_index.sequences()) {
         std::cerr << "error: [insert_gbwt_path()] invalid path id: " << id << std::endl;
         return result;

@@ -6,13 +6,16 @@
 
 #include "mem_accelerator.hpp"
 #include <sdsl/util.hpp>
+#include <cmath>
 
 namespace vg {
 
-MEMAccelerator::MEMAccelerator(const gcsa::GCSA& gcsa_index, size_t k)
-    : k(k), range_table(1 << (2 * k + 1))
+MEMAccelerator::MEMAccelerator(const gcsa::GCSA& gcsa_index, size_t k) : k(k)
 {
-    // range table is initialized to size 2^(2k + 1)
+    // compute the minimum width required to express the integers.
+    range_table.width(max<uint8_t>(sdsl::bits::length(gcsa_index.size()), 1));
+    // range table is initialized to size 2^(2k + 1) = 2 * 4^k
+    range_table.resize(1 << (2 * k + 1));
     
     const char alphabet[5] = "ACGT";
     
@@ -42,16 +45,20 @@ MEMAccelerator::MEMAccelerator(const gcsa::GCSA& gcsa_index, size_t k)
             if (!gcsa::Range::empty(get<2>(stack.back()))) {
                 range = gcsa_index.LF(get<2>(stack.back()),
                                       gcsa_index.alpha.char2comp[alphabet[next]]);
+                if (gcsa::Range::empty(range)) {
+                    // we normalize empty ranges to an empty range that will
+                    // fit within any bit width
+                    range.first = 1;
+                    range.second = 0;
+                }
             }
             else {
                 range = get<2>(stack.back());
             }
+            
             stack.emplace_back(0, enc, range);
         }
     }
-    
-    // bit compress the whole mess
-    sdsl::util::bit_compress(range_table);
 }
 
 gcsa::range_type MEMAccelerator::memoized_LF(string::const_iterator last) const {

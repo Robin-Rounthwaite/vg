@@ -1,5 +1,6 @@
 #include "graph_caller.hpp"
 #include "algorithms/expand_context.hpp"
+#include "annotation.hpp"
 
 //#define debug
 
@@ -13,7 +14,7 @@ GraphCaller::GraphCaller(SnarlCaller& snarl_caller,
 GraphCaller::~GraphCaller() {
 }
 
-void GraphCaller::call_top_level_snarls(const HandleGraph& graph, bool recurse_on_fail) {
+void GraphCaller::call_top_level_snarls(const HandleGraph& graph, RecurseType recurse_type) {
 
     // Used to recurse on children of parents that can't be called
     size_t thread_count = get_thread_count();
@@ -29,7 +30,7 @@ void GraphCaller::call_top_level_snarls(const HandleGraph& graph, bool recurse_o
 #endif
 
             bool was_called = call_snarl(*snarl);
-            if (!was_called && recurse_on_fail) {
+            if (recurse_type == RecurseAlways || (!was_called && recurse_type == RecurseOnFail)) {
                 const vector<const Snarl*>& children = snarl_manager.children_of(snarl);
                 vector<const Snarl*>& thread_queue = snarl_queue[omp_get_thread_num()];
                 thread_queue.insert(thread_queue.end(), children.begin(), children.end());
@@ -64,7 +65,7 @@ static void flip_snarl(Snarl& snarl) {
     *snarl.mutable_end() = reverse(v);
 }
 
-void GraphCaller::call_top_level_chains(const HandleGraph& graph, size_t max_edges, size_t max_trivial, bool recurse_on_fail) {
+void GraphCaller::call_top_level_chains(const HandleGraph& graph, size_t max_edges, size_t max_trivial, RecurseType recurse_type) {
     // Used to recurse on children of parents that can't be called
     size_t thread_count = get_thread_count();
     vector<vector<Chain>> chain_queue(thread_count);
@@ -98,7 +99,7 @@ void GraphCaller::call_top_level_chains(const HandleGraph& graph, size_t max_edg
 #endif
             
             bool was_called = call_snarl(fake_snarl);
-            if (!was_called && recurse_on_fail) {
+            if (recurse_type == RecurseAlways || (!was_called && recurse_type == RecurseOnFail)) {
                 vector<Chain>& thread_queue = chain_queue[omp_get_thread_num()];                
                 for (pair<const Snarl*, bool> chain_link : chain_piece) {
                     const deque<Chain>& child_chains = snarl_manager.chains_of(chain_link.first);
@@ -175,7 +176,8 @@ vector<Chain> GraphCaller::break_chain(const HandleGraph& graph, const Chain& ch
     return chain_frags;
 }
     
-VCFOutputCaller::VCFOutputCaller(const string& sample_name) : sample_name(sample_name) {
+VCFOutputCaller::VCFOutputCaller(const string& sample_name) : sample_name(sample_name), translation(nullptr), include_nested(false)
+{
     output_variants.resize(get_thread_count());
 }
 
@@ -185,11 +187,9 @@ VCFOutputCaller::~VCFOutputCaller() {
 string VCFOutputCaller::vcf_header(const PathHandleGraph& graph, const vector<string>& contigs,
                                    const vector<size_t>& contig_length_overrides) const {
     stringstream ss;
-    ss << "##fileformat=VCFv4.2" << endl;
+    ss << "##fileformat=VCFv4.2" << endl;    
     for (int i = 0; i < contigs.size(); ++i) {
         const string& contig = contigs[i];
-        path_handle_t path_handle = graph.get_path_handle(contig);
-        string path_name = graph.get_path_name(path_handle);
         size_t length;
         if (i < contig_length_overrides.size()) {
             // length override provided
@@ -202,6 +202,11 @@ string VCFOutputCaller::vcf_header(const PathHandleGraph& graph, const vector<st
         }
         ss << "##contig=<ID=" << contig << ",length=" << length << ">" << endl;
     }
+    if (include_nested) {
+        ss << "##INFO=<ID=LV,Number=1,Type=Integer,Description=\"Level in the snarl tree (0=top level)\">" << endl;
+        ss << "##INFO=<ID=PS,Number=1,Type=String,Description=\"ID of variant corresponding to parent snarl\">" << endl;
+    }
+    ss << "##INFO=<ID=AT,Number=R,Type=String,Description=\"Allele Traversal as path in graph\">" << endl;
     return ss.str();
 }
 
@@ -209,12 +214,18 @@ void VCFOutputCaller::add_variant(vcflib::Variant& var) const {
     var.setVariantCallFile(output_vcf);
     stringstream ss;
     ss << var;
+    string dest;
+    zstdutil::CompressString(ss.str(), dest);
     // the Variant object is too big to keep in memory when there are many genotypes, so we
-    // store it in string
-    output_variants[omp_get_thread_num()].push_back(make_pair(make_pair(var.sequenceName, var.position), ss.str()));
+    // store it in a zstd-compressed string
+    output_variants[omp_get_thread_num()].push_back(make_pair(make_pair(var.sequenceName, var.position), dest));
 }
 
-void VCFOutputCaller::write_variants(ostream& out_stream) const {
+void VCFOutputCaller::write_variants(ostream& out_stream, const SnarlManager* snarl_manager) {
+    assert(include_nested == false || snarl_manager != nullptr);
+    if (include_nested) {
+        update_nesting_info_tags(snarl_manager);
+    }
     vector<pair<pair<string, size_t>, string>> all_variants;
     for (const auto& buf : output_variants) {
         all_variants.reserve(all_variants.size() + buf.size());
@@ -225,7 +236,9 @@ void VCFOutputCaller::write_variants(ostream& out_stream) const {
             return v1.first.first < v2.first.first || (v1.first.first == v2.first.first && v1.first.second < v2.first.second);
         });
     for (auto v : all_variants) {
-        out_stream << v.second << endl;
+        string dest;
+        zstdutil::DecompressString(v.second, dest);
+        out_stream << dest << endl;
     }
 }
 
@@ -317,6 +330,57 @@ void VCFOutputCaller::vcf_fixup(vcflib::Variant& var) const {
     }
 }
 
+void VCFOutputCaller::set_translation(const unordered_map<nid_t, pair<nid_t, size_t>>* translation) {
+    translation = translation;
+}
+
+void VCFOutputCaller::set_nested(bool nested) {
+    include_nested = nested;
+}
+
+void VCFOutputCaller::add_allele_path_to_info(vcflib::Variant& v, int allele, const SnarlTraversal& trav,
+                                              bool reversed, bool one_based) const {
+    auto& trav_info = v.info["AT"];
+    assert(allele < trav_info.size());
+
+    vector<int> nodes;
+    nodes.reserve(trav.visit_size());
+    const Visit* prev_visit = nullptr;
+    unordered_map<nid_t, pair<nid_t, size_t>>::const_iterator prev_trans;
+    
+    for (size_t i = 0; i < trav.visit_size(); ++i) {
+        size_t j = !reversed ? i : trav.visit_size() - 1 - i;
+        const Visit& visit = trav.visit(j);
+        nid_t node_id = visit.node_id();
+        bool skip = false;
+        // todo: check one_based? (we kind of ignore that when writing the snarl name, so maybe not pertienent)
+        if (translation) {
+            auto i = translation->find(node_id);
+            if (i == translation->end()) {
+                throw runtime_error("Error [vg deconstruct]: Unable to find node " + std::to_string(node_id) + " in translation file");
+            }
+            if (prev_visit) {
+                nid_t prev_node_id = prev_visit->node_id();
+                if (prev_trans->second.first == i->second.first && node_id != prev_node_id) {
+                    // here is a case where we have two consecutive nodes that map back to
+                    // the same source node.
+                    // todo: sanity check! (could verify if translation node properly covered)
+                    skip = true;
+                }
+            }
+            node_id = i->second.first;
+            prev_trans = i;
+        }
+
+        if (!skip) {
+            bool vrev = visit.backward() != reversed;
+            trav_info[allele] += (vrev ? "<" : ">");
+            trav_info[allele] += std::to_string(node_id);
+        }
+        prev_visit = &visit;
+    }
+}
+
 string VCFOutputCaller::trav_string(const HandleGraph& graph, const SnarlTraversal& trav) const {
     string seq;
     for (int i = 0; i < trav.visit_size(); ++i) {
@@ -324,7 +388,7 @@ string VCFOutputCaller::trav_string(const HandleGraph& graph, const SnarlTravers
         if (visit.node_id() > 0) {
             seq += graph.get_sequence(graph.get_handle(visit.node_id(), visit.backward()));
         } else {
-            seq += print_snarl(visit.snarl());
+            seq += print_snarl(visit.snarl(), true);
         }
     }
     return seq;    
@@ -407,6 +471,10 @@ void VCFOutputCaller::emit_variant(const PathPositionHandleGraph& graph, SnarlCa
 
     out_variant.alt.resize(allele_to_gt.size() - 1);
     out_variant.alleles.resize(allele_to_gt.size());
+    
+    // init the traversal info
+    out_variant.info["AT"].resize(allele_to_gt.size());
+
     for (auto& allele_gt : allele_to_gt) {
 #ifdef debug
         cerr << "allele " << allele_gt.first << " -> gt " << allele_gt.second << endl;
@@ -415,12 +483,23 @@ void VCFOutputCaller::emit_variant(const PathPositionHandleGraph& graph, SnarlCa
             out_variant.alt[allele_gt.second - 1] = allele_gt.first;
         }
         out_variant.alleles[allele_gt.second] = allele_gt.first;
+
+        // update the traversal info
+        add_allele_path_to_info(out_variant, allele_gt.second, site_traversals.at(allele_gt.second), false, false); 
     }
 
+    // resolve subpath naming
+    string basepath_name = ref_path_name;
+    size_t basepath_offset = 0;
+    auto subpath_info = Paths::parse_subpath_name(ref_path_name);
+    if (get<0>(subpath_info)) {
+        basepath_name = get<1>(subpath_info);
+        basepath_offset = get<2>(subpath_info);
+    }
     // fill out the rest of the variant
-    out_variant.sequenceName = ref_path_name;
+    out_variant.sequenceName = basepath_name;
     // +1 to convert to 1-based VCF
-    out_variant.position = get<0>(get_ref_interval(graph, snarl, ref_path_name)) + ref_offset + 1; 
+    out_variant.position = get<0>(get_ref_interval(graph, snarl, ref_path_name)) + ref_offset + 1 + basepath_offset;
     out_variant.id = print_snarl(snarl, false);
     out_variant.filter = "PASS";
     out_variant.updateAlleleIndexes();
@@ -477,7 +556,7 @@ void VCFOutputCaller::emit_variant(const PathPositionHandleGraph& graph, SnarlCa
     }
 }
 
-tuple<size_t, size_t, bool, step_handle_t, step_handle_t> VCFOutputCaller::get_ref_interval(
+tuple<int64_t, int64_t, bool, step_handle_t, step_handle_t> VCFOutputCaller::get_ref_interval(
     const PathPositionHandleGraph& graph, const Snarl& snarl, const string& ref_path_name) const {
     path_handle_t path_handle = graph.get_path_handle(ref_path_name);
 
@@ -500,44 +579,75 @@ tuple<size_t, size_t, bool, step_handle_t, step_handle_t> VCFOutputCaller::get_r
     assert(start_steps.size() > 0 && end_steps.size() > 0);
     step_handle_t start_step = start_steps.begin()->second;
     step_handle_t end_step = end_steps.begin()->second;
-    bool scan_backward = graph.get_is_reverse(graph.get_handle_of_step(start_step)) != snarl.start().backward();
-
+    // just because we found a pair of steps on our path that correspond to the snarl ends, doesn't
+    // mean the path threads the snarl.  verify that we can actaully walk, either forwards or backwards
+    // along the path from the start node and hit then end node in the right orientation. 
+    bool start_rev = graph.get_is_reverse(graph.get_handle_of_step(start_step)) != snarl.start().backward();
+    bool end_rev = graph.get_is_reverse(graph.get_handle_of_step(end_step)) != snarl.end().backward();
+    bool found_end = start_rev == end_rev && start_rev == start_steps.begin()->first > end_steps.begin()->first;
+        
     // if we're on a cycle, we keep our start step and find the end step by scanning the path
     if (start_steps.size() > 1 || end_steps.size() > 1) {
-        bool found_end = false;
-
-        if (scan_backward) {
-            for (step_handle_t cur_step = start_step; graph.has_previous_step(end_step) && !found_end;
-                 cur_step = graph.get_previous_step(cur_step)) {
-                if (graph.get_id(graph.get_handle_of_step(cur_step)) == graph.get_id(end_handle)) {
-                    end_step = cur_step;
-                    found_end = true;
+        found_end = false;
+        // try each start step
+        for (auto i = start_steps.begin(); i != start_steps.end() && !found_end; ++i) {
+            start_step = i->second;
+            bool scan_backward = graph.get_is_reverse(graph.get_handle_of_step(start_step)) != snarl.start().backward();
+            if (scan_backward) {
+                // if we're going backward, we expect to reach the end backward
+                end_handle = graph.get_handle(snarl.end().node_id(), !snarl.end().backward());
+            }            
+            if (scan_backward) {
+                for (step_handle_t cur_step = start_step; graph.has_previous_step(cur_step) && !found_end;
+                     cur_step = graph.get_previous_step(cur_step)) {
+                    if (graph.get_handle_of_step(cur_step) == end_handle) {
+                        end_step = cur_step;
+                        found_end = true;
+                    }
+                }
+            } else {
+                for (step_handle_t cur_step = start_step; graph.has_next_step(cur_step) && !found_end;
+                     cur_step = graph.get_next_step(cur_step)) {
+                    if (graph.get_handle_of_step(cur_step) == end_handle) {
+                        end_step = cur_step;
+                        found_end = true;
+                    }
                 }
             }
-            assert(found_end);
-        } else {
-            for (step_handle_t cur_step = start_step; graph.has_next_step(end_step) && !found_end;
-                 cur_step = graph.get_next_step(cur_step)) {
-                if (graph.get_id(graph.get_handle_of_step(cur_step)) == graph.get_id(end_handle)) {
-                    end_step = cur_step;
-                    found_end = true;
-                }
-            }
-            assert(found_end);
         }
     }
-    
-    size_t start_position = start_steps.begin()->first;
-    step_handle_t out_start_step = start_steps.begin()->second;
-    size_t end_position = end_step == end_steps.begin()->second ? end_steps.begin()->first : graph.get_position_of_step(end_step);
+    int64_t start_position = start_steps.begin()->first;
+    step_handle_t out_start_step = start_step;
+    int64_t end_position = end_step == end_steps.begin()->second ? end_steps.begin()->first : graph.get_position_of_step(end_step);
     step_handle_t out_end_step = end_step == end_steps.begin()->second ? end_steps.begin()->second : end_step;
     bool backward = end_position < start_position;
+    
+
+    if (!found_end) {
+        // oops, once of the above checks failed.  we tell caller we coudlnt find by hacking in a -1 coordinate.
+        start_position = -1;
+        end_position = -1;
+    }
 
     if (backward) {
         return make_tuple(end_position, start_position, backward, out_end_step, out_start_step);
     } else {
         return make_tuple(start_position, end_position, backward, out_start_step, out_end_step);
     }
+}
+
+pair<string, int64_t> VCFOutputCaller::get_ref_position(const PathPositionHandleGraph& graph, const Snarl& snarl, const string& ref_path_name,
+                                                        int64_t ref_path_offset) const {
+    string basepath_name = ref_path_name;
+    size_t basepath_offset = 0;
+    auto subpath_info = Paths::parse_subpath_name(ref_path_name);
+    if (get<0>(subpath_info)) {
+        basepath_name = get<1>(subpath_info);
+        basepath_offset = get<2>(subpath_info);
+    }
+    // +1 to convert to 1-based VCF
+    int64_t position = get<0>(get_ref_interval(graph, snarl, ref_path_name)) + ref_path_offset + 1 + basepath_offset;
+    return make_pair(basepath_name, position);
 }
 
 void VCFOutputCaller::flatten_common_allele_ends(vcflib::Variant& variant, bool backward, size_t len_override) const {
@@ -591,20 +701,27 @@ void VCFOutputCaller::flatten_common_allele_ends(vcflib::Variant& variant, bool 
 
 string VCFOutputCaller::print_snarl(const Snarl& snarl, bool in_brackets) const {
     // todo, should we canonicalize here by putting lexicographic lowest node first?
+    nid_t start_node = snarl.start().node_id();
+    nid_t end_node = snarl.end().node_id();
+    if (translation) {
+        auto i = translation->find(start_node);
+        if (i == translation->end()) {
+            throw runtime_error("Error [VCFOutputCaller]: Unable to find node " + std::to_string(start_node) + " in translation file");
+        }
+        start_node = i->second.first;
+        i = translation->find(end_node);
+        if (i == translation->end()) {
+            throw runtime_error("Error [VCFOutputCaller]: Unable to find node " + std::to_string(end_node) + " in translation file");
+        }
+        end_node = i->second.first;
+    }
     stringstream ss;
     if (in_brackets) {
-        ss << "<";
+        ss << "(";
     }
-    if (snarl.start().backward()) {
-        ss << "-";
-    }
-    ss << snarl.start().node_id() << "_";
-    if (snarl.end().backward()) {
-        ss << "-";
-    }
-    ss << snarl.end().node_id();
+    ss << (snarl.start().backward() ? "<" : ">") << start_node << (snarl.end().backward() ? "<" : ">") << end_node;
     if (in_brackets) {
-        ss << ">";
+        ss << ")";
     }
     return ss.str();
 }
@@ -615,24 +732,26 @@ void VCFOutputCaller::scan_snarl(const string& allele_string, function<void(cons
     Snarl snarl;
     string frag;
     for (int i = 0; i < allele_string.length(); ++i) {
-        if (allele_string[i] == '<') {
+        if (allele_string[i] == '(') {
             assert(left == -1);
             if (last < i) {
                 frag = allele_string.substr(last, i-last);
                 callback(frag, snarl);
             }
             left = i;
-        } else if (allele_string[i] == '>') {
+        } else if (allele_string[i] == ')') {
             assert(left >= 0 && i > left + 3);
             frag = allele_string.substr(left + 1, i - left - 1);
-            auto toks = split_delims(frag, "_");
+            auto toks = split_delims(frag, "><");
             assert(toks.size() == 2);
+            assert(frag[0] == '<' || frag[0] == '>');
             int64_t start = std::stoi(toks[0]);
-            snarl.mutable_start()->set_node_id(abs(start));
-            snarl.mutable_start()->set_backward(start < 0);
+            snarl.mutable_start()->set_node_id(start);
+            snarl.mutable_start()->set_backward(frag[0] == '<');
+            assert(frag[toks[0].size() + 1] == '<' || frag[toks[0].size() + 1] == '<');
             int64_t end = std::stoi(toks[1]);
             snarl.mutable_end()->set_node_id(abs(end));
-            snarl.mutable_end()->set_backward(end < 0);
+            snarl.mutable_end()->set_backward(frag[toks[0].size() + 1] == '<');
             callback("", snarl);
             left = -1;
             last = i + 1;
@@ -658,47 +777,66 @@ GAFOutputCaller::GAFOutputCaller(AlignmentEmitter* emitter, const string& sample
 GAFOutputCaller::~GAFOutputCaller() {
 }
 
-void GAFOutputCaller::emit_gaf_traversals(const PathHandleGraph& graph, const vector<SnarlTraversal>& travs) {
+void GAFOutputCaller::emit_gaf_traversals(const PathHandleGraph& graph, const string& snarl_name,
+                                          const vector<SnarlTraversal>& travs,
+                                          int64_t ref_trav_idx,
+                                          const string& ref_path_name, int64_t ref_path_position,
+                                          const TraversalSupportFinder* support_finder) {
     assert(emitter != nullptr);
     vector<Alignment> aln_batch;
     aln_batch.reserve(travs.size());
 
-    string variant_id = gaf_sample_name;
-    if (!travs.empty() && travs[0].visit_size() > 0) {
-        variant_id += + "_" + std::to_string(travs[0].visit(0).node_id()) + "_" +
-            std::to_string(travs[0].visit(travs[0].visit_size() - 1).node_id());
+    stringstream ss;
+    if (!ref_path_name.empty()) {
+        ss << ref_path_name << "#" << ref_path_position << "#";
     }
-    
+    ss << snarl_name << "#" << gaf_sample_name;
+    string variant_id = ss.str();
+
+    // create allele ordering where reference is 0
+    vector<int> alleles;
+    if (ref_trav_idx >= 0) {
+        alleles.push_back(ref_trav_idx);
+    }
     for (int i = 0; i < travs.size(); ++i) {
+        if (i != ref_trav_idx) {
+            alleles.push_back(i);
+        }
+    }
+    // make an alignment for each traversal
+    for (int i = 0; i < alleles.size(); ++i) {
+        const SnarlTraversal& trav = travs[alleles[i]];
         Alignment trav_aln;
         if (trav_padding > 0) {
-            trav_aln = to_alignment(pad_traversal(graph, travs[i]), graph);
+            trav_aln = to_alignment(pad_traversal(graph, trav), graph);
         } else {
-            trav_aln = to_alignment(travs[i], graph);
+            trav_aln = to_alignment(trav, graph);
         }
-        trav_aln.set_name(variant_id + "_" + std::to_string(i));
+        trav_aln.set_name(variant_id + "#" + std::to_string(i));
+        if (support_finder) {
+            int64_t support = support_finder->support_val(support_finder->get_traversal_support(trav));
+            set_annotation(trav_aln, "support", std::to_string(support));
+        }        
         aln_batch.push_back(trav_aln);
     }
     emitter->emit_singles(std::move(aln_batch)); 
 }
 
-void GAFOutputCaller::emit_gaf_variant(const HandleGraph& graph, 
-                                       const Snarl& snarl,
-                                       const vector<SnarlTraversal>& traversals,
-                                       const vector<int>& genotype) {
+void GAFOutputCaller::emit_gaf_variant(const PathHandleGraph& graph, const string& snarl_name,
+                                       const vector<SnarlTraversal>& travs,
+                                       const vector<int>& genotype,
+                                       int64_t ref_trav_idx,
+                                       const string& ref_path_name, int64_t ref_path_position,
+                                       const TraversalSupportFinder* support_finder) {
     assert(emitter != nullptr);
 
     // pretty bare bones for now, just output the genotype as a pair of traversals
     // todo: we could embed some basic information (likelihood, ploidy, sample etc) in the gaf
-    string variant_id = gaf_sample_name + "_" + std::to_string(snarl.start().node_id()) + "_" + std::to_string(snarl.end().node_id());
-
-    vector<Alignment> aln_gt;
-    aln_gt.reserve(genotype.size());
-    for (int i = 0; i < genotype.size(); ++i) {
-        aln_gt.push_back(to_alignment(traversals[genotype[i]], graph));
-        aln_gt.back().set_name(variant_id + "_" + std::to_string(i));
+    vector<SnarlTraversal> gt_travs;
+    for (int allele : genotype) {
+        gt_travs.push_back(travs[allele]);
     }
-    emitter->emit_singles(std::move(aln_gt));
+    emit_gaf_traversals(graph, snarl_name, gt_travs, ref_trav_idx, ref_path_name, ref_path_position, support_finder);
 }
 
 SnarlTraversal GAFOutputCaller::pad_traversal(const PathHandleGraph& graph, const SnarlTraversal& trav) const {
@@ -798,6 +936,88 @@ SnarlTraversal GAFOutputCaller::pad_traversal(const PathHandleGraph& graph, cons
     return out_trav;
 }
 
+void VCFOutputCaller::update_nesting_info_tags(const SnarlManager* snarl_manager) {
+
+    // index the snarl tree by name
+    unordered_map<string, const Snarl*> name_to_snarl;
+    Snarl flipped_snarl;
+    snarl_manager->for_each_snarl_preorder([&](const Snarl* snarl) {
+            name_to_snarl[print_snarl(*snarl)] = snarl;
+            // also add a map from the flipped snarl (as call sometimes messes with orientation)
+            flipped_snarl.mutable_start()->set_node_id(snarl->end().node_id());
+            flipped_snarl.mutable_start()->set_backward(!snarl->end().backward());
+            flipped_snarl.mutable_end()->set_node_id(snarl->start().node_id());
+            flipped_snarl.mutable_end()->set_backward(!snarl->start().backward());
+            name_to_snarl[print_snarl(flipped_snarl)] = snarl;
+        });
+
+    // pass 1) index sites in vcf
+    // (todo: this could be done more quickly upstream)
+    unordered_set<string> names_in_vcf;
+    for (auto& thread_buf : output_variants) {
+        for (auto& output_variant_record : thread_buf) {
+            string output_variant_string;
+            zstdutil::DecompressString(output_variant_record.second, output_variant_string);
+            vector<string> toks = split_delims(output_variant_string, "\t", 4);
+            names_in_vcf.insert(toks[2]);
+        }
+    }
+
+    // determine the tags from the index
+    function<pair<size_t, string>(const string&)> get_lv_ps_tags = [&](const string& name) {
+        string parent_name;
+        size_t ancestor_count = 0;
+        const Snarl* snarl = name_to_snarl.at(name);
+        assert(snarl != nullptr);
+        // walk up the snarl tree
+        while (snarl = snarl_manager->parent_of(snarl)) {
+            string cur_name = print_snarl(*snarl);
+            if (names_in_vcf.count(cur_name)) {
+                // only count snarls that are in the vcf
+                ++ancestor_count;
+                if (parent_name.empty()) {
+                    // remembert the first parent
+                    parent_name = cur_name;
+                }
+            }
+        }
+        return make_pair(ancestor_count, parent_name);
+    };
+    
+    // pass 2) add the LV and PS tags
+#pragma omp parallel for
+    for (uint64_t i = 0; i < output_variants.size(); ++i) {
+        auto& thread_buf = output_variants[i];
+        for (auto& output_variant_record : thread_buf) {
+            string output_variant_string;
+            zstdutil::DecompressString(output_variant_record.second, output_variant_string);
+            //string& output_variant_string = output_variant_record.second;
+            vector<string> toks = split_delims(output_variant_string, "\t", 9);
+            const string& name = toks[2];
+            
+            pair<size_t, string> lv_ps = get_lv_ps_tags(name);
+            string nesting_tags = ";LV=" + std::to_string(lv_ps.first);
+            if (lv_ps.first != 0) {
+                assert(!lv_ps.second.empty());
+                nesting_tags += ";PS=" + lv_ps.second;
+            }
+
+            // rewrite the output string using the updated info toks
+            output_variant_string.clear();
+            for (size_t i = 0; i < toks.size(); ++i) {
+                output_variant_string += toks[i];
+                if (i == 7) {
+                    output_variant_string += nesting_tags;
+                }
+                if (i != toks.size() - 1) {
+                    output_variant_string += "\t";
+                }
+            }
+            output_variant_record.second.clear();
+            zstdutil::CompressString(output_variant_string, output_variant_record.second);
+        }
+    }
+}
 
 VCFGenotyper::VCFGenotyper(const PathHandleGraph& graph,
                            SnarlCaller& snarl_caller,
@@ -864,16 +1084,17 @@ bool VCFGenotyper::call_snarl(const Snarl& snarl) {
             }
         }
 
-        // just print the traversals if requested
-        if (traversals_only) {
-            assert(gaf_output);
-            emit_gaf_traversals(graph, travs);
-            return true;
-        }
-
         // find a path range corresponding to our snarl by way of the VCF variants.
         tuple<string, size_t, size_t> ref_positions = get_ref_positions(variants);
 
+        // just print the traversals if requested
+        if (traversals_only) {
+            assert(gaf_output);
+            // todo: can't get ref position here without pathposition graph
+            emit_gaf_traversals(graph, print_snarl(snarl), travs, ref_trav_idx, "", -1);
+            return true;
+        }
+        
         // use our support caller to choose our genotype (int traversal coordinates)
         vector<int> trav_genotype;
         unique_ptr<SnarlCaller::CallInfo> trav_call_info;
@@ -883,7 +1104,8 @@ bool VCFGenotyper::call_snarl(const Snarl& snarl) {
         assert(trav_genotype.size() <= 2);
 
         if (gaf_output) {
-            emit_gaf_variant(graph, snarl, travs, trav_genotype);
+            // todo: can't get ref position here without pathposition graph
+            emit_gaf_variant(graph, print_snarl(snarl), travs, trav_genotype, ref_trav_idx, "", -1);
             return true;
         }
 
@@ -1388,7 +1610,8 @@ FlowCaller::FlowCaller(const PathPositionHandleGraph& graph,
                        bool traversals_only,
                        bool gaf_output,
                        size_t trav_padding,
-                       bool genotype_snarls) :
+                       bool genotype_snarls,
+                       const pair<int64_t, int64_t>& ref_allele_length_range) :
     GraphCaller(snarl_caller, snarl_manager),
     VCFOutputCaller(sample_name),
     GAFOutputCaller(aln_emitter, sample_name, ref_paths, trav_padding),
@@ -1397,7 +1620,8 @@ FlowCaller::FlowCaller(const PathPositionHandleGraph& graph,
     ref_paths(ref_paths),
     traversals_only(traversals_only),
     gaf_output(gaf_output),
-    genotype_snarls(genotype_snarls)
+    genotype_snarls(genotype_snarls),
+    ref_allele_length_range(ref_allele_length_range)
 {
     for (int i = 0; i < ref_paths.size(); ++i) {
         ref_offsets[ref_paths[i]] = i < ref_path_offsets.size() ? ref_path_offsets[i] : 0;
@@ -1427,14 +1651,14 @@ bool FlowCaller::call_snarl(const Snarl& managed_snarl) {
     // toggle average flow / flow width based on snarl length.  this is a bit inconsistent with
     // downstream which uses the longest traversal length, but it's a bit chicken and egg
     // todo: maybe use snarl length for everything?
+    const auto& support_finder = dynamic_cast<SupportBasedSnarlCaller&>(snarl_caller).get_support_finder();    
     bool greedy_avg_flow = false;
     {
         auto snarl_contents = snarl_manager.deep_contents(&snarl, graph, false);
         if (snarl_contents.second.size() > max_snarl_edges) {
             // size cap needed as FlowCaller doesn't have nesting support yet
             return false;
-        }
-        const auto& support_finder = dynamic_cast<SupportBasedSnarlCaller&>(snarl_caller).get_support_finder();
+        }        
         size_t len_threshold = support_finder.get_average_traversal_support_switch_threshold();
         size_t length = 0;
         for (auto i = snarl_contents.first.begin(); i != snarl_contents.first.end() && length < len_threshold; ++i) {
@@ -1483,7 +1707,11 @@ bool FlowCaller::call_snarl(const Snarl& managed_snarl) {
     string& ref_path_name = common_names.front();
 
     // find the reference traversal and coordinates using the path position graph interface
-    tuple<size_t, size_t, bool, step_handle_t, step_handle_t> ref_interval = get_ref_interval(graph, snarl, ref_path_name);
+    tuple<int64_t, int64_t, bool, step_handle_t, step_handle_t> ref_interval = get_ref_interval(graph, snarl, ref_path_name);
+    if (get<0>(ref_interval) == -1) {
+        // could not find reference path interval consisten with snarl due to orientation conflict
+        return false;
+    }
     if (get<2>(ref_interval) == true) {
         // calling code assumes snarl forward on reference
         flip_snarl(snarl);
@@ -1522,6 +1750,17 @@ bool FlowCaller::call_snarl(const Snarl& managed_snarl) {
     }
     assert(ref_trav.visit(0) == snarl.start() && ref_trav.visit(ref_trav.visit_size() - 1) == snarl.end());
 
+    // optional reference length clamp can, ex, avoid trying to resolve a giant snarl
+    if (ref_trav.visit_size() > 1 && ref_allele_length_range.first > 0 || ref_allele_length_range.second < numeric_limits<int64_t>::max()) {
+        size_t ref_trav_len = 0;
+        for (size_t j = 1; j < ref_trav.visit_size() - 1; ++j) {
+            ref_trav_len += graph.get_length(graph.get_handle(ref_trav.visit(j).node_id()));
+        }
+        if (ref_trav_len < ref_allele_length_range.first || ref_trav_len > ref_allele_length_range.second) {
+            return false;
+        }        
+    }
+
     vector<SnarlTraversal> travs;
     FlowTraversalFinder* flow_trav_finder = dynamic_cast<FlowTraversalFinder*>(&traversal_finder);
     if (flow_trav_finder != nullptr) {
@@ -1557,7 +1796,8 @@ bool FlowCaller::call_snarl(const Snarl& managed_snarl) {
 
     if (traversals_only) {
         assert(gaf_output);
-        emit_gaf_traversals(graph, travs);
+        pair<string, int64_t> pos_info = get_ref_position(graph, snarl, ref_path_name, ref_offsets[ref_path_name]);
+        emit_gaf_traversals(graph, print_snarl(snarl), travs, ref_trav_idx, pos_info.first, pos_info.second, &support_finder);
     } else {
         // use our support caller to choose our genotype
         vector<int> trav_genotype;
@@ -1572,7 +1812,8 @@ bool FlowCaller::call_snarl(const Snarl& managed_snarl) {
             emit_variant(graph, snarl_caller, snarl, travs, trav_genotype, ref_trav_idx, trav_call_info, ref_path_name,
                          ref_offsets[ref_path_name], genotype_snarls, ploidy);
         } else {
-            emit_gaf_variant(graph, snarl, travs, trav_genotype);
+            pair<string, int64_t> pos_info = get_ref_position(graph, snarl, ref_path_name, ref_offsets[ref_path_name]);
+            emit_gaf_variant(graph, print_snarl(snarl), travs, trav_genotype, ref_trav_idx, pos_info.first, pos_info.second, &support_finder);
         }
 
         ret_val = trav_genotype.size() == ploidy;
@@ -1583,7 +1824,7 @@ bool FlowCaller::call_snarl(const Snarl& managed_snarl) {
 
 string FlowCaller::vcf_header(const PathHandleGraph& graph, const vector<string>& contigs,
                               const vector<size_t>& contig_length_overrides) const {
-    string header = VCFOutputCaller::vcf_header(graph, ref_paths, contig_length_overrides);
+    string header = VCFOutputCaller::vcf_header(graph, contigs, contig_length_overrides);
     header += "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n";
     snarl_caller.update_vcf_header(header);
     header += "##FILTER=<ID=PASS,Description=\"All filters passed\">\n";
@@ -1697,7 +1938,7 @@ bool NestedFlowCaller::call_snarl_recursive(const Snarl& managed_snarl, int max_
     string ref_path_name;
     SnarlTraversal ref_trav;
     int ref_trav_idx = -1;
-    tuple<size_t, size_t, bool, step_handle_t, step_handle_t> ref_interval;
+    tuple<int64_t, int64_t, bool, step_handle_t, step_handle_t> ref_interval;
     string gt_ref_path_name;
     pair<size_t, size_t> gt_ref_interval;
     
@@ -1706,6 +1947,10 @@ bool NestedFlowCaller::call_snarl_recursive(const Snarl& managed_snarl, int max_
 
         // find the reference traversal and coordinates using the path position graph interface
         ref_interval = get_ref_interval(graph, snarl, ref_path_name);
+        if (get<0>(ref_interval) == -1) {
+            // no reference path found due to orientation conflict
+            return false;
+        }
         if (get<2>(ref_interval) == true) {
             // calling code assumes snarl forward on reference
             flip_snarl(snarl);
@@ -1789,13 +2034,14 @@ bool NestedFlowCaller::call_snarl_recursive(const Snarl& managed_snarl, int max_
     // toggle average flow / flow width based on snarl length.  this is a bit inconsistent with
     // downstream which uses the longest traversal length, but it's a bit chicken and egg
     // todo: maybe use snarl length for everything?
+    const auto& support_finder = dynamic_cast<SupportBasedSnarlCaller&>(snarl_caller).get_support_finder();
+    
     bool greedy_avg_flow = false;
     {
         auto snarl_contents = snarl_manager.shallow_contents(&snarl, graph, false);
         if (max(snarl_contents.first.size(), snarl_contents.second.size()) > max_snarl_shallow_size) {
             return false;
         }
-        const auto& support_finder = dynamic_cast<SupportBasedSnarlCaller&>(snarl_caller).get_support_finder();
         size_t len_threshold = support_finder.get_average_traversal_support_switch_threshold();
         size_t length = 0;
         for (auto i = snarl_contents.first.begin(); i != snarl_contents.first.end() && length < len_threshold; ++i) {
@@ -1866,7 +2112,8 @@ bool NestedFlowCaller::call_snarl_recursive(const Snarl& managed_snarl, int max_
         for (SnarlTraversal& traversal : travs) {
             snarl_graph.embed_snarls(traversal);
         }
-        emit_gaf_traversals(graph, travs);
+        pair<string, int64_t> pos_info = get_ref_position(graph, snarl, ref_path_name, 0);
+        emit_gaf_traversals(graph, print_snarl(snarl), travs, ref_trav_idx, pos_info.first, pos_info.second, &support_finder);
     } else {
         // use our support caller to choose our genotype
         for (int ploidy = 1; ploidy <= max_ploidy; ++ploidy) {
@@ -2035,7 +2282,7 @@ string NestedFlowCaller::flatten_alt_allele(const string& nested_allele, int all
 
 string NestedFlowCaller::vcf_header(const PathHandleGraph& graph, const vector<string>& contigs,
                               const vector<size_t>& contig_length_overrides) const {
-    string header = VCFOutputCaller::vcf_header(graph, ref_paths, contig_length_overrides);
+    string header = VCFOutputCaller::vcf_header(graph, contigs, contig_length_overrides);
     header += "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n";
     snarl_caller.update_vcf_header(header);
     header += "##FILTER=<ID=PASS,Description=\"All filters passed\">\n";

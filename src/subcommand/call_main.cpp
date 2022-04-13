@@ -40,11 +40,15 @@ void help_call(char** argv) {
        << "general options:" << endl
        << "    -v, --vcf FILE          VCF file to genotype (must have been used to construct input graph with -a)" << endl
        << "    -a, --genotype-snarls   Genotype every snarl, including reference calls (use to compare multiple samples)" << endl
+       << "    -A, --all-snarls        Genotype all snarls, including nested child snarls (like deconstruct -a)" << endl
+       << "    -c, --min-length N      Genotype only snarls with reference traversal length >= N" << endl
+       << "    -C, --max-length N      Genotype only snarls with reference traversal length <= N" << endl
        << "    -f, --ref-fasta FILE    Reference fasta (required if VCF contains symbolic deletions or inversions)" << endl
        << "    -i, --ins-fasta FILE    Insertions fasta (required if VCF contains symbolic insertions)" << endl
        << "    -s, --sample NAME       Sample name [default=SAMPLE]" << endl
        << "    -r, --snarls FILE       Snarls (from vg snarls) to avoid recomputing." << endl
        << "    -g, --gbwt FILE         Only call genotypes that are present in given GBWT index." << endl
+       << "    -N, --translation FILE  Node ID translation (as created by vg gbwt --translation) to apply to snarl names in output" << endl     
        << "    -p, --ref-path NAME     Reference path to call on (multipile allowed.  defaults to all paths)" << endl
        << "    -o, --ref-offset N      Offset in reference path (multiple allowed, 1 per path)" << endl
        << "    -l, --ref-length N      Override length of reference in the contig field of output VCF" << endl
@@ -53,6 +57,7 @@ void help_call(char** argv) {
        << "                                ploidies to contigs not visited by the selected samples, or to all contigs simulated" << endl
        << "                                from if no samples are used. Unmatched contigs get ploidy 2 (or that from -d)." << endl
        << "    -n, --nested            Activate nested calling mode (experimental)" << endl
+       << "    -I, --chains            Call chains instead of snarls (experimental)" << endl
        << "    -t, --threads N         number of threads to use" << endl;
 }    
 
@@ -63,6 +68,7 @@ int main_call(int argc, char** argv) {
     string sample_name = "SAMPLE";
     string snarl_filename;
     string gbwt_filename;
+    string translation_file_name;    
     string ref_fasta_filename;
     string ins_fasta_filename;
     vector<string> ref_paths;
@@ -86,6 +92,10 @@ int main_call(int argc, char** argv) {
     size_t trav_padding = 0;
     bool genotype_snarls = false;
     bool nested = false;
+    bool call_chains = false;
+    bool all_snarls = false;
+    int64_t min_ref_allele_len = 0;
+    int64_t max_ref_allele_len = numeric_limits<int64_t>::max();    
 
     // constants
     const size_t avg_trav_threshold = 50;
@@ -110,11 +120,15 @@ int main_call(int argc, char** argv) {
             {"min-support", required_argument, 0, 'm'},
             {"vcf", required_argument, 0, 'v'},
             {"genotype-snarls", no_argument, 0, 'a'},
+            {"all-snarls", no_argument, 0, 'A'},
+            {"min-length", required_argument, 0, 'c'},
+            {"max-length", required_argument, 0, 'C'},
             {"ref-fasta", required_argument, 0, 'f'},
             {"ins-fasta", required_argument, 0, 'i'},
             {"sample", required_argument, 0, 's'},            
             {"snarls", required_argument, 0, 'r'},
             {"gbwt", required_argument, 0, 'g'},
+            {"translation", required_argument, 0, 'N'},            
             {"ref-path", required_argument, 0, 'p'},
             {"ref-offset", required_argument, 0, 'o'},
             {"ref-length", required_argument, 0, 'l'},
@@ -125,6 +139,7 @@ int main_call(int argc, char** argv) {
             {"min-trav-len", required_argument, 0, 'M'},
             {"legacy", no_argument, 0, 'L'},
             {"nested", no_argument, 0, 'n'},
+            {"chains", no_argument, 0, 'I'},            
             {"threads", required_argument, 0, 't'},
             {"help", no_argument, 0, 'h'},
             {0, 0, 0, 0}
@@ -132,7 +147,7 @@ int main_call(int argc, char** argv) {
 
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "k:Be:b:m:v:af:i:s:r:g:p:o:l:d:R:GTLM:nt:h",
+        c = getopt_long (argc, argv, "k:Be:b:m:v:aAc:C:f:i:s:r:g:N:p:o:l:d:R:GTLM:nt:h",
                          long_options, &option_index);
 
         // Detect the end of the options.
@@ -162,6 +177,15 @@ int main_call(int argc, char** argv) {
         case 'a':
             genotype_snarls = true;
             break;
+        case 'A':
+            all_snarls = true;
+            break;
+        case 'c':
+            min_ref_allele_len = parse<int64_t>(optarg);
+            break;
+        case 'C':
+            max_ref_allele_len = parse<int64_t>(optarg);
+            break;
         case 'f':
             ref_fasta_filename = optarg;
             break;
@@ -177,6 +201,9 @@ int main_call(int argc, char** argv) {
         case 'g':
             gbwt_filename = optarg;
             break;
+        case 'N':
+            translation_file_name = optarg;
+            break;            
         case 'p':
             ref_paths.push_back(optarg);
             break;
@@ -226,6 +253,9 @@ int main_call(int argc, char** argv) {
         case 'n':
             nested =true;
             break;
+        case 'I':
+            call_chains =true;
+            break;            
         case 't':
         {
             int num_threads = parse<int>(optarg);
@@ -304,6 +334,11 @@ int main_call(int argc, char** argv) {
         cerr << "error [vg call]: -v and -a options cannot be used together" << endl;
         return 1;
     }
+
+    if ((min_ref_allele_len > 0 || max_ref_allele_len < numeric_limits<int64_t>::max()) && (legacy || !vcf_filename.empty() || nested)) {
+        cerr << "error [vg call]: -c/-C no supported with -v, -l or -n" << endl;
+        return 1;        
+    }
     
     // Read the graph
     unique_ptr<PathHandleGraph> path_handle_graph;
@@ -311,6 +346,18 @@ int main_call(int argc, char** argv) {
     path_handle_graph = vg::io::VPKG::load_one<PathHandleGraph>(graph_filename);
     PathHandleGraph* graph = path_handle_graph.get();
 
+    // Read the translation
+    unique_ptr<unordered_map<nid_t, pair<nid_t, size_t>>> translation;
+    if (!translation_file_name.empty()) {
+        ifstream translation_file(translation_file_name.c_str());
+        if (!translation_file) {
+            cerr << "Error [vg call]: Unable to load translation file: " << translation_file_name << endl;
+            return 1;
+        }
+        translation = make_unique<unordered_map<nid_t, pair<nid_t, size_t>>>();
+        *translation = load_translation_back_map(*graph, translation_file);
+    }    
+    
     // Apply overlays as necessary
     bool need_path_positions = vcf_filename.empty();
     bool need_vectorizable = !pack_filename.empty();
@@ -325,13 +372,6 @@ int main_call(int argc, char** argv) {
         graph = dynamic_cast<PathHandleGraph*>(pv_overlay_helper.apply(graph));
     }
     
-    // Check our paths
-    for (const string& ref_path : ref_paths) {
-        if (!graph->has_path(ref_path)) {
-            cerr << "error [vg call]: Reference path \"" << ref_path << "\" not found in graph" << endl;
-            return 1;
-        }
-    }
     // Check our offsets
     if (ref_path_offsets.size() != 0 && ref_path_offsets.size() != ref_paths.size()) {
         cerr << "error [vg call]: when using -o, the same number paths must be given with -p" << endl;
@@ -373,14 +413,77 @@ int main_call(int argc, char** argv) {
         return 1;
     }
 
+    // in order to add subpath support, we let all ref_paths be subpaths and then convert coordinates
+    // on vcf export.  the exception is writing the header where we need base paths. we keep
+    // track of them the best we can here (just for writing the ##contigs)
+    unordered_map<string, size_t> basepath_length_map;
+
+    // call doesn't always require path positions .. .don't change that now
+    function<size_t(path_handle_t)> compute_path_length = [&] (path_handle_t path_handle) {
+        PathPositionHandleGraph* pp_graph = dynamic_cast<PathPositionHandleGraph*>(graph);
+        if (pp_graph) {
+            return pp_graph->get_path_length(path_handle);
+        } else {
+            size_t len = 0;
+            graph->for_each_step_in_path(path_handle, [&] (step_handle_t step) {
+                    len += graph->get_length(graph->get_handle_of_step(step));
+                });
+            return len;
+        }
+    };
+    
     // No paths specified: use them all
     if (ref_paths.empty()) {
         graph->for_each_path_handle([&](path_handle_t path_handle) {
                 const string& name = graph->get_path_name(path_handle);
                 if (!Paths::is_alt(name)) {
                     ref_paths.push_back(name);
+                    // keep track of length best we can using maximum coordinate in event of subpaths
+                    string base_name = Paths::get_base_name(name);
+                    size_t& cur_len = basepath_length_map[base_name];
+                    cur_len = max(cur_len, compute_path_length(path_handle) + get<2>(Paths::parse_subpath_name(name)));
                 }
             });
+    } else {
+        // if paths are given, we convert them to subpaths so that ref paths list corresponds
+        // to path names in graph.  subpath handling will only be handled when writing the vcf
+        // (this way, we add subpath support without changing anything in between)
+        vector<string> ref_subpaths;
+        unordered_map<string, bool> ref_path_set;
+        for (const string& ref_path : ref_paths) {
+            ref_path_set[ref_path] = false;
+        }
+        graph->for_each_path_handle([&](path_handle_t path_handle) {
+                const string& name = graph->get_path_name(path_handle);
+                string base_name = Paths::get_base_name(name);
+                if (ref_path_set.count(base_name)) {
+                    ref_subpaths.push_back(name);
+                    // keep track of length best we can
+                    if (ref_path_lengths.empty()) {
+                        size_t& cur_len = basepath_length_map[base_name];
+                        cur_len = max(cur_len, compute_path_length(path_handle) + get<2>(Paths::parse_subpath_name(name)));
+                    }
+                    ref_path_set[base_name] = true;
+                }
+            });
+
+        // if we have reference lengths, great!  this will be the only way to get a correct header in the presence of supbpaths
+        if (!ref_path_lengths.empty()) {
+            assert(ref_path_lengths.size() == ref_paths.size());
+            for (size_t i = 0; i < ref_paths.size(); ++i) {
+                basepath_length_map[ref_paths[i]] = ref_path_lengths[i];
+            }
+        }
+
+        // Check our paths
+        for (const auto& ref_path_used : ref_path_set) {
+            if (!ref_path_used.second) {
+                cerr << "error [vg call]: Reference path \"" << ref_path_used.first << "\" not found in graph" << endl;
+                return 1;
+            }
+        }
+        
+        swap(ref_paths, ref_subpaths);
     }
 
     // build table of ploidys
@@ -573,7 +676,8 @@ int main_call(int argc, char** argv) {
                                               traversals_only,
                                               gaf_output,
                                               trav_padding,
-                                              genotype_snarls));            
+                                              genotype_snarls,
+                                              make_pair(min_ref_allele_len, max_ref_allele_len)));
         }
     }
 
@@ -582,19 +686,34 @@ int main_call(int argc, char** argv) {
         // Init The VCF       
         VCFOutputCaller* vcf_caller = dynamic_cast<VCFOutputCaller*>(graph_caller.get());
         assert(vcf_caller != nullptr);
-        header = vcf_caller->vcf_header(*graph, ref_paths, ref_path_lengths);
+        // Make sure we get the LV/PS tags with -A
+        vcf_caller->set_nested(all_snarls);
+        vcf_caller->set_translation(translation.get());
+        // Make sure the basepath information we inferred above goes directy to the VCF header
+        // (and that it does *not* try to read it from the graph paths)
+        vector<string> header_ref_paths;
+        vector<size_t> header_ref_lengths;
+        bool need_overrides = dynamic_cast<VCFGenotyper*>(graph_caller.get()) == nullptr;
+        for (const auto& path_len : basepath_length_map) {
+            header_ref_paths.push_back(path_len.first);
+            if (need_overrides) {
+                header_ref_lengths.push_back(path_len.second);
+            }
+        }
+        header = vcf_caller->vcf_header(*graph, header_ref_paths, header_ref_lengths);
     }
 
     // Call the graph
-    if (!traversals_only) {
+    if (!call_chains) {
 
         // Call each snarl
         // (todo: try chains in normal mode)
-        graph_caller->call_top_level_snarls(*graph, ploidy);
+        graph_caller->call_top_level_snarls(*graph, all_snarls ? GraphCaller::RecurseAlways : GraphCaller::RecurseOnFail);
     } else {
         // Attempt to call chains instead of snarls so that the output traversals are longer
         // Todo: this could probably help in some cases when making VCFs too
-        graph_caller->call_top_level_chains(*graph, ploidy, max_chain_edges,  max_chain_trivial_travs);
+        graph_caller->call_top_level_chains(*graph,  max_chain_edges,  max_chain_trivial_travs,
+                                            all_snarls ? GraphCaller::RecurseAlways : GraphCaller::RecurseOnFail);
     }
 
     if (!gaf_output) {
@@ -602,7 +721,7 @@ int main_call(int argc, char** argv) {
         VCFOutputCaller* vcf_caller = dynamic_cast<VCFOutputCaller*>(graph_caller.get());
         assert(vcf_caller != nullptr);
         cout << header << flush;
-        vcf_caller->write_variants(cout);
+        vcf_caller->write_variants(cout, snarl_manager.get());
     }
     
     return 0;
