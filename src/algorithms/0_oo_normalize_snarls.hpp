@@ -14,7 +14,7 @@ class SnarlNormalizer {
 
     SnarlNormalizer(MutablePathDeletableHandleGraph &graph, const gbwt::GBWT &gbwt, const gbwtgraph::GBWTGraph & gbwt_graph,
                     const int& max_handle_size, 
-                    const int& batch_size,
+                    const int& max_region_size,
                     const int& max_snarl_spacing,
                     const int& threads,
                     const int &max_alignment_size = INT_MAX, //TODO: add a _max_handle_length default length
@@ -41,11 +41,16 @@ class SnarlNormalizer {
     // vector<pair<vector<id_t>, vector<id_t>>> _gbwt_changelog;
     vector<pair<gbwt::vector_type, gbwt::vector_type>> _gbwt_changelog;
 
+    // _touched_border_nodes tracks which nodes have been already considered when 
+    // calculating the before-normalization total snarl size.
+    unordered_set<id_t> _touched_border_nodes;
+    int _pre_norm_net_snarl_size = 0;
+
     // the maximum number of threads allowed to align in a given snarl. If the number of
     // threads exceeds this threshold, the snarl is skipped.
     const int &_max_alignment_size;
     const int &_max_handle_size;
-    const int &_batch_size;
+    const int &_max_region_size;
     const int &_max_snarl_spacing;
     const string &_path_finder;
     const bool &_disable_gbwt_update;
@@ -61,7 +66,7 @@ class SnarlNormalizer {
                                                   const string &path_seq);
 
 
-    // clustering snarls based on _batch_size and //todo add variable!
+    // clustering snarls based on _max_region_size and //todo add variable!
     vector<pair<id_t, id_t>> get_normalize_regions(const vector<const Snarl *>& snarl_roots);
 
     vector<pair<id_t, id_t>> get_single_snarl_normalize_regions(const vector<const Snarl *> &snarl_roots);
