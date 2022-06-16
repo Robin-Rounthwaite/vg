@@ -27,6 +27,8 @@ class SnarlNormalizer {
 
     virtual vector<int> normalize_snarl(const id_t& source_id, const id_t& sink_id, const bool& backwards, const int& snarl_num);
 
+    static SubHandleGraph extract_subgraph(const HandleGraph &graph, const id_t &leftmost_id, const id_t &rightmost_id);
+
   protected:
     // member variables:
     // the handle graph with snarls to normalize
@@ -46,6 +48,15 @@ class SnarlNormalizer {
     unordered_set<id_t> _touched_border_nodes;
     int _pre_norm_net_snarl_size = 0;
 
+    // a separate tracker for measuring independent snarl increase/decrease in size. Note 
+    // that because snarls overlap, the sum of all the independent snarl 
+    // increase/decreases will not equal the total increase/decrease in graph size.
+    // Also note that the "after normalization" size is measured immediately after normalization.
+    // Normalization of neighboring snarls may result in further changes of snarl size as 
+    // a result of changes in the border handles where snarls overlap.
+    // format: key: pair of leftmost,rightmost ids. value: size of snarl before,after normalization. 
+    map<pair<id_t, id_t>, pair<int, int>> _snarl_size_changes;
+
     // the maximum number of threads allowed to align in a given snarl. If the number of
     // threads exceeds this threshold, the snarl is skipped.
     const int &_max_alignment_size;
@@ -60,7 +71,7 @@ class SnarlNormalizer {
     // finding information on original graph:
     //////////////////////////////////////////////////////////////////////////////////////
 
-    SubHandleGraph extract_subgraph(const HandleGraph &graph, const id_t &leftmost_id, const id_t &rightmost_id);
+    // SubHandleGraph extract_subgraph(const HandleGraph &graph, const id_t &leftmost_id, const id_t &rightmost_id);
                                     
     vector<int> check_handle_as_start_of_path_seq(const string &handle_seq,
                                                   const string &path_seq);

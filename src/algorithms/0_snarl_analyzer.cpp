@@ -1,4 +1,5 @@
 #include "0_snarl_analyzer.hpp"
+#include "0_oo_normalize_snarls.hpp"
 #include "../snarls.hpp"
 
 namespace vg {
@@ -59,16 +60,17 @@ void print_handles_in_snarl(const HandleGraph& graph, const id_t& source, const 
     //todo: somehow avoid that assumption? Can I look up the snarl in snarl_roots, for example?
     cerr << "searching with leftmost handle as " << source << " and rightmost handle as " << sink << endl;
     // int max_search_dist = 500*32; // 500 standard handles.
-    SubHandleGraph snarl = extract_subgraph(graph, source, sink, false, max_search_dist, autostop);
-    if (snarl.get_node_count() == 0){
-        cerr << "failed to extract sequence; exceeded max size. Trying opposite orientation." << endl;
-        snarl = extract_subgraph(graph, source, sink, true, max_search_dist, autostop);
-        if (snarl.get_node_count() == 0)
-        {
-            cerr << "failed to extract sequence; exceeded max size. Neither orientation had the far node within " << max_search_dist << " bases. However, both nodes exist in the graph." << endl;
-            exit(1);
-        }
-    } 
+    SubHandleGraph snarl = SnarlNormalizer::extract_subgraph(graph, source, sink);
+    // SubHandleGraph snarl = extract_subgraph(graph, source, sink, false, max_search_dist, autostop);
+    // if (snarl.get_node_count() == 0){
+    //     cerr << "failed to extract sequence; exceeded max size. Trying opposite orientation." << endl;
+    //     snarl = extract_subgraph(graph, source, sink, true, max_search_dist, autostop);
+    //     if (snarl.get_node_count() == 0)
+    //     {
+    //         cerr << "failed to extract sequence; exceeded max size. Neither orientation had the far node within " << max_search_dist << " bases. However, both nodes exist in the graph." << endl;
+    //         exit(1);
+    //     }
+    // } 
 
     
     // cout << "node ids of snarl with source " << source << " and sink " << sink << endl; 
@@ -142,116 +144,116 @@ void SnarlAnalyzer::output_snarl_sizes(string& file_name)
 
 
 
-// TODO: Undo this terrible copy-paste from SnarlNormalizer method, and somehow use 
-// TODO:   SnarlNormalizer's code instead. (make this a non-object available function?) 
-// Given a start and end node id, construct an extract subgraph between the two nodes
-// (inclusive). Arguments:
-//      _graph: a pathhandlegraph containing the snarl with embedded paths.
-//      source_id: the source of the snarl of interest.
-//      sink_id: the sink of the snarl of interest.
-//      autostop: stop extraction of subgraph after finding the rightmost handle in the graph, and then adding up to autostop handles to the graph. (if the rightmost handle is not a sink for the graph). Set to -1 to disable.
-// Returns:
-//      a SubHandleGraph containing only the handles in _graph that are between start_id
-//      and sink_id.
-SubHandleGraph extract_subgraph(const HandleGraph &graph,
-                                                 id_t source_id,
-                                                 id_t sink_id,
-                                                 const bool backwards,
-                                                 int max_search_dist,
-                                                 int autostop) 
-{
-    // cerr << "extract_subgraph has source and sink: " << source_id << " " << sink_id << endl; 
-    // because algorithm moves left to right, determine leftmost and rightmost nodes.
-    id_t leftmost_id;
-    id_t rightmost_id;
-    // if snarl's "backwards," source is rightmost node, sink is leftmost.
-    if (backwards) 
-    {
-        leftmost_id = sink_id;
-        rightmost_id = source_id;
-    }
-    else 
-    {
-        leftmost_id = source_id;
-        rightmost_id = sink_id;
-    }
-    // cerr << "extract_subgraph" << endl;
-    /// make a subgraph containing only nodes of interest. (e.g. a snarl)
-    // make empty subgraph
-    SubHandleGraph subgraph = SubHandleGraph(&graph);
+// // TODO: Undo this terrible copy-paste from SnarlNormalizer method, and somehow use 
+// // TODO:   SnarlNormalizer's code instead. (make this a non-object available function?) 
+// // Given a start and end node id, construct an extract subgraph between the two nodes
+// // (inclusive). Arguments:
+// //      _graph: a pathhandlegraph containing the snarl with embedded paths.
+// //      source_id: the source of the snarl of interest.
+// //      sink_id: the sink of the snarl of interest.
+// //      autostop: stop extraction of subgraph after finding the rightmost handle in the graph, and then adding up to autostop handles to the graph. (if the rightmost handle is not a sink for the graph). Set to -1 to disable.
+// // Returns:
+// //      a SubHandleGraph containing only the handles in _graph that are between start_id
+// //      and sink_id.
+// SubHandleGraph extract_subgraph(const HandleGraph &graph,
+//                                                  id_t source_id,
+//                                                  id_t sink_id,
+//                                                  const bool backwards,
+//                                                  int max_search_dist,
+//                                                  int autostop) 
+// {
+//     // cerr << "extract_subgraph has source and sink: " << source_id << " " << sink_id << endl; 
+//     // because algorithm moves left to right, determine leftmost and rightmost nodes.
+//     id_t leftmost_id;
+//     id_t rightmost_id;
+//     // if snarl's "backwards," source is rightmost node, sink is leftmost.
+//     if (backwards) 
+//     {
+//         leftmost_id = sink_id;
+//         rightmost_id = source_id;
+//     }
+//     else 
+//     {
+//         leftmost_id = source_id;
+//         rightmost_id = sink_id;
+//     }
+//     // cerr << "extract_subgraph" << endl;
+//     /// make a subgraph containing only nodes of interest. (e.g. a snarl)
+//     // make empty subgraph
+//     SubHandleGraph subgraph = SubHandleGraph(&graph);
 
-    int cur_search_dist = 0;
+//     int cur_search_dist = 0;
 
-    unordered_set<id_t> visited;  // to avoid counting the same node twice.
-    unordered_set<id_t> to_visit; // nodes found that belong in the subgraph.
+//     unordered_set<id_t> visited;  // to avoid counting the same node twice.
+//     unordered_set<id_t> to_visit; // nodes found that belong in the subgraph.
 
-    // initialize with leftmost_handle (because we move only to the right of leftmost_handle):
-    handle_t leftmost_handle = graph.get_handle(leftmost_id);
-    subgraph.add_handle(leftmost_handle);
-    visited.insert(graph.get_id(leftmost_handle));
-    cur_search_dist += graph.get_sequence(leftmost_handle).size();
+//     // initialize with leftmost_handle (because we move only to the right of leftmost_handle):
+//     handle_t leftmost_handle = graph.get_handle(leftmost_id);
+//     subgraph.add_handle(leftmost_handle);
+//     visited.insert(graph.get_id(leftmost_handle));
+//     cur_search_dist += graph.get_sequence(leftmost_handle).size();
 
-    // look only to the right of leftmost_handle
-    graph.follow_edges(leftmost_handle, false, [&](const handle_t &handle) {
-        // mark the nodes to come as to_visit
-        if (visited.find(graph.get_id(handle)) == visited.end()) {
-            to_visit.insert(graph.get_id(handle));
-        }
-    });
+//     // look only to the right of leftmost_handle
+//     graph.follow_edges(leftmost_handle, false, [&](const handle_t &handle) {
+//         // mark the nodes to come as to_visit
+//         if (visited.find(graph.get_id(handle)) == visited.end()) {
+//             to_visit.insert(graph.get_id(handle));
+//         }
+//     });
 
-    int autostop_count = -1;
-    /// explore the rest of the snarl:
-    while (to_visit.size() != 0 && autostop_count!=autostop) {
-        // remove cur_handle from to_visit
-        unordered_set<id_t>::iterator cur_index = to_visit.begin();
-        handle_t cur_handle = graph.get_handle(*cur_index);
-        if (graph.get_id(cur_handle) == rightmost_id && autostop_count == -1 && autostop != -1) // when autostop == -1, it's disabled.
-        {
-            autostop_count = 1;
-        }
-        if (autostop_count != -1 && autostop != -1)
-        {
-            if (autostop_count == autostop)
-            {
-                break; // we have found the rightmost node, and afterwards extended the graph by autostop handles. End graph extension.
-            }
-            autostop_count++;
-        }
+//     int autostop_count = -1;
+//     /// explore the rest of the snarl:
+//     while (to_visit.size() != 0 && autostop_count!=autostop) {
+//         // remove cur_handle from to_visit
+//         unordered_set<id_t>::iterator cur_index = to_visit.begin();
+//         handle_t cur_handle = graph.get_handle(*cur_index);
+//         if (graph.get_id(cur_handle) == rightmost_id && autostop_count == -1 && autostop != -1) // when autostop == -1, it's disabled.
+//         {
+//             autostop_count = 1;
+//         }
+//         if (autostop_count != -1 && autostop != -1)
+//         {
+//             if (autostop_count == autostop)
+//             {
+//                 break; // we have found the rightmost node, and afterwards extended the graph by autostop handles. End graph extension.
+//             }
+//             autostop_count++;
+//         }
 
-        to_visit.erase(cur_index);
+//         to_visit.erase(cur_index);
 
-        /// visit cur_handle
-        visited.insert(graph.get_id(cur_handle));
+//         /// visit cur_handle
+//         visited.insert(graph.get_id(cur_handle));
 
-        subgraph.add_handle(cur_handle);
-        if (cur_search_dist >= max_search_dist)
-        {
-            cerr << "exceeded max_search_dist. Returning empty SubHandleGraph" << endl;
-            return SubHandleGraph(&graph);
-        }
-        cur_search_dist += graph.get_sequence(cur_handle).size();
+//         subgraph.add_handle(cur_handle);
+//         if (cur_search_dist >= max_search_dist)
+//         {
+//             cerr << "exceeded max_search_dist. Returning empty SubHandleGraph" << endl;
+//             return SubHandleGraph(&graph);
+//         }
+//         cur_search_dist += graph.get_sequence(cur_handle).size();
 
 
-        if (graph.get_id(cur_handle) != rightmost_id) { // don't iterate past rightmost node! (note: this code doesn't work if there are multiple paths past the rightmost node region. Hence the autostop feature.)
-            // look for all nodes connected to cur_handle that need to be added
-            // looking to the left,
-            graph.follow_edges(cur_handle, true, [&](const handle_t &handle) {
-                // mark the nodes to come as to_visit
-                if (visited.find(graph.get_id(handle)) == visited.end()) {
-                    to_visit.insert(graph.get_id(handle));
-                }
-            });
-            // looking to the right,
-            graph.follow_edges(cur_handle, false, [&](const handle_t &handle) {
-                // mark the nodes to come as to_visit
-                if (visited.find(graph.get_id(handle)) == visited.end()) {
-                    to_visit.insert(graph.get_id(handle));
-                }
-            });
-        }
-    }
-    return subgraph;
-}
+//         if (graph.get_id(cur_handle) != rightmost_id) { // don't iterate past rightmost node! (note: this code doesn't work if there are multiple paths past the rightmost node region. Hence the autostop feature.)
+//             // look for all nodes connected to cur_handle that need to be added
+//             // looking to the left,
+//             graph.follow_edges(cur_handle, true, [&](const handle_t &handle) {
+//                 // mark the nodes to come as to_visit
+//                 if (visited.find(graph.get_id(handle)) == visited.end()) {
+//                     to_visit.insert(graph.get_id(handle));
+//                 }
+//             });
+//             // looking to the right,
+//             graph.follow_edges(cur_handle, false, [&](const handle_t &handle) {
+//                 // mark the nodes to come as to_visit
+//                 if (visited.find(graph.get_id(handle)) == visited.end()) {
+//                     to_visit.insert(graph.get_id(handle));
+//                 }
+//             });
+//         }
+//     }
+//     return subgraph;
+// }
 
 }//algorithms
 }//vg

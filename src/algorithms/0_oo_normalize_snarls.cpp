@@ -310,6 +310,93 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         });
     }
 
+    int num_top_snarls_tracked = 10; // hardcoded for debugging convenience. //todo: change?
+    // partial_sort(_snarl_size_changes.begin(), _snarl_size_changes.begin() + num_top_snarls_tracked,_snarl_size_changes.end(), []());
+
+
+    auto compare = [](const pair<pair<id_t, id_t>, pair<int, int>> &left, const pair<pair<id_t, id_t>, pair<int, int>> &right) 
+    {
+        return (right.second.second - right.second.first) >= (left.second.second - left.second.first);
+    };
+    // priority_queue<pair<pair<id_t, id_t>, pair<int, int>>, vector<pair<pair<id_t, id_t>, pair<int, int>>>, decltype(compare)> top_snarl_changes(compare);
+    // int debug_count = 0;
+    vector<pair<pair<id_t, id_t>, pair<int, int>>> top_snarl_changes;
+
+
+    for (pair<pair<id_t, id_t>, pair<int, int>> region : _snarl_size_changes)
+    {
+        // cerr << endl << "all top_snarl_changes: " << endl;
+        // for (auto change : top_snarl_changes)
+        // {
+        //     cerr << change.second.first << " , " << change.second.second << endl;
+        // }
+        // cerr << "deciding whether or not to insert following value: " << region.second.first << " , " << region.second.second << endl;
+        if (top_snarl_changes.size() < num_top_snarls_tracked)
+        {
+            // cerr << "inserted because the top_snarl_changes isn't big enough." << endl;
+            top_snarl_changes.insert(upper_bound(top_snarl_changes.begin(), top_snarl_changes.end(), region, compare), region);
+        }
+        else if ((region.second.second - region.second.first) < (top_snarl_changes.back().second.second - top_snarl_changes.back().second.first)) //todo: check that this is proper comparison.
+        {
+            // cerr << "inserted and replaced an item. Item replaced: " << top_snarl_changes.back().second.first << " , " << top_snarl_changes.back().second.second << endl;
+            top_snarl_changes.insert(upper_bound(top_snarl_changes.begin(), top_snarl_changes.end(), region, compare), region);
+            top_snarl_changes.pop_back();
+        }
+        // else
+        // {
+        //     cerr << "didn't insert an item" << endl;
+        // }
+        // debug_count++;
+        // if (debug_count > 30)
+        // {
+        //     break;
+        // }
+    }
+
+    // // find the snarls with the biggest changes in size before/after normalization: //note: doesn't work because I'm trying to sort a map.
+    // sort(_snarl_size_changes.begin(), _snarl_size_changes.end(), [](const pair<pair<id_t, id_t>, pair<int, int>> &left, const pair<pair<id_t, id_t>, pair<int, int>> &right) {
+    //     // return (5) >= (3);
+    //     return (left.second.second - left.second.first) >= (right.second.second - right.second.first);
+    // });
+
+
+
+
+    // // NOTE: MY SILLY (but more efficient?) CODE THAT ONLY TRACKS TOP FEW SNARL CHANGES BELOW, SEE ABOVE FOR FULL-SORT:
+    // // the snarls with the biggest changes in size before/after normalization:
+    // vector<pair<pair<id_t, id_t>, pair<int, int>>> top_snarl_changes; // 0 is snarl with biggest change; 1 the snarl with 2nd biggest change, etc.
+    // int num_top_snarls_tracked = 3; // hardcoded for debugging convenience. //todo: change?
+    // for (auto snarl_size_change : _snarl_size_changes)
+    // {
+    //     int i = 0; // my position iterating through the top_snarl_changes list.
+    //     // int best_replacement = -1; // replacements will only be valid if >= 0.
+    //     while (i < num_top_snarls_tracked)
+    //     {
+    //         if (i < top_snarl_changes.size()) // if top_snarl_changes is not yet filled, and we haven't found a better spot to fill, fill this spot.
+    //         {
+    //             top_snarl_changes.push_back(snarl_size_change);
+    //             break;
+    //         }
+    //         else if ((top_snarl_changes[i].second.second - top_snarl_changes[i].second.first) < (snarl_size_change.second.second - snarl_size_change.second.first))
+    //         {
+    //             top_snarl_changes.insert(top_snarl_changes.begin() + i, snarl_size_change);
+    //             if (top_snarl_changes.size() > num_top_snarls_tracked)
+    //             {
+    //                 top_snarl_changes.pop_back();
+    //             }
+    //         }
+    //         i++; 
+    //     }
+    //     if (top_snarl_changes.size() < num_top_snarls_tracked)
+    //     {
+    //         top_snarl_changes.push_back(snarl_size_change);
+    //     }
+    //     else
+    //     {
+            
+    //     }
+    // }
+
     // float percent_snarl_sequence_reduced = static_cast<float>((post_norm_net_snarl_size/_pre_norm_net_snarl_size)*100.0);
     float percent_snarl_sequence_reduced = 100 - (static_cast<float>(post_norm_net_snarl_size)/static_cast<float>(_pre_norm_net_snarl_size))*100.0;
     // cerr.precision(2);
@@ -339,6 +426,14 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
          << _pre_norm_net_snarl_size - post_norm_net_snarl_size << endl;
     cerr << "percent sequence reduction (size_after_norm/size_before_norm): "
          <<  percent_snarl_sequence_reduced << "%" << endl;
+    cerr << "top " << num_top_snarls_tracked << " snarls change in size: " << endl;
+    cerr << "leftmost_id  rightmost_id  original_size  normalized_size  (change_in_size)" << endl;
+    
+    // for (auto i = _snarl_size_changes.end(); i != next(_snarl_size_changes.end(), -num_top_snarls_tracked); i--)
+    for (auto region : top_snarl_changes)
+    {
+        cerr << region.first.first << "   " << region.first.second << "   " << region.second.first << "   " << region.second.second << "   (" << region.second.second - region.second.first << ")" << endl;
+    }
 
     // cerr << "PROBLEMTIC CALCULATION FOLLOWS:" << endl;
     // cerr << "amount of sequence in normalized snarls before normalization: "
@@ -1161,6 +1256,8 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
         leftmost_id = source_id;
         rightmost_id = sink_id;
     }
+
+    _snarl_size_changes[make_pair(leftmost_id, rightmost_id)] = make_pair(0, 0);
     /**
      * We keep an error record to observe when snarls are skipped because they aren't 
      * normalizable under current restraints. Bools:
@@ -1323,11 +1420,13 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
                 _pre_norm_net_snarl_size+=snarl.get_sequence(handle).size();
                 _touched_border_nodes.emplace(snarl.get_id(handle));
             }
+            _snarl_size_changes[make_pair(leftmost_id, rightmost_id)].first += snarl.get_sequence(handle).size(); 
         }
         else
         {
             // if this node isn't a border node, it hasn't been counted. Add it to the count.
             _pre_norm_net_snarl_size+=snarl.get_sequence(handle).size();
+            _snarl_size_changes[make_pair(leftmost_id, rightmost_id)].first += snarl.get_sequence(handle).size(); 
 
         }
     });
@@ -1451,6 +1550,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
         // count the number of bases in the snarl.
         new_snarl.for_each_handle([&](const handle_t handle) {
             error_record[5] += new_snarl.get_sequence(handle).size();
+            _snarl_size_changes[make_pair(leftmost_id, rightmost_id)].second += new_snarl.get_sequence(handle).size(); 
         });
         force_maximum_handle_size(new_snarl);
         
@@ -1765,12 +1865,12 @@ SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
     unordered_set<id_t> to_visit; // nodes found that belong in the subgraph.
 
     // initialize with leftmost_handle (because we move only to the right of leftmost_handle):
-    handle_t leftmost_handle = _graph.get_handle(leftmost_id);
+    handle_t leftmost_handle = graph.get_handle(leftmost_id);
     subgraph.add_handle(leftmost_handle);
     visited.insert(graph.get_id(leftmost_handle));
 
     // look only to the right of leftmost_handle
-    _graph.follow_edges(leftmost_handle, false, [&](const handle_t &handle) {
+    graph.follow_edges(leftmost_handle, false, [&](const handle_t &handle) {
         // mark the nodes to come as to_visit
         if (visited.find(graph.get_id(handle)) == visited.end()) {
             to_visit.insert(graph.get_id(handle));
@@ -1781,7 +1881,7 @@ SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
     while (to_visit.size() != 0) {
         // remove cur_handle from to_visit
         unordered_set<id_t>::iterator cur_index = to_visit.begin();
-        handle_t cur_handle = _graph.get_handle(*cur_index);
+        handle_t cur_handle = graph.get_handle(*cur_index);
 
         to_visit.erase(cur_index);
 
@@ -1793,14 +1893,14 @@ SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
         if (graph.get_id(cur_handle) != rightmost_id) { // don't iterate past rightmost node!
             // look for all nodes connected to cur_handle that need to be added
             // looking to the left,
-            _graph.follow_edges(cur_handle, true, [&](const handle_t &handle) {
+            graph.follow_edges(cur_handle, true, [&](const handle_t &handle) {
                 // mark the nodes to come as to_visit
                 if (visited.find(graph.get_id(handle)) == visited.end()) {
                     to_visit.insert(graph.get_id(handle));
                 }
             });
             // looking to the right,
-            _graph.follow_edges(cur_handle, false, [&](const handle_t &handle) {
+            graph.follow_edges(cur_handle, false, [&](const handle_t &handle) {
                 // mark the nodes to come as to_visit
                 if (visited.find(graph.get_id(handle)) == visited.end()) {
                     to_visit.insert(graph.get_id(handle));
@@ -1809,7 +1909,7 @@ SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
         }
         else
         {
-            // cerr << "found the righmost node id. Here's the cur_handle: " << _graph.get_id(cur_handle) << endl;
+            // cerr << "found the righmost node id. Here's the cur_handle: " << graph.get_id(cur_handle) << endl;
             found_rightmost = true;
         }
     }
