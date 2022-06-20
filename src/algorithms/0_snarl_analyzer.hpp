@@ -34,15 +34,15 @@ class SnarlAnalyzer {
     vector<int> _snarl_sizes;
 
 };
-  /// internal functions:
-  // todo: un-steal this from SnarlNormalizer. Actually, better plan is to move the equivalent function out of SnarlNormalizer, then be able to call it here.
-  // Extracts a subgraph representing a snarl.
-  SubHandleGraph extract_subgraph(const HandleGraph &graph,
-                                                id_t source_id,
-                                                id_t sink_id,
-                                                const bool backwards,
-                                                int max_search_dist, 
-                                                int autostop);
+  // /// internal functions:
+  // // todo: un-steal this from SnarlNormalizer. Actually, better plan is to move the equivalent function out of SnarlNormalizer, then be able to call it here.
+  // // Extracts a subgraph representing a snarl.
+  // SubHandleGraph extract_subgraph(const HandleGraph &graph,
+  //                                               id_t source_id,
+  //                                               id_t sink_id,
+  //                                               const bool backwards,
+  //                                               int max_search_dist, 
+  //                                               int autostop);
 
 void print_handles_in_snarl(const HandleGraph& graph, const id_t& source, const id_t& sink, const int& max_search_dist, int autostop=20);
 

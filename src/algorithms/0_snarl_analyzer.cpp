@@ -91,7 +91,19 @@ SnarlAnalyzer::SnarlAnalyzer(const HandleGraph& graph, ifstream &snarl_stream, b
 
     vector<const Snarl *> snarl_roots = snarl_manager->top_level_snarls();
     for (auto roots : snarl_roots) {
-        SubHandleGraph snarl = extract_subgraph(graph, roots->start().node_id(), roots->end().node_id(), roots->start().backward(), INT_MAX, -1); //note: autostop disabled becauses rightmost handle is guaranteed to be a sink.
+        id_t leftmost_id;
+        id_t rightmost_id;
+        if (roots->start().backward())
+        {
+            leftmost_id = roots->end().node_id();
+            rightmost_id = roots->start().node_id();
+        }
+        else
+        {
+            leftmost_id = roots->start().node_id();
+            rightmost_id = roots->end().node_id();
+        }
+        SubHandleGraph snarl = SnarlNormalizer::extract_subgraph(graph, leftmost_id, rightmost_id);
 
         int snarl_size = 0;
         if (skip_source_sink) // skip the source and sink to avoid double-counting of seq.
