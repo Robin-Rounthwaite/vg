@@ -1827,7 +1827,7 @@ void SnarlNormalizer::force_maximum_handle_size(MutableHandleGraph &graph) {
 // TODO: change the arguments to handles, which contain orientation within themselves.
 // Given a start and end node id, construct an extract subgraph between the two nodes
 // (inclusive). Arguments:
-//      _graph: a pathhandlegraph containing the snarl with embedded paths.
+//      graph: a pathhandlegraph containing the snarl with embedded paths.
 //      source_id: the source of the snarl of interest.
 //      sink_id: the sink of the snarl of interest.
 // Returns:

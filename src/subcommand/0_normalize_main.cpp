@@ -36,127 +36,127 @@ using namespace vg::subcommand;
 
 //todo: remove disable_gbwt_update option.
 
-gbwt::GBWT run_norm(vector<const Snarl *> snarl_roots, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph_file, int max_handle_size, int max_alignment_size, int max_region_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print)
-// tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> run_norm(vector<const Snarl *> snarl_roots, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph_file, int max_handle_size, int max_alignment_size, int max_region_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print)
-{
-  // getting graph of any type, except non-mutable graphs (e.g., xg)
-  shared_ptr<MutablePathDeletableHandleGraph> graph;
-  get_input_file(optind, argc, argv, [&](istream &in) {
-    graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);
-  });
+// gbwt::GBWT run_norm(vector<const Snarl *> snarl_roots, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph_file, int max_handle_size, int max_alignment_size, int max_region_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print)
+// // tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> run_norm(vector<const Snarl *> snarl_roots, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph_file, int max_handle_size, int max_alignment_size, int max_region_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print)
+// {
+//   // getting graph of any type, except non-mutable graphs (e.g., xg)
+//   shared_ptr<MutablePathDeletableHandleGraph> graph;
+//   get_input_file(optind, argc, argv, [&](istream &in) {
+//     graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);
+//   });
 
 
-    /// Build the gbwt:
-  ifstream gbwt_stream;
-  gbwt_stream.open(gbwt_file);
+//     /// Build the gbwt:
+//   ifstream gbwt_stream;
+//   gbwt_stream.open(gbwt_file);
 
-  // Load the GBWT from its container
-  unique_ptr<gbwt::GBWT> gbwt;
-  gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream);
+//   // Load the GBWT from its container
+//   unique_ptr<gbwt::GBWT> gbwt;
+//   gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream);
   
-  // gbwtgraph::GBWTGraph gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
-  // algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
-  // *graph, *gbwt, gbwt_graph, max_handle_size, max_alignment_size);
+//   // gbwtgraph::GBWTGraph gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
+//   // algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
+//   // *graph, *gbwt, gbwt_graph, max_handle_size, max_alignment_size);
   
-  // gbwtgraph::GBWTGraph gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
-  // save_gbwtgraph(gbwt_graph, gbwt_file+".gg");
-  // unique_ptr<gbwtgraph::GBWTGraph> gbwt_graph_p;
-  // gbwt_graph_p = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_file+".gg");
-  // algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
-  // *graph, *gbwt, *gbwt_graph_p, max_handle_size, max_alignment_size);
+//   // gbwtgraph::GBWTGraph gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
+//   // save_gbwtgraph(gbwt_graph, gbwt_file+".gg");
+//   // unique_ptr<gbwtgraph::GBWTGraph> gbwt_graph_p;
+//   // gbwt_graph_p = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_file+".gg");
+//   // algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
+//   // *graph, *gbwt, *gbwt_graph_p, max_handle_size, max_alignment_size);
 
-  unique_ptr<gbwtgraph::GBWTGraph> gbwt_graph;
-  if (gbwt_graph_file.size() == 0)
-  {
-    string gbwt_graph_output_file = gbwt_file + ".gg";
-    cerr << "gbwt_graph option is empty. Making new GBWTGraph from gbwt and graph. Saving as " << gbwt_graph_output_file << endl;
-    gbwtgraph::GBWTGraph new_gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
-    save_gbwtgraph(new_gbwt_graph, gbwt_graph_output_file);
-    //todo: find way to load gbwtgraph's unique pointer without saving and then reloading file.
-    gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_output_file);
-    gbwt_graph->set_gbwt(*gbwt);
-  }
-  else 
-  {
-    gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_file);
-    gbwt_graph->set_gbwt(*gbwt);
-  }
+//   unique_ptr<gbwtgraph::GBWTGraph> gbwt_graph;
+//   if (gbwt_graph_file.size() == 0)
+//   {
+//     string gbwt_graph_output_file = gbwt_file + ".gg";
+//     cerr << "gbwt_graph option is empty. Making new GBWTGraph from gbwt and graph. Saving as " << gbwt_graph_output_file << endl;
+//     gbwtgraph::GBWTGraph new_gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
+//     save_gbwtgraph(new_gbwt_graph, gbwt_graph_output_file);
+//     //todo: find way to load gbwtgraph's unique pointer without saving and then reloading file.
+//     gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_output_file);
+//     gbwt_graph->set_gbwt(*gbwt);
+//   }
+//   else 
+//   {
+//     gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_file);
+//     gbwt_graph->set_gbwt(*gbwt);
+//   }
 
 
-  algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
-    *graph, *gbwt, *gbwt_graph, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", disable_gbwt_update, debug_print);
+//   algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
+//     *graph, *gbwt, *gbwt_graph, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", disable_gbwt_update, debug_print);
 
-  tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = normalizer.normalize_snarls(snarl_roots);
+//   tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = normalizer.normalize_snarls(snarl_roots);
 
-  //todo: integrate this into norm. And make the handlegraph into a non-shared pointer.
-  //todo: return gbwt_update ingredients, then call update outside this function.
-  // Save the modified graph
-  vg::io::save_handle_graph(graph.get(), std::cout);
+//   //todo: integrate this into norm. And make the handlegraph into a non-shared pointer.
+//   //todo: return gbwt_update ingredients, then call update outside this function.
+//   // Save the modified graph
+//   vg::io::save_handle_graph(graph.get(), std::cout);
   
-  // free memory:
-  if (!graph.unique()) //todo: verify this is never true
-  {
-    cerr <<" --------------------------------------error: graph ptr is not unique. Fix code." << endl;
-  }
-  graph.reset();
-  snarl_roots.clear();
+//   // free memory:
+//   if (!graph.unique()) //todo: verify this is never true
+//   {
+//     cerr <<" --------------------------------------error: graph ptr is not unique. Fix code." << endl;
+//   }
+//   graph.reset();
+//   snarl_roots.clear();
   
-  if (!disable_gbwt_update)
-  {
-    gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
-    return normalized_gbwt;
-  }
-  else
-  {
-    gbwt::GBWT empty_gbwt;
-    return empty_gbwt;
-  }
-  // gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
+//   if (!disable_gbwt_update)
+//   {
+//     gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
+//     return normalized_gbwt;
+//   }
+//   else
+//   {
+//     gbwt::GBWT empty_gbwt;
+//     return empty_gbwt;
+//   }
+//   // gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
   
-  // return gbwt_update_items;
+//   // return gbwt_update_items;
 
-  // if (disable_gbwt_update) 
-  // {
-  //   gbwt::GBWT empty_gbwt;
-  //   return make_pair(graph, empty_gbwt);
-  // }
-  // else
-  // {
-  //   gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
-  //   return make_pair(graph, normalized_gbwt);
-  // }
-  // gbwt::GBWT normalized_gbwt = normalizer.normalize_snarls(snarl_roots);
-}
+//   // if (disable_gbwt_update) 
+//   // {
+//   //   gbwt::GBWT empty_gbwt;
+//   //   return make_pair(graph, empty_gbwt);
+//   // }
+//   // else
+//   // {
+//   //   gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
+//   //   return make_pair(graph, normalized_gbwt);
+//   // }
+//   // gbwt::GBWT normalized_gbwt = normalizer.normalize_snarls(snarl_roots);
+// }
 
 
-//binary search:
-void binary_search_norm(vector<const Snarl *> chosen_snarls, int snarl_start, int snarl_end, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph, int max_handle_size, int max_alignment_size, int max_region_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print) // pass 0 and chosen_snarls.size() for first snarl_start/end. 
-{
-  cerr << "\nnormalizing snarls between: " << snarl_start << " and " << snarl_end << endl;
-  if (snarl_end - snarl_start  == 0)
-  {
-    return;
-  }
-  else
-  {
-    try
-    {
-      run_norm(chosen_snarls, optind, argc, argv, gbwt_file, gbwt_graph, max_handle_size, max_alignment_size, max_region_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
-    } catch (const std::out_of_range& e) {
-      vector<const Snarl *>::const_iterator first = chosen_snarls.begin();
-      vector<const Snarl *>::const_iterator mid = chosen_snarls.begin() + chosen_snarls.size()/2;
-      vector<const Snarl *>::const_iterator last = chosen_snarls.end();
-      vector<const Snarl *> first_half(first, mid);
-      vector<const Snarl *> second_half(mid, last);
-      cerr << "normalizing snarls between: " << snarl_start << " and " << snarl_end << " failed. Splitting." << endl;
-      binary_search_norm(first_half, snarl_start, snarl_start + chosen_snarls.size()/2, optind, argc, argv, gbwt_file, gbwt_graph, max_handle_size, max_alignment_size, max_region_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
-      binary_search_norm(second_half, snarl_start + chosen_snarls.size()/2, snarl_end, optind, argc, argv, gbwt_file, gbwt_graph, max_handle_size, max_alignment_size, max_region_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
-    } catch (...) {
-      cerr << "snarls between: " << snarl_start << " and " << snarl_end << " ended successfully." << endl;
-    }
-  }
-  return;
-} 
+// //binary search:
+// void binary_search_norm(vector<const Snarl *> chosen_snarls, int snarl_start, int snarl_end, int optind, int argc, char** argv, string gbwt_file, string gbwt_graph, int max_handle_size, int max_alignment_size, int max_region_size, int max_snarl_spacing, int threads,  bool disable_gbwt_update, bool debug_print) // pass 0 and chosen_snarls.size() for first snarl_start/end. 
+// {
+//   cerr << "\nnormalizing snarls between: " << snarl_start << " and " << snarl_end << endl;
+//   if (snarl_end - snarl_start  == 0)
+//   {
+//     return;
+//   }
+//   else
+//   {
+//     try
+//     {
+//       run_norm(chosen_snarls, optind, argc, argv, gbwt_file, gbwt_graph, max_handle_size, max_alignment_size, max_region_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
+//     } catch (const std::out_of_range& e) {
+//       vector<const Snarl *>::const_iterator first = chosen_snarls.begin();
+//       vector<const Snarl *>::const_iterator mid = chosen_snarls.begin() + chosen_snarls.size()/2;
+//       vector<const Snarl *>::const_iterator last = chosen_snarls.end();
+//       vector<const Snarl *> first_half(first, mid);
+//       vector<const Snarl *> second_half(mid, last);
+//       cerr << "normalizing snarls between: " << snarl_start << " and " << snarl_end << " failed. Splitting." << endl;
+//       binary_search_norm(first_half, snarl_start, snarl_start + chosen_snarls.size()/2, optind, argc, argv, gbwt_file, gbwt_graph, max_handle_size, max_alignment_size, max_region_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
+//       binary_search_norm(second_half, snarl_start + chosen_snarls.size()/2, snarl_end, optind, argc, argv, gbwt_file, gbwt_graph, max_handle_size, max_alignment_size, max_region_size, max_snarl_spacing, threads, disable_gbwt_update, debug_print);
+//     } catch (...) {
+//       cerr << "snarls between: " << snarl_start << " and " << snarl_end << " ended successfully." << endl;
+//     }
+//   }
+//   return;
+// } 
 
 void help_normalize(char **argv) {
   cerr
@@ -646,7 +646,6 @@ int main_normalize(int argc, char **argv) {
   {
     ///////// Input objects: ///////////
     // graph
-    cerr << "messing with graph pointers here!" << endl;
     shared_ptr<MutablePathDeletableHandleGraph> graph;
     get_input_file(optind, argc, argv, [&](istream &in) {
       graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);
@@ -689,18 +688,18 @@ int main_normalize(int argc, char **argv) {
     // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
     tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<handle_t>> haplotypes;
-    cerr << "sink id before SnarlSequenceFinder decl: " << rightmost_id << endl;
+    // cerr << "sink id before SnarlSequenceFinder decl: " << rightmost_id << endl;
     algorithms::SnarlSequenceFinder sequence_finder = algorithms::SnarlSequenceFinder(*graph, snarl, *gbwt_graph, leftmost_id, rightmost_id, false);
-    cerr << "sink id between find_embedded_paths and SnarlSequenceFinder decl: " << rightmost_id << endl;
+    // cerr << "sink id between find_embedded_paths and SnarlSequenceFinder decl: " << rightmost_id << endl;
+    //ADAM_REVIEW - this is the code with the undefined behavior.
     vector<pair<step_handle_t, step_handle_t>> embedded_paths = sequence_finder.find_embedded_paths();
-    cerr << "sink id after find_embedded_paths: " << rightmost_id << endl;
+    // cerr << "sink id after find_embedded_paths: " << rightmost_id << endl;
     // cerr << "size of embedded_paths as a returned object: " << embedded_paths.size() << end;
     for (auto path : embedded_paths)
     {
       step_handle_t cur_step = path.first;
       step_handle_t last_step = path.second;
       cerr << "getting id of cur_step: " << (*graph).get_id((*graph).get_handle_of_step(cur_step)) << endl;
-      cerr << "this file should be updated." << endl;
       // cerr << "getting handle of final...: " << endl;
       // (*graph).get_handle_of_step(path.second);
       cerr << "getting id of final step: " << (*graph).get_id((*graph).get_handle_of_step(last_step)) << endl;

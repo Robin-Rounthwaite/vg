@@ -488,9 +488,13 @@ SnarlSequenceFinder::find_haplotypes_not_at_source() {
 vector<pair<step_handle_t, step_handle_t>>
 SnarlSequenceFinder::find_embedded_paths() {
 
+    if (debug_check_destructor)
+    {
+        cerr << "find_embedded_paths is running, even though the SnarlSequenceFinder has been deleted!" << endl;
+    }
     cerr << "find_embedded paths begins now!" << endl;
-    cerr << "getting id of source: " << (_graph).get_id((_graph).get_handle(_source_id)) << endl;
-    cerr << "getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+    // cerr << "getting id of source: " << (_graph).get_id((_graph).get_handle(_source_id)) << endl;
+    // cerr << "getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
 
     // cerr << "extract_embedded_paths_in_snarl" << endl;
     // cerr << "source id: " << source_id << endl;
@@ -526,12 +530,19 @@ SnarlSequenceFinder::find_embedded_paths() {
             // direction (i.e. source towards sink or sink towards source).
             //todo: should the following if statement only contain the first conditional? The other two conditionals don't do what the comment says, and also don't seem to make sense.
             if (paths_found.find(path) == paths_found.end() ||
-                _graph.get_id(_graph.get_handle_of_step(paths_found[path])) == _source_id ||
-                _graph.get_id(_graph.get_handle_of_step(paths_found[path])) == _sink_id) {
+                _graph.get_id(_graph.get_handle_of_step(paths_found.at(path))) == _source_id ||
+                _graph.get_id(_graph.get_handle_of_step(paths_found.at(path))) == _sink_id) {
                 // cerr << "found a new path." << endl;
                 // then we need to mark it as found and save the step.
-                paths_found[path] = step;
+                paths_found.emplace(path, step);
             }
+            // if (paths_found.find(path) == paths_found.end() ||
+            //     _graph.get_id(_graph.get_handle_of_step(paths_found[path])) == _source_id ||
+            //     _graph.get_id(_graph.get_handle_of_step(paths_found[path])) == _sink_id) {
+            //     // cerr << "found a new path." << endl;
+            //     // then we need to mark it as found and save the step.
+            //     paths_found[path] = step;
+            // }
         }
     });
     cerr << "2: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
@@ -548,25 +559,26 @@ SnarlSequenceFinder::find_embedded_paths() {
     // TODO: Note copy paste of code here. In python I'd do "for fxn in [fxn1, fxn2]:",
     // TODO      so that I could iterate over the fxn. That sounds template-messy in C++
     // tho'. Should I?
-    cerr << "2.3: getting sink directly: " << _sink_id << endl;
-    cerr << "2.3: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
-    cerr << "2.3: getting sink directly: " << _sink_id << endl;
+    // cerr << "2.3: getting sink directly: " << _sink_id << endl;
+    // cerr << "2.3: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+    // cerr << "2.3: getting sink directly: " << _sink_id << endl;
     int debug_counter = 0;
-    cerr << "2.3: getting sink directly: " << _sink_id << endl;
-    cerr << "2.4: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+    // cerr << "2.3: getting sink directly: " << _sink_id << endl;
+    // cerr << "2.4: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+    //ADAM_REVIEW - this is where I observe the _sink_id changing values (undefined behavior)
     cerr << "2.3: getting sink directly: " << _sink_id << endl;
     vector<pair<step_handle_t, step_handle_t>> paths_in_snarl;
     cerr << "2.3: getting sink directly: " << _sink_id << endl;
-    cerr << "2.5: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
-    cerr << "2.3: getting sink directly: " << _sink_id << endl;
+    // cerr << "2.5: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+    // cerr << "2.3: getting sink directly: " << _sink_id << endl;
     for (auto &it : paths_found) {
-        cerr << "2.6: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+        // cerr << "2.6: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
 
-        if (_sink_id != 997029)
-        {
-            cerr << "2) ";
-            cerr << "sink id has changed after " << debug_counter << " iterations." << endl;
-        }
+        // if (_sink_id != 997029)
+        // {
+        //     cerr << "2) ";
+        //     cerr << "sink id has changed after " << debug_counter << " iterations." << endl;
+        // }
         step_handle_t step = it.second;
         // path_in_snarl describes the start and end steps in the path,
         // as constrained by the snarl.
@@ -577,11 +589,6 @@ SnarlSequenceFinder::find_embedded_paths() {
         step_handle_t begin_in_snarl_step = step;
         id_t begin_in_snarl_id =
             _graph.get_id(_graph.get_handle_of_step(begin_in_snarl_step));
-        if (_sink_id != 997029)
-        {
-            cerr << "3) ";
-            cerr << "sink id has changed after " << debug_counter << " iterations." << endl;
-        }
 
         while (((begin_in_snarl_id != _source_id)) &&
                _graph.has_previous_step(begin_in_snarl_step)) {
@@ -591,11 +598,6 @@ SnarlSequenceFinder::find_embedded_paths() {
         }
         path_in_snarl.first = begin_in_snarl_step;
 
-        if (_sink_id != 997029)
-        {
-            cerr << "4) ";
-            cerr << "sink id has changed after " << debug_counter << " iterations." << endl;
-        }
         // Look for the step closest to the end of the path, as constrained by the snarl.
         step_handle_t end_in_snarl_step = step;
         id_t end_in_snarl_id = _graph.get_id(_graph.get_handle_of_step(end_in_snarl_step));
@@ -606,26 +608,16 @@ SnarlSequenceFinder::find_embedded_paths() {
             end_in_snarl_step = _graph.get_next_step(end_in_snarl_step);
             end_in_snarl_id = _graph.get_id(_graph.get_handle_of_step(end_in_snarl_step));
         }
-        if (_sink_id != 997029)
-        {
-            cerr << "5) ";
-            cerr << "sink id has changed after " << debug_counter << " iterations." << endl;
-        }
         // Note: when adding the end step, path notation convention requires that we add
         // the null step at the end of the path (or the next arbitrary step, in the case
         // of a path that extends beyond our snarl.)
         path_in_snarl.second = _graph.get_next_step(end_in_snarl_step);
 
         paths_in_snarl.push_back(path_in_snarl);
-        if (_sink_id != 997029)
-        {
-            cerr << "6) ";
-            cerr << "sink id has changed after " << debug_counter << " iterations." << endl;
-        }
 
         debug_counter++;
     }
-    cerr << "3: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+    // cerr << "3: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
 
     //todo: move the following to unit tests:
     unordered_set<string> path_names;
@@ -666,10 +658,10 @@ SnarlSequenceFinder::find_embedded_paths() {
     // cerr << "tested " << path_names.size() << " paths in UNIT_TEST." << endl;
     // cerr << "************END-UNIT_TEST for find_embedded_paths. Tested " << path_names.size() << " paths in UNIT_TEST.************"<< endl;
 
-    cerr << "getting id of source: " << (_graph).get_id((_graph).get_handle(_source_id)) << endl;
-    cerr << "sink id: " << _sink_id << endl;
-    cerr << "getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
-    cerr << "length of paths_in_snarl: " << paths_in_snarl.size() << endl;
+    // cerr << "getting id of source: " << (_graph).get_id((_graph).get_handle(_source_id)) << endl;
+    // cerr << "sink id: " << _sink_id << endl;
+    // cerr << "getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+    // cerr << "length of paths_in_snarl: " << paths_in_snarl.size() << endl;
     
     cerr << "find_embedded paths ends now." << endl;
 

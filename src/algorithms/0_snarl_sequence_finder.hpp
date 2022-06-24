@@ -8,11 +8,18 @@ namespace algorithms {
 
 class SnarlSequenceFinder {
   public:
-    virtual ~SnarlSequenceFinder() = default;
+    virtual ~SnarlSequenceFinder()
+    {
+      cerr << "SnarlSequenceFinder destructor called." << endl;
+      debug_check_destructor = true;
+    };
 
     SnarlSequenceFinder(const PathHandleGraph & graph, const SubHandleGraph &snarl,
                    const gbwtgraph::GBWTGraph &gbwt_graph, const id_t &source_id, 
                    const id_t &sink_id, const bool &backwards);
+    // {
+    //   cerr << "SnarlSequenceFinder constructor called." << endl;
+    // };
 
     tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<handle_t>>
     find_gbwt_haps();
@@ -36,6 +43,7 @@ class SnarlSequenceFinder {
     //todo: either make this an optional argument for the class (and pull it from the 
     //todo:    SnarlNormalizer args), or remove as a debug var.
     bool _full_log_print = false; // for printing info that isn't necessarily something gone wrong.
+    bool debug_check_destructor = false; //only true after destructed.
 
     vector<vector<handle_t>> 
     find_haplotypes_not_at_source();
