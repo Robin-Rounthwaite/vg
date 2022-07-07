@@ -5,7 +5,7 @@
 namespace vg {
 namespace algorithms{
 
-void print_handles_in_snarl(const HandleGraph& graph, const id_t& source, const id_t& sink, const int& max_search_dist, int autostop/*=20*/)
+void print_handles_in_snarl(const HandleGraph& graph, const id_t source, const id_t sink, const int max_search_dist, int autostop/*=20*/)
 {
     // vector<int> mapping_nodes { 803806, 803807, 803809, 803810, 803812, 803813, 803815, 803816, 803817, 803818, 803821, 803822, 803823, 803824, 803825, 803826, 803827, 803828, 803829, 803830, 803831, 803832, 803833, 803834 };
     // for (id_t node : mapping_nodes)

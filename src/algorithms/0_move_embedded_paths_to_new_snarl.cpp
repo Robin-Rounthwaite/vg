@@ -19,7 +19,7 @@ namespace algorithms {
 *
 */
 
-vector<pair<vector<handle_t>, int>> SnarlNormalizer::find_possible_path_starts(const handle_t &leftmost_handle, const handle_t &rightmost_handle, const pair<bool, bool> &path_spans_left_right)
+vector<pair<vector<handle_t>, int>> SnarlNormalizer::find_possible_path_starts(const handle_t leftmost_handle, const handle_t rightmost_handle, const pair<bool, bool> path_spans_left_right)
 {
     vector<pair<vector<handle_t>, int>> possible_paths;
 
@@ -49,7 +49,7 @@ vector<pair<vector<handle_t>, int>> SnarlNormalizer::find_possible_path_starts(c
  * @param  {bool>} path_spans_left_right            : 
  * @return {vector<handle_t>}                       : empty if no path; otherwise, the sequence of handles representing a path which matches the path_str.
  */
-vector<handle_t> SnarlNormalizer::extend_possible_paths(vector<pair<vector<handle_t>, int>> &possible_path_starts, const string &path_str, const handle_t &leftmost_handle, const handle_t &rightmost_handle, const pair<bool, bool> &path_spans_left_right, const pair<id_t, id_t> &main_graph_source_and_sink)
+vector<handle_t> SnarlNormalizer::extend_possible_paths(vector<pair<vector<handle_t>, int>> &possible_path_starts, const string &path_str, const handle_t leftmost_handle, const handle_t rightmost_handle, const pair<bool, bool> path_spans_left_right, const pair<id_t, id_t> main_graph_source_and_sink)
 {
     // cerr << "path string (note: should be left-to-right at this point, e.g. TTACT, not AGTAA: " << path_str << endl;
     // cerr << "leftmost handle id and seq: " << _graph.get_id(leftmost_handle) << " " << _graph.get_sequence(leftmost_handle) << endl;
@@ -86,7 +86,7 @@ vector<handle_t> SnarlNormalizer::extend_possible_paths(vector<pair<vector<handl
         // extend the path through all right-extending edges to see if any subsequent
         // paths still satisfy the requirements for being a possible_path:
         _graph.follow_edges(
-            get<0>(cur_possible_path).back(), false, [&](const handle_t &next) {
+            get<0>(cur_possible_path).back(), false, [&](const handle_t next) {
                 // make a copy to be extended for through each possible next handle in
                 // follow edges.
                 pair<vector<handle_t>, int> possible_path = cur_possible_path;
@@ -141,7 +141,7 @@ vector<handle_t> SnarlNormalizer::extend_possible_paths(vector<pair<vector<handl
  * @param  {bool} path_directed_left_to_right            : 
  * @return {pair<step_handle_t, step_handle_t>}          :
  */
-pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const pair<step_handle_t, step_handle_t> & old_path, const id_t &leftmost_id, const id_t &rightmost_id, const pair<bool, bool> &path_spans_left_right, const bool &path_directed_left_to_right, const pair<id_t, id_t> &main_graph_source_and_sink)
+pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const pair<step_handle_t, step_handle_t>  old_path, const id_t leftmost_id, const id_t rightmost_id, const pair<bool, bool> path_spans_left_right, const bool path_directed_left_to_right, const pair<id_t, id_t> main_graph_source_and_sink)
 {
     /*
 * This should return the series of handles, from left to right if path_left_to_right==true (else vice-versa), that the path should move to.
@@ -328,8 +328,8 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
 // // Return: None.
 // void SnarlNormalizer::move_embedded_path_to_snarl(
 //     const pair<step_handle_t, step_handle_t> &old_embedded_path,
-//     vector<handle_t> &new_snarl_handles, id_t &new_source_id, id_t &new_sink_id,
-//     const id_t &old_source_id, const id_t &old_sink_id, const bool backwards)
+//     vector<handle_t> &new_snarl_handles, id_t new_source_id, id_t new_sink_id,
+//     const id_t old_source_id, const id_t old_sink_id, const bool backwards)
 // {
 
 //     // get the sequence associated with the path
@@ -427,7 +427,7 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
 //         // extend the path through all right-extending edges to see if any subsequent
 //         // paths still satisfy the requirements for being a possible_path:
 //         bool no_path = _graph.follow_edges(
-//             get<0>(possible_path_query).back(), false, [&](const handle_t &next) {
+//             get<0>(possible_path_query).back(), false, [&](const handle_t next) {
 //                 // make a copy to be extended for through each possible next handle in
 //                 // follow edges.
 //                 tuple<vector<handle_t>, int, int> possible_path = possible_path_query;

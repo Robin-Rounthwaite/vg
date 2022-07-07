@@ -44,6 +44,6 @@ class SnarlAnalyzer {
   //                                               int max_search_dist, 
   //                                               int autostop);
 
-void print_handles_in_snarl(const HandleGraph& graph, const id_t& source, const id_t& sink, const int& max_search_dist, int autostop=20);
+void print_handles_in_snarl(const HandleGraph& graph, const id_t source, const id_t sink, const int max_search_dist, int autostop=20);
 
 }}

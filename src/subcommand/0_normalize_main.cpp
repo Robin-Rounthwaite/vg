@@ -170,9 +170,7 @@ void help_normalize(char **argv) {
       << "    -s, --snarls       snarls file corresponding to hashgraph. Must include trivial snarls (i.e. made with vg snarls -T)."
       << endl
       << "    -o, --output_gbwt   name for the gbwt corresponding to the normalized graph. Default is normalized.gbwt."
-      << "    -n, --normalize_type        can be either 'all' or 'one'. "
-         "Default is 'all'. If 'all', all top-level snarls in the graph are "
-         "normalized. If 'one', only the one specified snarl is normalized."
+      << "    -n, --normalize_region        Directly normalizes the graph between nodes -a and -b. Note: code assumes that the regions between a and b is only reachable from nodes within the region."
       << endl
       << "    -a, --leftmost_id        only used when --normalize_type is 'one', or when using -x option. "
          "The leftmost_id of the single node to be normalized. (for orientation of a snarl, check the 'backwards' field of the snarl.)"
@@ -231,8 +229,12 @@ void help_normalize(char **argv) {
       << endl
       << "    -E, --extract_paths      A debugging tool. Given a snarl, prints all the paths through the snarl to cout. Snarl is defined with -a and -b. Also requires -g. (-r saves time but isn't required)." //todo: include an extension of search for the "after normalization" phase which looks in the next snarl for possible sequence-shifting between snarls.
       << endl
-      << "    -V, --verify_normalize      A debugging tool. Given the output from extract_paths (-E), verifies that those paths also exist in the given snarl. Snarl is defined with -a and -b. Also requires -g. (-r saves time but isn't required)." //todo: include an extension of search for the "after normalization" phase which looks in the next snarl for possible sequence-shifting between snarls.
+      << "    -C, --compare_full_gbwt_paths      A debugging tool. Determines if two gbwts have identical haplotype content. Pass one of the gbwts to -g, and the other to this argument (-C). Optionally, to bypass remaking the gbwt_graphs, pass the gbwts corresponding gbwt_graphs to -r and -D, respectively."
       << endl
+      // << "    -C_old, --compare_extracts      A debugging tool. Identifies if two outputs from two different extract_paths are comparable by performing a substring comparison. If all the strings in one file are substrings to the strings in the other file, or vice-versa, it asserts that the two snarls contain the same sequence information. Pass one -E output to this argument, and the other -E output to '-D'." //todo: include an extension of search for the "after normalization" phase which looks in the next snarl for possible sequence-shifting between snarls.
+      // << endl
+      // << "    -D, --compare_extracts_second_file      Use in conjuction with -C. Pass one of the output files from -E to -C, and the other to this argument." //todo: include an extension of search for the "after normalization" phase which looks in the next snarl for possible sequence-shifting between snarls.
+      // << endl
       << "    -q, --disable_gbwt_update      skips the (sometimes lengthy) gbwt editing process after normalization. Note that there is no way to generate a new, haplotype-based gbwt based on a normalized graph without exporting the updated gbwt at this stage."
       << endl
       << "    -d, --debug_print      prints the location of every snarl/region being normalized. It also announces certain special cases - of particular note, when a snarl has increased in size after normalization."
@@ -253,7 +255,7 @@ int main_normalize(int argc, char **argv) {
   string gbwt_graph_file;
   string snarls;
   string output_gbwt_file = "normalized.gbwt";
-  string normalize_type = "all";
+  bool normalize_region = false;
   int leftmost_id = NULL; // todo: do something other than NULL to avoid the compiler
                      // warnings.
   int rightmost_id = NULL;
@@ -272,10 +274,13 @@ int main_normalize(int argc, char **argv) {
   int max_snarl_spacing = 1;
   int threads = 1;
   bool extract_paths = false;
-  string verify_normalize;
+  string compare_full_gbwt_paths;
+  // string extract_paths_a; //associated with -C_old argument
+  // string extract_paths_b; //associated with -D argument
   bool disable_gbwt_update = false;
   bool debug_print = false;
   int c;
+  string normalize_type = "all"; //note: only used internally; not directly set by an argument.
   optind = 2; // force optind past command positional argument
   while (true) {
     static struct option long_options[] =
@@ -285,7 +290,7 @@ int main_normalize(int argc, char **argv) {
          {"gbwt_graph", required_argument, 0, 'r'},
          {"snarls", required_argument, 0, 's'},
          {"output_gbwt", required_argument, 0, 'o'},
-         {"normalize_type", required_argument, 0, 'n'},
+         {"normalize_region", required_argument, 0, 'n'},
          {"source", required_argument, 0, 'a'},
          {"sink", required_argument, 0, 'b'},
          {"normalize_bed_overlap", required_argument, 0, 'B'},
@@ -302,13 +307,15 @@ int main_normalize(int argc, char **argv) {
          {"max_snarl_spacing", required_argument, 0, 'i'},
          {"threads", required_argument, 0, 't'},
          {"extract_paths", no_argument, 0, 'E'},
-         {"verify_normalize", required_argument, 0, 'V'},
+         {"compare_full_gbwt_paths", required_argument, 0, 'C'},
+        //  {"compare_extracts", required_argument, 0, 'C_old'},
+        //  {"compare_extracts_second_file", required_argument, 0, 'D'},
          {"disable_gbwt_update", no_argument, 0, 'q'},
          {"debug_print", no_argument, 0, 'd'},
          {0, 0, 0, 0}};
 
     int option_index = 0;
-    c = getopt_long(argc, argv, "hg:r:s:o:n:a:b:B:pm:i:jl:xy:c:v:k:i:t:EV:qd", long_options,
+    c = getopt_long(argc, argv, "hg:r:s:o:na:b:B:pm:i:jl:xy:c:v:k:i:t:EC:qd", long_options,
                     &option_index);
 
     // Detect the end of the options.
@@ -334,7 +341,7 @@ int main_normalize(int argc, char **argv) {
       break;
 
     case 'n':
-      normalize_type = optarg;
+      normalize_region = true;
       break;
 
     case 'a':
@@ -408,12 +415,22 @@ int main_normalize(int argc, char **argv) {
       extract_paths = true;
       normalize_type = "none";
       break;
-
-    case 'V':
-      verify_normalize = optarg;
+      
+    case 'C':
+      compare_full_gbwt_paths = optarg;
       normalize_type = "none";
       break;
+
+    // case 'C_old':
+    //   extract_paths_a = optarg;
+    //   normalize_type = "none";
+    //   break;
       
+    // case 'D':
+    //   extract_paths_b = optarg;
+    //   normalize_type = "none";
+    //   break;
+
     case 'q':
       disable_gbwt_update = true;
       break;
@@ -551,8 +568,8 @@ int main_normalize(int argc, char **argv) {
         snarl_roots.push_back(snarl);
       });
     }
-    // otherwise, normalize all snarls:
-    else
+    // otherwise, normalize all snarls: (except if we have the region specified by -a and -b, in which case leave snarl_roots empty.)
+    else if (!normalize_region)
     {
       cerr << "normalizing all snarls" << endl;
       snarl_roots = snarl_manager->top_level_snarls();
@@ -565,28 +582,37 @@ int main_normalize(int argc, char **argv) {
     cerr << "running normalize" << endl;
     algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
       *graph, *gbwt, *gbwt_graph, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", disable_gbwt_update, debug_print);
-    tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = normalizer.normalize_snarls(snarl_roots);
-
-    //save normalized graph
-    //todo: integrate this into norm
-    vg::io::save_handle_graph(graph.get(), std::cout);
-
-    /////////// perform apply_gbwt_changelog /////////////////
-    // free memory:
-    if (!graph.unique()) //todo: verify this is never true
+    if (normalize_region)
     {
-      cerr <<" --------------------------------------error: graph ptr is not unique. Fix code." << endl;
-      exit(1);
+      // if we've specified the normalize_region with -a and -b, then we just normalize that region. //todo: add gbwt update?
+      normalizer.normalize_snarl(leftmost_id, rightmost_id, false, 0);
     }
-    graph.reset();
-    snarl_roots.clear();
-
-    // apply_gbwt_changelog
-    if (!disable_gbwt_update)
+    else
     {
-      cerr << "applying changes from normalization to the gbwt." << endl;
-      gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
-      save_gbwt(normalized_gbwt, output_gbwt_file, true);
+      // perform the normalization.
+      tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = normalizer.normalize_snarls(snarl_roots);
+
+      //save normalized graph
+      //todo: integrate this into norm
+      vg::io::save_handle_graph(graph.get(), std::cout);
+
+      /////////// perform apply_gbwt_changelog /////////////////
+      // free memory:
+      if (!graph.unique()) //todo: verify this is never true
+      {
+        cerr <<" --------------------------------------error: graph ptr is not unique. Fix code." << endl;
+        exit(1);
+      }
+      graph.reset();
+      snarl_roots.clear();
+
+      // apply_gbwt_changelog
+      if (!disable_gbwt_update)
+      {
+        cerr << "applying changes from normalization to the gbwt." << endl;
+        gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
+        save_gbwt(normalized_gbwt, output_gbwt_file, true);
+      }
     }
 
     // Record end time
@@ -682,39 +708,190 @@ int main_normalize(int argc, char **argv) {
 
     SubHandleGraph snarl = algorithms::SnarlNormalizer::extract_subgraph(*graph, leftmost_id, rightmost_id);
 
-    // haplotypes is of format:
+    // gbwt_haps is of format:
     // 0: a set of all the haplotypes which stretch from source to sink, in string format.
     //   - it's a set, so doesn't contain duplicates
     // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
-    tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<handle_t>> haplotypes;
-    // cerr << "sink id before SnarlSequenceFinder decl: " << rightmost_id << endl;
     algorithms::SnarlSequenceFinder sequence_finder = algorithms::SnarlSequenceFinder(*graph, snarl, *gbwt_graph, leftmost_id, rightmost_id, false);
-    // cerr << "sink id between find_embedded_paths and SnarlSequenceFinder decl: " << rightmost_id << endl;
-    //ADAM_REVIEW - this is the code with the undefined behavior.
-    vector<pair<step_handle_t, step_handle_t>> embedded_paths = sequence_finder.find_embedded_paths();
-    // cerr << "sink id after find_embedded_paths: " << rightmost_id << endl;
-    // cerr << "size of embedded_paths as a returned object: " << embedded_paths.size() << end;
-    for (auto path : embedded_paths)
+    tuple<vector<vector<gbwtgraph::handle_t>>, vector<vector<gbwtgraph::handle_t>>, unordered_set<handlegraph::handle_t>> gbwt_haps = sequence_finder.find_gbwt_haps();
+    // cerr << get<1>(gbwt_haps).size() << " " << get<2>(gbwt_haps).size() << " " << get<3>(gbwt_haps).size() << " " << endl;
+    cerr << " " << get<0>(gbwt_haps).size() << " " <<  get<1>(gbwt_haps).size() << " " << get<2>(gbwt_haps).size()  << endl;
+
+    cerr << "about to print strings:" << endl;
+    unordered_set<string> hap_strings = algorithms::SnarlNormalizer::format_handle_haplotypes_to_strings(*graph, *gbwt_graph, get<0>(gbwt_haps));
+    for (auto string : hap_strings)
     {
-      step_handle_t cur_step = path.first;
-      step_handle_t last_step = path.second;
-      cerr << "getting id of cur_step: " << (*graph).get_id((*graph).get_handle_of_step(cur_step)) << endl;
-      // cerr << "getting handle of final...: " << endl;
-      // (*graph).get_handle_of_step(path.second);
-      cerr << "getting id of final step: " << (*graph).get_id((*graph).get_handle_of_step(last_step)) << endl;
-      while ((*graph).get_id((*graph).get_handle_of_step(cur_step)) != (*graph).get_id((*graph).get_handle_of_step(path.second)))
-      {
-        cout << (*graph).get_sequence((*graph).get_handle_of_step(cur_step));
-        cur_step = (*graph).get_next_step(cur_step);
-        cerr << "(In while loop: " << endl;
-        cerr << "getting id of cur_step: " << (*graph).get_id((*graph).get_handle_of_step(cur_step)) << endl;
-        cerr << "getting id of final step: " << (*graph).get_id((*graph).get_handle_of_step(last_step)) << endl;
-        cerr << ")" << endl;
-      }
-      cerr << endl;
+      cerr << string << endl;
     }
   }
+  if (compare_full_gbwt_paths.size() != 0) 
+  {
+    ///////// Input objects: ///////////
+    // graph
+    shared_ptr<MutablePathDeletableHandleGraph> graph;
+    get_input_file(optind, argc, argv, [&](istream &in) {
+      graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);
+    });
+
+    cerr << "hi" << endl;
+    // gbwt
+    ifstream gbwt_stream;
+    gbwt_stream.open(gbwt_file);    
+    unique_ptr<gbwt::GBWT> gbwt;
+    gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream);
+
+    // gbwt graph 
+    unique_ptr<gbwtgraph::GBWTGraph> gbwt_graph;
+    if (gbwt_graph_file.size() == 0)
+    {
+      string gbwt_graph_output_file = gbwt_file + ".gg";
+      cerr << "gbwt_graph option is empty. Making new GBWTGraph from gbwt and graph. Saving as " << gbwt_graph_output_file << endl;
+      gbwtgraph::GBWTGraph new_gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
+      save_gbwtgraph(new_gbwt_graph, gbwt_graph_output_file);
+      //todo: find way to load gbwtgraph's unique pointer without saving and then reloading file.
+      gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_output_file);
+      gbwt_graph->set_gbwt(*gbwt);
+    }
+    else 
+    {
+      gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_file);
+      gbwt_graph->set_gbwt(*gbwt);
+    }
+
+    // use min_node_id as the starting point. Get every path on that node, and go to their path_begin spot. Extract each of their paths.
+    // Every time we traverse a new node, check to make sure that all paths on that node are not new. If there is a new path there, put its path.begin() in the list of paths to extend.
+    //todo: ask lab if I can skip the "check each node if its new" thing, so long as I guarantee that the first node I check for paths is a top level snarl root. 
+    //todo:     I.e.: "are gbwt_haplotypes all guaranteed to stretch from source to sink? Or can they start in the middle of a graph?"
+    // gbwt_graph->for_each_path_handle(gbwt_graph->get_handle(gbwt_graph->min_node_id()), [&](path_handle_t path_handle) 
+    vector<string> path_strings;
+    cerr << "reality check: does gbwt_graph have nodes? Min node: " << gbwt_graph->min_node_id() << " max: " << gbwt_graph->max_node_id() << endl;
+    handle_t test = gbwt_graph->get_handle(gbwt_graph->max_node_id());
+    
+    SubHandleGraph empty_snarl(&(*graph));
+    // gbwt_haps is of format:
+    // 0: a set of all the haplotypes which stretch from source to sink, in string format.
+    //   - it's a set, so doesn't contain duplicates
+    // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
+    // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
+    algorithms::SnarlSequenceFinder sequence_finder = algorithms::SnarlSequenceFinder(*graph, empty_snarl, *gbwt_graph, gbwt_graph->min_node_id(), gbwt_graph->max_node_id(), false);
+    tuple<vector<vector<gbwtgraph::handle_t>>, vector<vector<gbwtgraph::handle_t>>, unordered_set<handlegraph::handle_t>> gbwt_haps = sequence_finder.find_gbwt_haps();
+
+    cerr << "size of haps 0, 1, and 2: " << get<0>(gbwt_haps).size() << " " << get<1>(gbwt_haps).size() << " " << get<2>(gbwt_haps).size() << endl;
+    cerr << "size of full length haps:" << endl;
+    for (auto hap : get<0>(gbwt_haps))
+    {
+      cerr << hap.size() << endl;
+    }
+    cerr << "size of partial length haps:" << endl;
+    for (auto hap : get<1>(gbwt_haps))
+    {
+      cerr << hap.size() << endl;
+    }
+    cerr << "to the right: " << endl;
+    gbwt_graph->follow_edges(test, false, [&](handle_t next_handle){
+      cerr << "handle to the right of id: " << gbwt_graph->get_id(next_handle) << endl; 
+    });
+    cerr << "to the left: " << endl;
+    gbwt_graph->follow_edges(test, true, [&](handle_t next_handle){
+      cerr << "handle to the left of id: " << gbwt_graph->get_id(next_handle) << endl; 
+    });
+
+    vector<step_handle_t> steps = gbwt_graph->steps_of_handle(gbwt_graph->get_handle(998743));
+    cerr << "example handle's sequence" << gbwt_graph->get_sequence(gbwt_graph->get_handle(998743)) << endl;
+    cerr << "all steps' paths: " << endl;
+    for (auto step : steps)
+    {
+      cerr << "b" << endl;
+      cerr << gbwt_graph->get_path_name(gbwt_graph->get_path_handle_of_step(step)) << endl;
+    }
+
+    cerr << "about to use for_each_path_handle:" << endl;
+    gbwt_graph->for_each_path_handle([&](path_handle_t path_handle) 
+    {
+      cerr << "looking at path_handle " << gbwt_graph->get_path_name(path_handle) << endl;
+      step_handle_t cur_step = gbwt_graph->path_begin(path_handle);
+      string path_string;
+      while (cur_step != gbwt_graph->path_end(path_handle))
+      {
+        path_string += gbwt_graph->get_sequence(gbwt_graph->get_handle_of_step(cur_step));
+        cur_step = gbwt_graph->get_next_step(cur_step);
+      }
+      path_strings.insert(upper_bound(path_strings.begin(), path_strings.end(), path_string, [&] (const string& first, const string& second)
+      {
+        return (first.size() < second.size());
+      }), path_string);
+    });
+    
+    cerr << "string lengths: " << endl;
+    for (auto path : path_strings)
+    {
+      cerr << path.size() << endl;
+    }
+    
+
+  }
+
+    
+              // vector<pair<step_handle_t, step_handle_t>> embedded_paths = sequence_finder.find_gbwt_haps();
+              // for (auto path : embedded_paths)
+              // {
+              //   step_handle_t cur_step = path.first;
+              //   step_handle_t last_step = path.second;
+              //   // cerr << "getting id of cur_step: " << (*graph).get_id((*graph).get_handle_of_step(cur_step)) << endl;
+              //   // cerr << "getting handle of final...: " << endl;
+              //   // (*graph).get_handle_of_step(path.second);
+              //   // cerr << "getting id of final step: " << (*graph).get_id((*graph).get_handle_of_step((*graph).get_previous_step(last_step))) << endl;
+              //   while (cur_step != last_step)
+              //   {
+              //     cout << (*graph).get_sequence((*graph).get_handle_of_step(cur_step)); //todo: check that if the handle's .reverse() is true, then does it include the proper reversed comp of the sequence?
+              //     cur_step = (*graph).get_next_step(cur_step);
+              //     // cerr << "(In while loop: " << endl;
+              //     // cerr << "getting id of cur_step: " << (*graph).get_id((*graph).get_handle_of_step(cur_step)) << endl;
+              //     // cerr << "getting id of final step: " << (*graph).get_id((*graph).get_handle_of_step(last_step)) << endl;
+              //     // cerr << ")" << endl;
+              //   }
+              //   cout << endl;
+              // }
+
+
+  // if (extract_paths_a.size() != 0 && extract_paths_b.size() != 0)
+  // {
+  //   vector<string> paths_a;
+  //   ifstream a_file(extract_paths_a);
+  //   // check stream status
+  //   if (!a_file)
+  //   {
+  //     cerr << "Can't open input file " << extract_paths_a << "." << endl;
+  //     exit(1);
+  //   }
+
+  //   string line;
+  //   while (getline(a_file, line)) {
+
+  //     // store each line in the vector
+  //     paths_a.push_back(line);
+  //   }
+  //   a_file.close();
+
+  //   vector<string> paths_b;
+  //   ifstream extract_paths_a_file(extract_paths_a);
+  //   //if all the strings in a have a corresponding string in b, then we consider the two files to have functionally identical sequence content.
+  //   //we determine "corresponding string" as a unique string in a that matches as a substring to a unique string in b, or vice-versa.
+  //   //To prevent multiple small paths in one file matching to the same large string in the other file, I will preferentially match the string in a 
+
+  //   //I just realized this still won't work, because there's no requirement that strings in a all be substrings to strings in b, or vice-versa. Normalization might increase the source but shrink the sink at the same time - leading to merely partially-overlapping paths extracted from either snarl.
+  //   //BUT, the substring relation is restored if I drop the source and sink of the paths in the extract_paths algorithm.
+
+  //   //so:
+  //   //todo: drop source and sink in extract_paths.
+  //   //todo: determine that all strings in a are substrings to string in b. If that fails, do the reverse (strings in b are substrings to a).
+  //     // Note that every string-substring match I make should then be removed from the list of possible matches I make.
+  //     // This is because each path in the original snarl should have its own designated path in the normalized snarl.
+  //     // To avoid popping the wrong string, I should preferentially pop the smallest string that has the desired substring.
+
+    
+  // }
 
   return 0;
 }

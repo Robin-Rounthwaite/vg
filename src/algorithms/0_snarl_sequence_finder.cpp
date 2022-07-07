@@ -39,8 +39,8 @@ namespace algorithms{
 SnarlSequenceFinder::SnarlSequenceFinder(const PathHandleGraph & graph, 
                                const SubHandleGraph &snarl,
                                const gbwtgraph::GBWTGraph &gbwt_graph, 
-                               const id_t &source_id, const id_t &sink_id, const bool &backwards)
-    : _graph(graph), _gbwt_graph(gbwt_graph), _snarl(snarl), _source_id(source_id), _sink_id(sink_id), _backwards(backwards) {}
+                               const id_t source_id, const id_t sink_id, const bool backwards)
+    : _graph(graph), _gbwt_graph(gbwt_graph), _snarl(snarl), _source_id(source_id), _sink_id(sink_id), _backwards(backwards) {} //todo: since find_gbwt_haps uses neither _snarl nor _graph, maybe move various arguments from the object declaration to individual fxns?
 
 // TODO: test that it successfully extracts any haplotypes that start/end in the middle of
 // TODO:    the snarl.
@@ -51,7 +51,7 @@ SnarlSequenceFinder::SnarlSequenceFinder(const PathHandleGraph & graph,
  * @param sink_id The sink of the snarl.
  * @return A 3-tuple containing 1) a vector of haps stretching from source to sink, in 
  * vector<handle_t> format; 2) a second vector containing all other haps in snarl; 
- * 3) a vector of all handles oberved by the method. 
+ * 3) a vector of all handles oberved by the method.
 */
 tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<handle_t>>
 SnarlSequenceFinder::find_gbwt_haps() {
@@ -488,32 +488,9 @@ SnarlSequenceFinder::find_haplotypes_not_at_source() {
 vector<pair<step_handle_t, step_handle_t>>
 SnarlSequenceFinder::find_embedded_paths() {
 
-    if (debug_check_destructor)
-    {
-        cerr << "find_embedded_paths is running, even though the SnarlSequenceFinder has been deleted!" << endl;
-    }
-    cerr << "find_embedded paths begins now!" << endl;
-    // cerr << "getting id of source: " << (_graph).get_id((_graph).get_handle(_source_id)) << endl;
-    // cerr << "getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
-
-    // cerr << "extract_embedded_paths_in_snarl" << endl;
-    // cerr << "source id: " << source_id << endl;
-    // cerr << "source id contains what paths?: " << endl;
-    // for (auto step : _graph.steps_of_handle(graph.get_handle(_source_id))) {
-    //     cerr << "\t" << _graph.get_path_name(graph.get_path_handle_of_step(step)) <<
-    //     endl;
-    // }
-    // cerr << "neighbors of 71104? (should include 71097):" << endl;
-    // handle_t test_handle = _graph.get_handle(71104);
-    // _graph.follow_edges(test_handle, true, [&](const handle_t &handle) {
-    //     cerr << _graph.get_id(handle) << endl;
-    // });
-    // cerr << "can I still access source handle?"
-    //      << _graph.get_sequence(graph.get_handle(_source_id)) << endl;
-
     // key is path_handle, value is a step in that path from which to extend.
     unordered_map<path_handle_t, step_handle_t> paths_found;
-    cerr << "1: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+    // cerr << "1: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
 
     // look for handles with paths we haven't touched yet.
     _snarl.for_each_handle([&](const handle_t &handle) {
@@ -536,49 +513,30 @@ SnarlSequenceFinder::find_embedded_paths() {
                 // then we need to mark it as found and save the step.
                 paths_found.emplace(path, step);
             }
-            // if (paths_found.find(path) == paths_found.end() ||
-            //     _graph.get_id(_graph.get_handle_of_step(paths_found[path])) == _source_id ||
-            //     _graph.get_id(_graph.get_handle_of_step(paths_found[path])) == _sink_id) {
-            //     // cerr << "found a new path." << endl;
-            //     // then we need to mark it as found and save the step.
-            //     paths_found[path] = step;
-            // }
         }
     });
-    cerr << "2: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
-
-    // todo: debug_statement
-    // cerr << "################looking for new paths################" << endl;
-    // for (auto path : paths_found) {
-    //     cerr << __graph.get_path_name(path.first) << " "
-    //          << __graph.get_id(_graph.get_handle_of_step(path.second)) << endl;
-    // }
+    // cerr << "2: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
 
     /// for each step_handle_t corresponding to a unique path, we want to get the steps
     /// closest to both the end and beginning step that still remains in the snarl.
     // TODO: Note copy paste of code here. In python I'd do "for fxn in [fxn1, fxn2]:",
     // TODO      so that I could iterate over the fxn. That sounds template-messy in C++
     // tho'. Should I?
-    // cerr << "2.3: getting sink directly: " << _sink_id << endl;
-    // cerr << "2.3: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
-    // cerr << "2.3: getting sink directly: " << _sink_id << endl;
     int debug_counter = 0;
     // cerr << "2.3: getting sink directly: " << _sink_id << endl;
-    // cerr << "2.4: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
-    //ADAM_REVIEW - this is where I observe the _sink_id changing values (undefined behavior)
-    cerr << "2.3: getting sink directly: " << _sink_id << endl;
     vector<pair<step_handle_t, step_handle_t>> paths_in_snarl;
-    cerr << "2.3: getting sink directly: " << _sink_id << endl;
-    // cerr << "2.5: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
     // cerr << "2.3: getting sink directly: " << _sink_id << endl;
     for (auto &it : paths_found) {
-        // cerr << "2.6: getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
-
-        // if (_sink_id != 997029)
-        // {
-        //     cerr << "2) ";
-        //     cerr << "sink id has changed after " << debug_counter << " iterations." << endl;
-        // }
+        
+        if ((_graph).get_id((_graph).get_handle(_sink_id)) != _sink_id)
+        {
+            cerr << "2.6: getting id of sink from handle isn't the same as sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
+        }
+        if (_sink_id != 997029)
+        {
+            cerr << "2) ";
+            cerr << "sink id has changed after " << debug_counter << " iterations." << endl;
+        }
         step_handle_t step = it.second;
         // path_in_snarl describes the start and end steps in the path,
         // as constrained by the snarl.
@@ -648,22 +606,29 @@ SnarlSequenceFinder::find_embedded_paths() {
             cerr << "no embedded paths found in find_embedded_paths." << endl;
         }
     }
-    // for (auto path : paths_in_snarl) {
+    for (auto path : paths_in_snarl) {
+        step_handle_t cur_step = path.first;
+        step_handle_t last_step = path.second;
+        int path_size = 0;
+        while (true) //todo: implement this style of iteration whenever looping until I find the last step of the path? Essentially, I'm concerned that the path_handle_ts aren't guaranteed to match. I can look that up in the definition of step_handle_t equals, I guess. It may not confirm, however.
+        {
+            path_size += _graph.get_sequence(_graph.get_handle_of_step(cur_step)).size();
+            if (_graph.get_id(_graph.get_handle_of_step(cur_step)) == _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(last_step))))
+            {
+                break;
+            }
+            cur_step = _graph.get_next_step(cur_step);
+        }
+        cerr << path_size << endl;
     //     cerr << "path starts at source? " << (_graph.get_id(_graph.get_handle_of_step(path.first)) == _source_id) << endl;
     //     cerr << "path ends at sink? " << (_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) == _sink_id) << endl;
 
     //     cerr << "is a path a duplicate of one we've already extracted? " << (path_names.find(_graph.get_path_name(_graph.get_path_handle_of_step(path.first))) == path_names.end()) << endl;
     //     path_names.emplace(_graph.get_path_name(_graph.get_path_handle_of_step(path.first)));
-    // } 
+    } 
     // cerr << "tested " << path_names.size() << " paths in UNIT_TEST." << endl;
     // cerr << "************END-UNIT_TEST for find_embedded_paths. Tested " << path_names.size() << " paths in UNIT_TEST.************"<< endl;
 
-    // cerr << "getting id of source: " << (_graph).get_id((_graph).get_handle(_source_id)) << endl;
-    // cerr << "sink id: " << _sink_id << endl;
-    // cerr << "getting id of sink: " << (_graph).get_id((_graph).get_handle(_sink_id)) << endl;
-    // cerr << "length of paths_in_snarl: " << paths_in_snarl.size() << endl;
-    
-    cerr << "find_embedded paths ends now." << endl;
 
     return paths_in_snarl;
 }

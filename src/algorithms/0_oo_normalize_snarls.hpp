@@ -13,21 +13,27 @@ class SnarlNormalizer {
     virtual ~SnarlNormalizer() = default;
 
     SnarlNormalizer(MutablePathDeletableHandleGraph &graph, const gbwt::GBWT &gbwt, const gbwtgraph::GBWTGraph & gbwt_graph,
-                    const int& max_handle_size, 
-                    const int& max_region_size,
-                    const int& max_snarl_spacing,
-                    const int& threads,
-                    const int &max_alignment_size = INT_MAX, //TODO: add a _max_handle_length default length
-                    const string &path_finder = "GBWT", /*alternative is "exhaustive"*/
-                    const bool &disable_gbwt_update = false,
-                    const bool &debug_print = false);
+                    const int max_handle_size, 
+                    const int max_region_size,
+                    const int max_snarl_spacing,
+                    const int threads,
+                    const int max_alignment_size = INT_MAX, //TODO: add a _max_handle_length default length
+                    const string path_finder = "GBWT", /*alternative is "exhaustive"*/
+                    const bool disable_gbwt_update = false,
+                    const bool debug_print = false);
 
 
     virtual tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> normalize_snarls(const vector<const Snarl *>& snarl_roots);
 
-    virtual vector<int> normalize_snarl(const id_t& source_id, const id_t& sink_id, const bool& backwards, const int& snarl_num);
+    virtual vector<int> normalize_snarl(const id_t source_id, const id_t sink_id, const bool backwards, const int snarl_num);
 
-    static SubHandleGraph extract_subgraph(const HandleGraph &graph, const id_t &leftmost_id, const id_t &rightmost_id);
+    static SubHandleGraph extract_subgraph(const HandleGraph &graph, const id_t leftmost_id, const id_t rightmost_id);
+
+    //////////////////////////////////////////////////////////////////////////////////////
+    // format-type switching:
+    //////////////////////////////////////////////////////////////////////////////////////
+    static unordered_set<string> format_handle_haplotypes_to_strings(const HandleGraph& graph, const gbwtgraph::GBWTGraph & gbwt_graph,
+        const vector<vector<handle_t>> &haplotype_handle_vectors);
 
   protected:
     // member variables:
@@ -59,19 +65,19 @@ class SnarlNormalizer {
 
     // the maximum number of threads allowed to align in a given snarl. If the number of
     // threads exceeds this threshold, the snarl is skipped.
-    const int &_max_alignment_size;
-    const int &_max_handle_size;
-    const int &_max_region_size;
-    const int &_max_snarl_spacing;
-    const string &_path_finder;
-    const bool &_disable_gbwt_update;
-    const bool &_debug_print; // for printing info that isn't necessarily something gone wrong.
-    const int &_threads;
+    const int _max_alignment_size;
+    const int _max_handle_size;
+    const int _max_region_size;
+    const int _max_snarl_spacing;
+    const string _path_finder;
+    const bool _disable_gbwt_update;
+    const bool _debug_print; // for printing info that isn't necessarily something gone wrong.
+    const int _threads;
     //////////////////////////////////////////////////////////////////////////////////////
     // finding information on original graph:
     //////////////////////////////////////////////////////////////////////////////////////
 
-    // SubHandleGraph extract_subgraph(const HandleGraph &graph, const id_t &leftmost_id, const id_t &rightmost_id);
+    // SubHandleGraph extract_subgraph(const HandleGraph &graph, const id_t leftmost_id, const id_t rightmost_id);
                                     
     vector<int> check_handle_as_start_of_path_seq(const string &handle_seq,
                                                   const string &path_seq);
@@ -99,25 +105,25 @@ class SnarlNormalizer {
 
     pair<handle_t, handle_t> integrate_snarl(SubHandleGraph &old_snarl, const HandleGraph &new_snarl,
                          vector<pair<step_handle_t, step_handle_t>>& embedded_paths,
-                         const id_t &source_id, const id_t &sink_id, const bool backwards);
+                         const id_t source_id, const id_t sink_id, const bool backwards);
 
-    handle_t overwrite_node_id(const id_t& old_node_id, const id_t& new_node_id);
+    handle_t overwrite_node_id(const id_t old_node_id, const id_t new_node_id);
 
     void log_gbwt_changes(const vector<pair<vector<gbwt::vector_type::value_type>, string>>& source_to_sink_gbwt_paths, const HandleGraph &new_snarl);
 
     bool source_and_sink_handles_map_properly(
-        const HandleGraph &graph, const id_t &new_source_id, const id_t &new_sink_id,
-        const bool &touching_source, const bool &touching_sink,
-        const handle_t &potential_source, const handle_t &potential_sink);
+        const HandleGraph &graph, const id_t new_source_id, const id_t new_sink_id,
+        const bool touching_source, const bool touching_sink,
+        const handle_t potential_source, const handle_t potential_sink);
 
     void force_maximum_handle_size(MutableHandleGraph &graph);
 
     // moving paths to new graph (new draft functions)
-    vector<pair<vector<handle_t>, int> > find_possible_path_starts (const handle_t& leftmost_handle, const handle_t& rightmost_handle, const pair<bool, bool>& path_spans_left_right);
+    vector<pair<vector<handle_t>, int> > find_possible_path_starts (const handle_t leftmost_handle, const handle_t rightmost_handle, const pair<bool, bool> path_spans_left_right);
 
-    vector<handle_t> extend_possible_paths(vector<pair<vector<handle_t>, int>> &possible_path_starts, const string &path_str, const handle_t &leftmost_handle, const handle_t &rightmost_handle, const pair<bool, bool> &path_spans_left_right, const pair<id_t, id_t> &main_graph_source_and_sink);
+    vector<handle_t> extend_possible_paths(vector<pair<vector<handle_t>, int>> &possible_path_starts, const string &path_str, const handle_t leftmost_handle, const handle_t rightmost_handle, const pair<bool, bool> path_spans_left_right, const pair<id_t, id_t> main_graph_source_and_sink);
 
-    pair<step_handle_t, step_handle_t> move_path_to_new_snarl(const pair<step_handle_t, step_handle_t> & old_path, const id_t &source, const id_t &sink, const pair<bool, bool> &path_spans_left_right, const bool &path_directed_left_to_right, const pair<id_t, id_t> &main_graph_source_and_sink);
+    pair<step_handle_t, step_handle_t> move_path_to_new_snarl(const pair<step_handle_t, step_handle_t> old_path, const id_t source, const id_t sink, const pair<bool, bool> path_spans_left_right, const bool path_directed_left_to_right, const pair<id_t, id_t> main_graph_source_and_sink);
 
     // updating the gbwt:
     gbwt::GBWT apply_gbwt_changelog();
@@ -129,11 +135,7 @@ class SnarlNormalizer {
     RebuildParameters set_parameters();
     
 
-    //////////////////////////////////////////////////////////////////////////////////////
-    // format-type switching:
-    //////////////////////////////////////////////////////////////////////////////////////
-    unordered_set<string> format_handle_haplotypes_to_strings(
-        const vector<vector<handle_t>> &haplotype_handle_vectors);
+
 
 
     // -------------------------------- DEBUG CODE BELOW:

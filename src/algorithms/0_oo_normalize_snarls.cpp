@@ -55,14 +55,14 @@ namespace algorithms{
 SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const gbwt::GBWT &gbwt,
                                  const gbwtgraph::GBWTGraph &gbwt_graph,
-                                 const int &max_handle_size,
-                                 const int &max_region_size,
-                                 const int &max_snarl_spacing,
-                                 const int &threads,
-                                 const int &max_alignment_size, /*= MAX_INT*/
-                                 const string &path_finder, /*= "GBWT"*/
-                                 const bool &disable_gbwt_update, /*= false*/
-                                const bool &debug_print /*= false*/)
+                                 const int max_handle_size,
+                                 const int max_region_size,
+                                 const int max_snarl_spacing,
+                                 const int threads,
+                                 const int max_alignment_size, /*= MAX_INT*/
+                                 const string path_finder, /*= "GBWT"*/
+                                 const bool disable_gbwt_update, /*= false*/
+                                const bool debug_print /*= false*/)
 : _graph(graph), _gbwt(gbwt), _max_alignment_size(max_alignment_size),
       _max_handle_size(max_handle_size), _max_region_size(max_region_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder), _gbwt_graph(gbwt_graph),
       _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
@@ -314,7 +314,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     // partial_sort(_snarl_size_changes.begin(), _snarl_size_changes.begin() + num_top_snarls_tracked,_snarl_size_changes.end(), []());
 
 
-    auto compare = [](const pair<pair<id_t, id_t>, pair<int, int>> &left, const pair<pair<id_t, id_t>, pair<int, int>> &right) 
+    auto compare = [](const pair<pair<id_t, id_t>, pair<int, int>> left, const pair<pair<id_t, id_t>, pair<int, int>> right) 
     {
         return (right.second.second - right.second.first) >= (left.second.second - left.second.first);
     };
@@ -1237,7 +1237,7 @@ vector<pair<id_t, id_t>> SnarlNormalizer::get_normalize_regions(const vector<con
 // Returns: none.
 // TODO: allow for snarls that have haplotypes that begin or end in the middle of the
 // snarl.
-vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& sink_id, const bool& backwards, const int& snarl_num) {
+vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t sink_id, const bool backwards, const int snarl_num) {
     // if (backwards){
     //     // swap the source and sink ids. Essentially, this guarantees I treat the leftmost node in snarl as "source".
     //     // (although some adjustments for paths need be made)
@@ -1276,7 +1276,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
     //todo: debug_statement: Evaluate connections of all nodes in subgraph.
     // snarl.for_each_handle([&](const handle_t handle){
     //     cerr << "examining left neighbors of handle " << snarl.get_id(handle) << ":" << endl;
-    //     snarl.follow_edges(handle, false, [&](const handle_t &next) {
+    //     snarl.follow_edges(handle, false, [&](const handle_t next) {
     //         cerr << "     " << snarl.get_id(next) << " ";
     //     });
     //     cerr << endl;
@@ -1312,6 +1312,35 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
 
     // cerr << "num_handles_in_snarl: " << num_handles_in_snarl << endl;
 
+    // check to make sure that the gbwt _graph has threads connecting all handles:
+    // ( needs the unordered_set from extract_gbwt haplotypes to be equal to the number of
+    // handles in the snarl).
+    unordered_set<id_t> handles_in_snarl;
+    snarl.for_each_handle([&](const handle_t handle) {
+        handles_in_snarl.emplace(snarl.get_id(handle));
+        // count the number of bases in the snarl (buggy counter that includes doublecounting of border nodes between snarls in a chain).
+        error_record[4] += snarl.get_sequence(handle).size();
+
+        // count the number of bases in the snarl (fixed counter, no doublecounting).
+        if(snarl.get_id(handle) == leftmost_id || snarl.get_id(handle) == rightmost_id)
+        { 
+            // if this node is a border node, only count it if it hasn't been counted already. 
+            if(_touched_border_nodes.find(snarl.get_id(handle)) == _touched_border_nodes.end())
+            {
+                _pre_norm_net_snarl_size+=snarl.get_sequence(handle).size();
+                _touched_border_nodes.emplace(snarl.get_id(handle));
+            }
+            _snarl_size_changes[make_pair(leftmost_id, rightmost_id)].first += snarl.get_sequence(handle).size(); 
+        }
+        else
+        {
+            // if this node isn't a border node, it hasn't been counted. Add it to the count.
+            _pre_norm_net_snarl_size+=snarl.get_sequence(handle).size();
+            _snarl_size_changes[make_pair(leftmost_id, rightmost_id)].first += snarl.get_sequence(handle).size(); 
+
+        }
+    });
+
     // extract threads
     // haplotypes is of format:
     // 0: a set of all the haplotypes which stretch from source to sink, in string format.
@@ -1326,7 +1355,17 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
         tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<handle_t>>
             gbwt_haplotypes = sequence_finder.find_gbwt_haps();
 
-        // cerr << "all handles touched by find_gbwt_haps:" << endl;
+        cerr << "check that all handles touched by find_gbwt_haps are all the handles in the subgraph:" << endl;
+        for(auto handle : get<2>(gbwt_haplotypes))
+        {
+            if (handles_in_snarl.find(_gbwt_graph.get_id(handle)) == handles_in_snarl.end()){
+                cerr << "WARNING: there are handles in the graph that are not touched by the GBWT. The sequence information in these handles will be dropped from the normalized graph." << endl;
+            }
+        }
+        
+            
+
+        // cerr << "check that all handles touched by find_gbwt_haps are all the handles in the subgraph:" << endl;
         // for (handle_t handle : get<2>(gbwt_haplotypes))
         // {
         //     cerr << _graph.get_id(handle) << endl;
@@ -1345,14 +1384,14 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
         //     }
         // }
         // Convert the haplotypes from vector<handle_t> format to string format.
-        get<0>(haplotypes) = format_handle_haplotypes_to_strings(get<0>(gbwt_haplotypes));
+        get<0>(haplotypes) = format_handle_haplotypes_to_strings(_graph, _gbwt_graph, get<0>(gbwt_haplotypes));
         //todo: possibly remove the duplicate storage of gbwt info in source_to_sink_gbwt_paths, by finding a way to only pass the gbwt info to the "log_gbwt_changes" function. (currently, get<0>haplotypes will also include any source-to-sink paths embedded in the graph.)
         //deep copy of gbwt_haplotypes.
         for (vector<handle_t> hap_handles : get<0>(gbwt_haplotypes))
         {
             string hap_str;
             gbwt::vector_type hap_ids;
-            for (handle_t &handle : hap_handles) 
+            for (handle_t handle : hap_handles) 
             {
                 if (_gbwt_graph.get_id(handle) == 7405162)
                 {
@@ -1402,34 +1441,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
         exit(1);
     }
 
-    // check to make sure that the gbwt _graph has threads connecting all handles:
-    // ( needs the unordered_set from extract_gbwt haplotypes to be equal to the number of
-    // handles in the snarl).
-    unordered_set<handle_t> handles_in_snarl;
-    snarl.for_each_handle([&](const handle_t handle) {
-        handles_in_snarl.emplace(handle);
-        // count the number of bases in the snarl (buggy counter that includes doublecounting of border nodes between snarls in a chain).
-        error_record[4] += snarl.get_sequence(handle).size();
 
-        // count the number of bases in the snarl (fixed counter, no doublecounting).
-        if(snarl.get_id(handle) == leftmost_id || snarl.get_id(handle) == rightmost_id)
-        { 
-            // if this node is a border node, only count it if it hasn't been counted already. 
-            if(_touched_border_nodes.find(snarl.get_id(handle)) == _touched_border_nodes.end())
-            {
-                _pre_norm_net_snarl_size+=snarl.get_sequence(handle).size();
-                _touched_border_nodes.emplace(snarl.get_id(handle));
-            }
-            _snarl_size_changes[make_pair(leftmost_id, rightmost_id)].first += snarl.get_sequence(handle).size(); 
-        }
-        else
-        {
-            // if this node isn't a border node, it hasn't been counted. Add it to the count.
-            _pre_norm_net_snarl_size+=snarl.get_sequence(handle).size();
-            _snarl_size_changes[make_pair(leftmost_id, rightmost_id)].first += snarl.get_sequence(handle).size(); 
-
-        }
-    });
 
     // Print a heads-up about snarls that require an alignment with a greater number of 
     // threads than _big_snarl_alignment_job, so the user knows if they are hung up on a 
@@ -1474,7 +1486,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
         for (auto path : embedded_paths) 
         {
 
-            // cerr << "checking path of name " << _graph.get_path_name(_graph.get_path_handle_of_step(path.first)) << " with source " << _graph.get_id(_graph.get_handle_of_step(path.first)) << " and sink " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) << endl;
+            // cerr << "checking path of name " << _graph.get_path_name(_graph.get_path_handle_of_step(path.first)) << " with source " << _graph.get_id(_graph.get_handle_of_step(path.first)) << " and sink " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) <<  endl;
             // cerr << "SOURCE info: prev step: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) << "prev prev step: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(_graph.get_previous_step(path.second)))) << " source: " << _graph.get_id(_graph.get_handle_of_step(path.second)) << " next step: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_next_step(path.second))) << endl;
             // cerr << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) << " " << source_id << " source bool: " <<  (_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) == source_id) << endl;
             if (_graph.get_id(_graph.get_handle_of_step(path.first)) == source_id &&
@@ -1510,11 +1522,11 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
                 }
             }
         }
-        // cerr << "haps in haplotypes: " << endl;
-        // for (string hap : get<0>(haplotypes))
-        // {
-        //     cerr << hap << endl;
-        // }
+        cerr << "haps in haplotypes: " << endl;
+        for (string hap : get<0>(haplotypes))
+        {
+            cerr << hap << endl;
+        }
         // Align the new snarl:
         VG new_snarl = align_source_to_sink_haplotypes(get<0>(haplotypes));
 
@@ -1635,14 +1647,14 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t& source_id, const id_t& 
 //      handle_t > format. the handles are from the _gbwt_graph.
 // Returns: a vector of haplotypes of format string (which is the concatenated sequences
 // in the handles).
-unordered_set<string> SnarlNormalizer::format_handle_haplotypes_to_strings(
+unordered_set<string> SnarlNormalizer::format_handle_haplotypes_to_strings(const HandleGraph& graph, const gbwtgraph::GBWTGraph & gbwt_graph,
     const vector<vector<handle_t>> &haplotype_handle_vectors) {
     unordered_set<string> haplotype_strings;
     for (vector<handle_t> haplotype_handles : haplotype_handle_vectors) {
         string hap;
-        for (handle_t &handle : haplotype_handles) {
+        for (handle_t handle : haplotype_handles) {
             // hap += _gbwt_graph.get_sequence(handle);
-            hap += _graph.get_sequence(_graph.get_handle(_gbwt_graph.get_id(handle), _gbwt_graph.get_is_reverse(handle)));
+            hap += graph.get_sequence(graph.get_handle(gbwt_graph.get_id(handle), gbwt_graph.get_is_reverse(handle)));
         }
         haplotype_strings.emplace(hap);
     }
@@ -1682,11 +1694,11 @@ VG SnarlNormalizer::align_source_to_sink_haplotypes(
     string source_char(1, random_element.front());
     string sink_char(1, random_element.back());
 
-    // cerr << "strings in path_seq before replacing final character: " << endl;
-    // for (auto path : get<0>(haplotypes))
-    // {
-    //     cerr << path << endl;f
-    // }
+    cerr << "strings in path_seq before replacing final character: " << endl;
+    for (auto path : source_to_sink_haplotypes)
+    {
+        cerr << path << endl;
+    }
 
     // replace the source and sink chars with X, to force match at source and sink.
     unordered_set<string> edited_source_to_sink_haplotypes;
@@ -1753,17 +1765,17 @@ VG SnarlNormalizer::align_source_to_sink_haplotypes(
         // edit the row so that the proper source and sink chars are added to the
         // haplotype instead of the special characters added to ensure correct alignment
         // of source and sink.
-        // cerr << "row_string before: " << row_string << endl;
+        cerr << "row_string before: " << row_string << endl;
         row_string.replace(0, 1, source_char);
         row_string.replace(row_string.size() - 1, 1, sink_char);
         row_strings.push_back(row_string);
-        // cerr << "row_string after: " << row_string << endl;
+        cerr << "row_string after: " << row_string << endl;
     }
 
     stringstream ss;
     for (string seq : row_strings) {
         // todo: debug_statement
-        // cerr << "seq in alignment:" << seq << endl;
+        cerr << "seq in alignment:" << seq << endl;
         ss << endl << seq;
     }
     // ss << align;
@@ -1834,8 +1846,8 @@ void SnarlNormalizer::force_maximum_handle_size(MutableHandleGraph &graph) {
 //      a SubHandleGraph containing only the handles in _graph that are between start_id
 //      and sink_id.
 SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
-                                                 const id_t &leftmost_id,
-                                                 const id_t &rightmost_id) {
+                                                 const id_t leftmost_id,
+                                                 const id_t rightmost_id) {
     // cerr << "extract_subgraph has source and sink: " << source_id << " " << sink_id << endl; 
     // because algorithm moves left to right, determine leftmost and rightmost nodes.
     // id_t leftmost_id;
@@ -1870,7 +1882,7 @@ SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
     visited.insert(graph.get_id(leftmost_handle));
 
     // look only to the right of leftmost_handle
-    graph.follow_edges(leftmost_handle, false, [&](const handle_t &handle) {
+    graph.follow_edges(leftmost_handle, false, [&](const handle_t handle) {
         // mark the nodes to come as to_visit
         if (visited.find(graph.get_id(handle)) == visited.end()) {
             to_visit.insert(graph.get_id(handle));
@@ -1893,14 +1905,14 @@ SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
         if (graph.get_id(cur_handle) != rightmost_id) { // don't iterate past rightmost node!
             // look for all nodes connected to cur_handle that need to be added
             // looking to the left,
-            graph.follow_edges(cur_handle, true, [&](const handle_t &handle) {
+            graph.follow_edges(cur_handle, true, [&](const handle_t handle) {
                 // mark the nodes to come as to_visit
                 if (visited.find(graph.get_id(handle)) == visited.end()) {
                     to_visit.insert(graph.get_id(handle));
                 }
             });
             // looking to the right,
-            graph.follow_edges(cur_handle, false, [&](const handle_t &handle) {
+            graph.follow_edges(cur_handle, false, [&](const handle_t handle) {
                 // mark the nodes to come as to_visit
                 if (visited.find(graph.get_id(handle)) == visited.end()) {
                     to_visit.insert(graph.get_id(handle));
@@ -1945,16 +1957,16 @@ SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
 pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_snarl, 
     const HandleGraph &to_insert_snarl,
     vector<pair<step_handle_t, step_handle_t>>& embedded_paths, 
-    const id_t &source_id, const id_t &sink_id, const bool backwards) {
+    const id_t source_id, const id_t sink_id, const bool backwards) {
     // cerr << "integrate_snarl" << endl;
 
     //todo: debug_statement
     // cerr << "\nhandles in to_insert_snarl:" << endl;
-    // to_insert_snarl.for_each_handle([&](const handle_t &handle) {
+    // to_insert_snarl.for_each_handle([&](const handle_t handle) {
     //     cerr << to_insert_snarl.get_id(handle) << " "
     //          << to_insert_snarl.get_sequence(handle) << " ";
     //     cerr << "neighbors: ";
-    //     to_insert_snarl.follow_edges(handle, false, [&](const handle_t &next) {
+    //     to_insert_snarl.follow_edges(handle, false, [&](const handle_t next) {
     //         cerr << "     " << to_insert_snarl.get_id(next) << endl;
     //     });
     //     cerr << " \n";
@@ -2012,7 +2024,7 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     // in to_insert_snarl:
     for (int i = 0; i < to_insert_snarl_topo_order.size(); i++) {
         to_insert_snarl.follow_edges(
-            to_insert_snarl_topo_order[i], false, [&](const handle_t &snarl_handle) {
+            to_insert_snarl_topo_order[i], false, [&](const handle_t snarl_handle) {
                 // get topo_index of nodes to be connected to _graph start handle
                 auto it = find(to_insert_snarl_topo_order.begin(),
                                to_insert_snarl_topo_order.end(), snarl_handle);
@@ -2048,22 +2060,22 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     if (!backwards)
     {
     _graph.follow_edges(
-        _graph.get_handle(source_id), true, [&](const handle_t &prev_handle) {
+        _graph.get_handle(source_id), true, [&](const handle_t prev_handle) {
             _graph.create_edge(prev_handle, _graph.get_handle(temp_snarl_leftmost_id));
         });
     _graph.follow_edges(
-        _graph.get_handle(sink_id), false, [&](const handle_t &next_handle) {
+        _graph.get_handle(sink_id), false, [&](const handle_t next_handle) {
             _graph.create_edge(_graph.get_handle(temp_snarl_rightmost_id), next_handle);
         });
     }
     else 
     {
         _graph.follow_edges(
-        _graph.get_handle(source_id), false, [&](const handle_t &next_handle) {
+        _graph.get_handle(source_id), false, [&](const handle_t next_handle) {
             _graph.create_edge(_graph.get_handle(temp_snarl_rightmost_id), next_handle);
         });
     _graph.follow_edges(
-        _graph.get_handle(sink_id), true, [&](const handle_t &prev_handle) {
+        _graph.get_handle(sink_id), true, [&](const handle_t prev_handle) {
             _graph.create_edge(prev_handle, _graph.get_handle(temp_snarl_leftmost_id));
         });
     }
@@ -2092,7 +2104,7 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     }
 
     // Destroy the old snarl.
-    old_snarl.for_each_handle([&](const handle_t &handle) 
+    old_snarl.for_each_handle([&](const handle_t handle) 
     {
         // //todo: debug_statement these are the handles in old_snarl:
         // cerr << "destroying old_snarl handle: " << old_snarl.get_id(handle) << " with sequence: " << old_snarl.get_sequence(handle) << endl;
@@ -2136,17 +2148,17 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
  * @return {handle_t}        : The new handle, in the same position as the original handle
  *                              in the graph, but with the new node_id.
  */
-handle_t SnarlNormalizer::overwrite_node_id(const id_t& old_node_id, const id_t& new_node_id)
+handle_t SnarlNormalizer::overwrite_node_id(const id_t old_node_id, const id_t new_node_id)
 {
     handle_t old_handle = _graph.get_handle(old_node_id);
     handle_t new_handle = _graph.create_handle(_graph.get_sequence(old_handle), new_node_id);
 
     // move the edges:
-    _graph.follow_edges(old_handle, true, [&](const handle_t &prev_handle) 
+    _graph.follow_edges(old_handle, true, [&](const handle_t prev_handle) 
     {
         _graph.create_edge(prev_handle, new_handle);
     });
-    _graph.follow_edges(old_handle, false, [&](const handle_t &next_handle)
+    _graph.follow_edges(old_handle, false, [&](const handle_t next_handle)
     {
         _graph.create_edge(new_handle, next_handle);
     });
@@ -2227,9 +2239,9 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
  * the same respective nodes in the new snarl.
  */
 bool SnarlNormalizer::source_and_sink_handles_map_properly(
-    const HandleGraph &graph, const id_t &new_source_id, const id_t &new_sink_id,
-    const bool &touching_source, const bool &touching_sink, const handle_t &path_start,
-    const handle_t &path_end) {
+    const HandleGraph &graph, const id_t new_source_id, const id_t new_sink_id,
+    const bool touching_source, const bool touching_sink, const handle_t path_start,
+    const handle_t path_end) {
 
     bool path_map = false;
     // cerr << "touching source? " << touching_source << "touching_sink" << touching_sink
@@ -2338,18 +2350,18 @@ SnarlNormalizer::debug_get_sources_and_sinks(const HandleGraph &graph) {
     vector<handle_t> source;
 
     // identify sources and sinks
-    graph.for_each_handle([&](const handle_t &handle) {
+    graph.for_each_handle([&](const handle_t handle) {
         //todo: debug_statements in code below:
         // cerr << "identifying if " << graph.get_id(handle) << "is a source/sink." <<endl;
         bool is_source = true, is_sink = true;
         // cerr << "handles to the left: ";
-        graph.follow_edges(handle, true, [&](const handle_t &prev) {
+        graph.follow_edges(handle, true, [&](const handle_t prev) {
             // cerr << graph.get_id(prev) << endl;
             is_source = false;
             return false;
         });
         // cerr << "handles to the right: ";
-        graph.follow_edges(handle, false, [&](const handle_t &next) {
+        graph.follow_edges(handle, false, [&](const handle_t next) {
             // cerr << graph.get_id(next) << endl;
             is_sink = false;
             return false;
