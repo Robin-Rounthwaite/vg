@@ -14,7 +14,7 @@ class SnarlSequenceFinder {
                    const gbwtgraph::GBWTGraph &gbwt_graph, const id_t source_id, 
                    const id_t sink_id, const bool backwards);
 
-    tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<handle_t>>
+    tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<id_t>>
     find_gbwt_haps();
 
     pair<unordered_set<string>, unordered_set<handle_t>> find_exhaustive_paths();
@@ -38,7 +38,7 @@ class SnarlSequenceFinder {
     bool _full_log_print = false; // for printing info that isn't necessarily something gone wrong.
 
     vector<vector<handle_t>> 
-    find_haplotypes_not_at_source();
+    find_haplotypes_not_at_source(unordered_set<id_t> &touched_handles);
 };
 }
 }

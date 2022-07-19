@@ -229,7 +229,9 @@ void help_normalize(char **argv) {
       << endl
       << "    -E, --extract_paths      A debugging tool. Given a snarl, prints all the paths through the snarl to cout. Snarl is defined with -a and -b. Also requires -g. (-r saves time but isn't required)." //todo: include an extension of search for the "after normalization" phase which looks in the next snarl for possible sequence-shifting between snarls.
       << endl
-      << "    -C, --compare_full_gbwt_paths      A debugging tool. Determines if two gbwts have identical haplotype content. Pass one of the gbwts to -g, and the other to this argument (-C). Optionally, to bypass remaking the gbwt_graphs, pass the gbwts corresponding gbwt_graphs to -r and -D, respectively."
+      << "    -C, --compare_full_gbwt_paths      A debugging tool. Determines if two gbwts have identical haplotype content. Pass one of the gbwts to -g, and the other to this argument (-C). Pass the graph (e.g. graph.vg) corresponding to -g as the main graph at the end of the command, and the second gbwt's graph (e.g. graph.normalized.vg) to -S." // I removed the option of giving a .gg, since I don't need it right now. This is what I wrote, however: Optionally, to bypass remaking the gbwt_graphs, pass the gbwts corresponding gbwt_graphs to -r and -D, respectively."
+      << endl
+      << "    -S, --second_graph      Used in conjunction with -C. Pass the gbwt-to-be-compared to -C, and its corresponding graph (such as a .vg) to this argument (-S)."
       << endl
       // << "    -C_old, --compare_extracts      A debugging tool. Identifies if two outputs from two different extract_paths are comparable by performing a substring comparison. If all the strings in one file are substrings to the strings in the other file, or vice-versa, it asserts that the two snarls contain the same sequence information. Pass one -E output to this argument, and the other -E output to '-D'." //todo: include an extension of search for the "after normalization" phase which looks in the next snarl for possible sequence-shifting between snarls.
       // << endl
@@ -274,7 +276,8 @@ int main_normalize(int argc, char **argv) {
   int max_snarl_spacing = 1;
   int threads = 1;
   bool extract_paths = false;
-  string compare_full_gbwt_paths;
+  string to_compare_gbwt_file; //associated with -C
+  string to_compare_graph_file; //associated with -S
   // string extract_paths_a; //associated with -C_old argument
   // string extract_paths_b; //associated with -D argument
   bool disable_gbwt_update = false;
@@ -308,6 +311,7 @@ int main_normalize(int argc, char **argv) {
          {"threads", required_argument, 0, 't'},
          {"extract_paths", no_argument, 0, 'E'},
          {"compare_full_gbwt_paths", required_argument, 0, 'C'},
+         {"second_graph", required_argument, 0, 'S'},
         //  {"compare_extracts", required_argument, 0, 'C_old'},
         //  {"compare_extracts_second_file", required_argument, 0, 'D'},
          {"disable_gbwt_update", no_argument, 0, 'q'},
@@ -315,7 +319,7 @@ int main_normalize(int argc, char **argv) {
          {0, 0, 0, 0}};
 
     int option_index = 0;
-    c = getopt_long(argc, argv, "hg:r:s:o:na:b:B:pm:i:jl:xy:c:v:k:i:t:EC:qd", long_options,
+    c = getopt_long(argc, argv, "hg:r:s:o:na:b:B:pm:i:jl:xy:c:v:k:i:t:EC:S:qd", long_options,
                     &option_index);
 
     // Detect the end of the options.
@@ -417,8 +421,12 @@ int main_normalize(int argc, char **argv) {
       break;
       
     case 'C':
-      compare_full_gbwt_paths = optarg;
+      to_compare_gbwt_file = optarg;
       normalize_type = "none";
+      break;
+
+    case 'S':
+      to_compare_graph_file = optarg;
       break;
 
     // case 'C_old':
@@ -560,6 +568,19 @@ int main_normalize(int argc, char **argv) {
       vector<Region> bed_regions;
       //todo: non-hardcode bed region
       parse_bed_regions(bed_file, bed_regions);
+      // cerr << "bed regions close to the interesting snarl at node 1,184,818-1,184,851: " << endl; // todo: if I ever want to actually measure this, I would want a way to swap chrom positions into node ids. 
+      // int debug_count = 0;
+      // for (auto bed : bed_regions) 
+      // {
+      //   if (debug_count <= 10)
+      //   {
+      //     cerr << "example region: " << bed.start << " " << bed.end << endl;
+      //   }
+      //   debug_count++;
+      //   if (bed.start <= 1184851 && 1184818 <= bed.end){
+      //     cerr << "interesting bed region of: " << bed.start << ", " << bed.end << endl;
+      //   }
+      // }
       // cerr << "Number of regions in the bedfile we will use to filter out undesired snarls: " << bed_regions.size() << " " << bed_regions.front().start << " " << bed_regions.front().end << " " << bed_regions.front().seq << " " << endl;
       cerr << "Number of regions in the bedfile we will use to filter out undesired snarls: " << bed_regions.size() << endl;
       //todo: check that contain_endpoints bool does what I think it does. I think I want contain_endpoints=true.
@@ -714,7 +735,7 @@ int main_normalize(int argc, char **argv) {
     // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
     algorithms::SnarlSequenceFinder sequence_finder = algorithms::SnarlSequenceFinder(*graph, snarl, *gbwt_graph, leftmost_id, rightmost_id, false);
-    tuple<vector<vector<gbwtgraph::handle_t>>, vector<vector<gbwtgraph::handle_t>>, unordered_set<handlegraph::handle_t>> gbwt_haps = sequence_finder.find_gbwt_haps();
+    tuple<vector<vector<gbwtgraph::handle_t>>, vector<vector<gbwtgraph::handle_t>>, unordered_set<handlegraph::nid_t>> gbwt_haps = sequence_finder.find_gbwt_haps();
     // cerr << get<1>(gbwt_haps).size() << " " << get<2>(gbwt_haps).size() << " " << get<3>(gbwt_haps).size() << " " << endl;
     cerr << " " << get<0>(gbwt_haps).size() << " " <<  get<1>(gbwt_haps).size() << " " << get<2>(gbwt_haps).size()  << endl;
 
@@ -725,8 +746,9 @@ int main_normalize(int argc, char **argv) {
       cerr << string << endl;
     }
   }
-  if (compare_full_gbwt_paths.size() != 0) 
+  if (to_compare_gbwt_file.size() != 0) 
   {
+    cerr << "Preparing to compare gbwts." << endl;
     ///////// Input objects: ///////////
     // graph
     shared_ptr<MutablePathDeletableHandleGraph> graph;
@@ -741,6 +763,18 @@ int main_normalize(int argc, char **argv) {
     unique_ptr<gbwt::GBWT> gbwt;
     gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream);
 
+    // to_compare_graph
+    shared_ptr<MutablePathDeletableHandleGraph> to_compare_graph;
+    get_input_file(to_compare_graph_file, [&](istream &in) {
+      to_compare_graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);
+    });
+
+    // to_compare_gbwt
+    ifstream to_compare_gbwt_stream;
+    to_compare_gbwt_stream.open(to_compare_gbwt_file);    
+    unique_ptr<gbwt::GBWT> to_compare_gbwt;
+    to_compare_gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(to_compare_gbwt_stream);
+    
     // gbwt graph 
     unique_ptr<gbwtgraph::GBWTGraph> gbwt_graph;
     if (gbwt_graph_file.size() == 0)
@@ -759,57 +793,113 @@ int main_normalize(int argc, char **argv) {
       gbwt_graph->set_gbwt(*gbwt);
     }
 
+    // todo: uncomment this code, as it is possibly the most important code in this test. Currently commented out so I can run the find_gbwt_haps tests (below) faster.
+    int pre_norm_num_paths = gbwt->metadata.paths();
+    cerr << "num_paths according to pre_norm gbwt: " << pre_norm_num_paths << endl;
+
+    int num_paths = to_compare_gbwt->metadata.paths();
+    cerr << "num_paths according to to_compare: " << num_paths << endl;
+    for (int i = 0; i != num_paths; i++)
+    {
+      string pre_norm_path_str;
+      string post_norm_path_str;
+      gbwt::vector_type pre_norm_path = gbwt->extract(gbwt::Path::encode(i, false));
+      gbwt::vector_type post_norm_path = to_compare_gbwt->extract(gbwt::Path::encode(i, false));
+      for (auto node : pre_norm_path)
+      {
+        pre_norm_path_str += graph->get_sequence(graph->get_handle(gbwt::Node::id(node), gbwt::Node::is_reverse(node)));
+      }
+      for (auto node : post_norm_path)
+      {
+        // if (i == 33) 
+        // {
+        //   cerr << "adding handle to post_norm_path_str with id: " << gbwt::Node::id(node) << " and seq " << to_compare_graph->get_sequence(to_compare_graph->get_handle(gbwt::Node::id(node), gbwt::Node::is_reverse(node))) << endl;
+        // }
+        post_norm_path_str += to_compare_graph->get_sequence(to_compare_graph->get_handle(gbwt::Node::id(node), gbwt::Node::is_reverse(node)));
+      }
+      // cerr << "path of id: " << gbwt->metadata.path(pre_norm_path) << " is length: " << pre_norm_path_str.size() << endl; 
+      if (pre_norm_path_str == post_norm_path_str)
+      {
+        // cerr << "found an equivalent path." << endl;
+        cerr << "found an equivalent path." << " Size of path is: " << post_norm_path_str.size() << " bases and " << pre_norm_path.size() << " nodes." << endl;
+      }
+      else
+      {
+        cerr << "WARNING: found a nonequivalent path." << endl;
+        cerr << "path from first gbwt is length: " << pre_norm_path_str.size() << endl;
+        cerr << "path from to_compare gbwt is length: " << post_norm_path_str.size() << endl;
+      }
+      // cerr << "path from gbwt is length: " << pre_norm_path_str.size() << endl; 
+    }
+
     // use min_node_id as the starting point. Get every path on that node, and go to their path_begin spot. Extract each of their paths.
     // Every time we traverse a new node, check to make sure that all paths on that node are not new. If there is a new path there, put its path.begin() in the list of paths to extend.
     //todo: ask lab if I can skip the "check each node if its new" thing, so long as I guarantee that the first node I check for paths is a top level snarl root. 
     //todo:     I.e.: "are gbwt_haplotypes all guaranteed to stretch from source to sink? Or can they start in the middle of a graph?"
     // gbwt_graph->for_each_path_handle(gbwt_graph->get_handle(gbwt_graph->min_node_id()), [&](path_handle_t path_handle) 
     vector<string> path_strings;
-    cerr << "reality check: does gbwt_graph have nodes? Min node: " << gbwt_graph->min_node_id() << " max: " << gbwt_graph->max_node_id() << endl;
-    handle_t test = gbwt_graph->get_handle(gbwt_graph->max_node_id());
+    // cerr << "reality check: does gbwt_graph have nodes? Min node: " << gbwt_graph->min_node_id() << " max: " << gbwt_graph->max_node_id() << endl;
+    // handle_t test = gbwt_graph->get_handle(gbwt_graph->max_node_id());
     
-    SubHandleGraph empty_snarl(&(*graph));
+    SubHandleGraph full_graph_subgraph = algorithms::SnarlNormalizer::extract_subgraph(*graph, gbwt_graph->min_node_id(), gbwt_graph->max_node_id());
+    // SubHandleGraph empty_snarl(&(*graph));
+    if (!handlealgs::is_acyclic(&(*graph))) {
+                cerr << "WARNING: graph is cyclic. Robin is currently figuring out if that's an issue or not." << endl;
+            }
+    cerr << "secondary profile of gbwt haplotypes in the original graph, according to SnarlSequenceFinder: " << endl;
     // gbwt_haps is of format:
     // 0: a set of all the haplotypes which stretch from source to sink, in string format.
     //   - it's a set, so doesn't contain duplicates
     // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
-    algorithms::SnarlSequenceFinder sequence_finder = algorithms::SnarlSequenceFinder(*graph, empty_snarl, *gbwt_graph, gbwt_graph->min_node_id(), gbwt_graph->max_node_id(), false);
-    tuple<vector<vector<gbwtgraph::handle_t>>, vector<vector<gbwtgraph::handle_t>>, unordered_set<handlegraph::handle_t>> gbwt_haps = sequence_finder.find_gbwt_haps();
+    algorithms::SnarlSequenceFinder sequence_finder = algorithms::SnarlSequenceFinder(*graph, full_graph_subgraph, *gbwt_graph, gbwt_graph->min_node_id(), gbwt_graph->max_node_id(), false);
+    tuple<vector<vector<gbwtgraph::handle_t>>, vector<vector<gbwtgraph::handle_t>>, unordered_set<handlegraph::nid_t>> gbwt_haps = sequence_finder.find_gbwt_haps();
+
 
     cerr << "size of haps 0, 1, and 2: " << get<0>(gbwt_haps).size() << " " << get<1>(gbwt_haps).size() << " " << get<2>(gbwt_haps).size() << endl;
-    cerr << "size of full length haps:" << endl;
+    cerr << "size of full length haps (# of handles):" << endl;
+
+    int hap_num = 0;
     for (auto hap : get<0>(gbwt_haps))
     {
-      cerr << hap.size() << endl;
+      cerr << "calculating for hap " << hap_num << ":" << endl;
+      int hap_seq_size = 0;
+      for (auto handle : hap)
+      {
+        hap_seq_size += gbwt_graph->get_sequence(handle).size();
+      }
+      cerr << "Size of path is: " << hap_seq_size << " bases and " << hap.size() << " nodes." << endl;
+      hap_num++;
+      // cerr << hap.size() << endl;
     }
-    cerr << "size of partial length haps:" << endl;
+    cerr << "size of partial length haps (# of handles):" << endl;
     for (auto hap : get<1>(gbwt_haps))
     {
       cerr << hap.size() << endl;
     }
-    cerr << "to the right: " << endl;
-    gbwt_graph->follow_edges(test, false, [&](handle_t next_handle){
-      cerr << "handle to the right of id: " << gbwt_graph->get_id(next_handle) << endl; 
-    });
-    cerr << "to the left: " << endl;
-    gbwt_graph->follow_edges(test, true, [&](handle_t next_handle){
-      cerr << "handle to the left of id: " << gbwt_graph->get_id(next_handle) << endl; 
-    });
 
-    vector<step_handle_t> steps = gbwt_graph->steps_of_handle(gbwt_graph->get_handle(998743));
-    cerr << "example handle's sequence" << gbwt_graph->get_sequence(gbwt_graph->get_handle(998743)) << endl;
-    cerr << "all steps' paths: " << endl;
-    for (auto step : steps)
-    {
-      cerr << "b" << endl;
-      cerr << gbwt_graph->get_path_name(gbwt_graph->get_path_handle_of_step(step)) << endl;
-    }
+    // cerr << "to the right: " << endl;
+    // gbwt_graph->follow_edges(test, false, [&](handle_t next_handle){
+    //   cerr << "handle to the right of id: " << gbwt_graph->get_id(next_handle) << endl; 
+    // });
+    // cerr << "to the left: " << endl;
+    // gbwt_graph->follow_edges(test, true, [&](handle_t next_handle){
+    //   cerr << "handle to the left of id: " << gbwt_graph->get_id(next_handle) << endl; 
+    // });
 
-    cerr << "about to use for_each_path_handle:" << endl;
+    // vector<step_handle_t> steps = gbwt_graph->steps_of_handle(gbwt_graph->get_handle(998743));
+    // cerr << "example handle's sequence" << gbwt_graph->get_sequence(gbwt_graph->get_handle(998743)) << endl;
+    // cerr << "all steps' paths: " << endl;
+    // for (auto step : steps)
+    // {
+    //   cerr << "b" << endl;
+    //   cerr << gbwt_graph->get_path_name(gbwt_graph->get_path_handle_of_step(step)) << endl;
+    // }
+
+    // cerr << "about to use for_each_path_handle:" << endl;
     gbwt_graph->for_each_path_handle([&](path_handle_t path_handle) 
     {
-      cerr << "looking at path_handle " << gbwt_graph->get_path_name(path_handle) << endl;
+      // cerr << "looking at path_handle " << gbwt_graph->get_path_name(path_handle) << endl;
       step_handle_t cur_step = gbwt_graph->path_begin(path_handle);
       string path_string;
       while (cur_step != gbwt_graph->path_end(path_handle))
@@ -828,7 +918,7 @@ int main_normalize(int argc, char **argv) {
     {
       cerr << path.size() << endl;
     }
-    
+                                  
 
   }
 

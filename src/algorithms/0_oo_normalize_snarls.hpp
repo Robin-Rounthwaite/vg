@@ -53,6 +53,17 @@ class SnarlNormalizer {
     // calculating the before-normalization total snarl size.
     unordered_set<id_t> _touched_border_nodes;
     int _pre_norm_net_snarl_size = 0;
+    //for tracking handles that exist in the graph, but have no corresponding path in the gbwt.
+    int _handles_not_touched_by_gbwt = 0;
+    int _sequence_not_touched_by_gbwt = 0;
+    // int _snarls_skipped_because_gbwt_misses_handles = 0; //currently handled by messy system of error_record vectors. See: error_record[7] in normalize_snarls(). //todo: change?
+    int skipped_snarl_sizes = 0;
+    int skipped_snarl_num = 0;
+    int unskipped_snarl_sizes = 0;
+    int unskipped_snarl_num = 0;
+//     vector<int> skipped_snarl_sizes.push_back(snarl_size); //todo: remove this later for efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped).
+//     
+    // vector<int> unskipped_snarl_sizes.push_back(snarl_size); //todo: remove for increased efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped). 
 
     // a separate tracker for measuring independent snarl increase/decrease in size. Note 
     // that because snarls overlap, the sum of all the independent snarl 
