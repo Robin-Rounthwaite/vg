@@ -225,7 +225,7 @@ void help_normalize(char **argv) {
       << endl
       << "    -i, --max_snarl_spacing      The max number of nodes between snarls permitted, before starting a new alignment region. Default:1." //todo: make it so that it's max number of *sequence* between snarls permitted, rather than the somewhat arbitrary node size of the graph.
       << endl
-      << "    -t, --threads      The number of threads used in the normalization process. Currently only affects the update_gbwt step, which can grow very long without multithreading. Default:1."
+      << "    -t, --threads      The number of threads used in the normalization process. Currently only affects the update_gbwt step, which can grow very long without multithreading. Default:14."
       << endl
       << "    -E, --extract_paths      A debugging tool. Given a snarl, prints all the paths through the snarl to cout. Snarl is defined with -a and -b. Also requires -g. (-r saves time but isn't required)." //todo: include an extension of search for the "after normalization" phase which looks in the next snarl for possible sequence-shifting between snarls.
       << endl
@@ -274,7 +274,7 @@ int main_normalize(int argc, char **argv) {
   int end_snarl_num = 0;
   int max_region_size = 1;
   int max_snarl_spacing = 1;
-  int threads = 1;
+  int threads = 14;
   bool extract_paths = false;
   string to_compare_gbwt_file; //associated with -C
   string to_compare_graph_file; //associated with -S
@@ -492,7 +492,7 @@ int main_normalize(int argc, char **argv) {
 
     ///////// Input objects: ///////////
     // graph
-    cerr << "messing with graph pointers here!" << endl;
+    // cerr << "messing with graph pointers here!" << endl;
     shared_ptr<MutablePathDeletableHandleGraph> graph;
     get_input_file(optind, argc, argv, [&](istream &in) {
       graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);
@@ -650,7 +650,7 @@ int main_normalize(int argc, char **argv) {
   // snarl_analyzer identifies the size of every top-level snarl, outputs in a
   // document specified with format "source\tsink\tsize\n"
   if (snarl_sizes.size() != 0) {
-    cerr << "messing with graph pointers here!" << endl;
+    // cerr << "messing with graph pointers here!" << endl;
     shared_ptr<MutablePathDeletableHandleGraph> graph;
     get_input_file(optind, argc, argv, [&](istream &in) {
       graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);
@@ -679,7 +679,7 @@ int main_normalize(int argc, char **argv) {
     } 
     else 
     {
-      cerr << "messing with graph pointers here!" << endl;
+      // cerr << "messing with graph pointers here!" << endl;
       shared_ptr<MutablePathDeletableHandleGraph> graph;
       get_input_file(optind, argc, argv, [&](istream &in) {
         graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);

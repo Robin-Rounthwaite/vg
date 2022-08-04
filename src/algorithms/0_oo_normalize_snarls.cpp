@@ -145,7 +145,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     // for (auto roots : snarl_roots) 
     for (auto region : normalize_regions) 
     {
-        // if (!(region.first == 996838 || region.first == 3409937 || region.first == 1184818 || region.first == 3194070 || region.first == 1184818 || region.first == 3781235 || region.first == 837592 || region.first == 3335984 || region.first == 1921699 || region.first == 1728978 || region.first == 3054979))
+        // if (region.first != 263599)
         // {
         //     continue;
         // }
@@ -295,6 +295,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         bool skip_this_subgraph = false;
         region_graph.for_each_handle([&](handle_t handle){
             const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(region_graph.get_id(handle)));
+            // const gbwt::SearchState debug_state = _gbwt_graph.get_state(_gbwt_graph.get_handle(region_graph.get_id(handle))); //todo: consider trying this, in both orientations?
             if (debug_state.empty()) //then we skipped this graph during normalization, so we should skip it here as well.
             {
                 skip_this_subgraph = true;
@@ -1338,11 +1339,19 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
     snarl.for_each_handle([&](handle_t handle){
         snarl_size += snarl.get_sequence(handle).size();
     });
+
+    // bool debug_still_looking = true;
     
     snarl.for_each_handle([&](handle_t handle){
         const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)));
         if (debug_state.empty())
         {
+            // cerr << "there is an empty debug_state at: " << snarl.get_id(handle) << endl;
+            // if (snarl_size <= 20)
+            // {
+            //     cerr << "skippable snarl of small size " << snarl_size << " is at leftmost: " << leftmost_id << " and rightmost: " << rightmost_id << endl; 
+            //     debug_still_looking = false;
+            // }
             // _snarls_skipped_because_gbwt_misses_handles++;
             error_record[7] = true;
             return;
@@ -1359,6 +1368,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         skipped_snarl_num ++;
         return error_record;
     }
+
     //todo: debug_statement: Evaluate connections of all nodes in subgraph.
     // snarl.for_each_handle([&](const handle_t handle){
     //     cerr << "examining left neighbors of handle " << snarl.get_id(handle) << ":" << endl;
@@ -1444,6 +1454,24 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
     if (_path_finder == "GBWT") {
         tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<id_t>>
             gbwt_haplotypes = sequence_finder.find_gbwt_haps();
+
+        // cerr << "sizes of gbwt_haplotypes output: " << get<0>(gbwt_haplotypes).size() << " " << get<1>(gbwt_haplotypes).size() << " " << get<2>(gbwt_haplotypes).size() << endl;
+
+        // cerr << "each gbwt hap output: " << endl;
+        // for (vector<handle_t> hap : get<0>(gbwt_haplotypes))
+        // {
+        //     for (handle_t handle : hap)
+        //     {
+        //         cerr << _gbwt_graph.get_id(handle) << " ";
+        //     }
+        //     cerr << "(";
+        //     for (handle_t handle : hap)
+        //     {
+        //         cerr << _gbwt_graph.get_sequence(handle);
+        //     }
+        //     cerr << ")" << endl;
+        // }
+            
 
         // cerr << "check that all handles touched by find_gbwt_haps are all the handles in the subgraph:" << endl;
         int debug_sequence_not_in_gbwt = 0;
@@ -1572,7 +1600,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
     // large job.
     if (get<0>(haplotypes).size() > _big_snarl_alignment_job)
     {
-        cerr << "WARNING: aligning a snarl requiring a large number (> " << _big_snarl_alignment_job <<") of threads. Number of threads: " << get<0>(haplotypes).size() << endl;
+        cerr << "WARNING: aligning a snarl requiring a large number (>" << _big_snarl_alignment_job <<") of threads. Number of threads: " << get<0>(haplotypes).size() << endl;
     }
     // Record start time, for measuring alignment time for a big snarls:
     //todo: also add compute time (vs wall clock) measure.
