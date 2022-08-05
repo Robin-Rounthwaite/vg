@@ -140,5 +140,5 @@
 	url = https://github.com/ekg/tabixpp.git
 	branch = master
 [submodule "kalign"]
-	path = kalign
+	path = deps/kalign
 	url = https://github.com/TimoLassmann/kalign.git
