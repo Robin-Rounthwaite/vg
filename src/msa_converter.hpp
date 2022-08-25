@@ -27,6 +27,8 @@ using namespace std;
         ~MSAConverter();
         
         void load_alignments(istream& in, string format = "fasta");
+
+        void load_alignments_from_vector(vector<string> input);
         
         VG make_graph(bool keep_paths = true, size_t max_node_length = numeric_limits<size_t>::max());
         

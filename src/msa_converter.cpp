@@ -21,6 +21,37 @@ using namespace std;
         // nothing to do
     }
 
+    void MSAConverter::load_alignments_from_vector(vector<string> input)
+    {
+        //assumes that each string in the input vector has the simple format of 
+        //GAT-ACA
+        //--TTACA
+
+        // make an alignment block
+        alignments.emplace_back();
+        auto& alignment = alignments.back();
+
+        
+        int seq_count = 0;
+        for (string line : input) {
+            alignment[to_string(seq_count)].append(line);
+            seq_count++;
+        }
+
+        for (const auto& aln : alignments) {
+            size_t aln_len = aln.begin()->second.size();
+            for (const auto& seq : aln) {
+                if (seq.second.size() != aln_len) {
+                    cerr << "error:[MSAConverter] aligned sequences must be the same length, any unaligned sequences must be fully specified with '-' characters" << endl;
+                    exit(1);
+                }
+            }
+        }
+        
+        increment_progress();
+        destroy_progress();
+    }
+
     void MSAConverter::load_alignments(istream& in, string format){
         
         create_progress("loading MSA into memory", 1);

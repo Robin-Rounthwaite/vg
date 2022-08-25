@@ -237,6 +237,8 @@ void help_normalize(char **argv) {
       // << endl
       // << "    -D, --compare_extracts_second_file      Use in conjuction with -C. Pass one of the output files from -E to -C, and the other to this argument." //todo: include an extension of search for the "after normalization" phase which looks in the next snarl for possible sequence-shifting between snarls.
       // << endl
+      << "    -A, --alignment_algorithm      Can be either 'TCoffee' (MSA, slow) or 'sPOA' (POA, fast). Default is sPOA."
+      << endl
       << "    -q, --disable_gbwt_update      skips the (sometimes lengthy) gbwt editing process after normalization. Note that there is no way to generate a new, haplotype-based gbwt based on a normalized graph without exporting the updated gbwt at this stage."
       << endl
       << "    -d, --debug_print      prints the location of every snarl/region being normalized. It also announces certain special cases - of particular note, when a snarl has increased in size after normalization."
@@ -280,6 +282,7 @@ int main_normalize(int argc, char **argv) {
   string to_compare_graph_file; //associated with -S
   // string extract_paths_a; //associated with -C_old argument
   // string extract_paths_b; //associated with -D argument
+  string alignment_algorithm = "sPOA";
   bool disable_gbwt_update = false;
   bool debug_print = false;
   int c;
@@ -314,12 +317,13 @@ int main_normalize(int argc, char **argv) {
          {"second_graph", required_argument, 0, 'S'},
         //  {"compare_extracts", required_argument, 0, 'C_old'},
         //  {"compare_extracts_second_file", required_argument, 0, 'D'},
+         {"alignment_algorithm", required_argument, 0, 'A'},
          {"disable_gbwt_update", no_argument, 0, 'q'},
          {"debug_print", no_argument, 0, 'd'},
          {0, 0, 0, 0}};
 
     int option_index = 0;
-    c = getopt_long(argc, argv, "hg:r:s:o:na:b:B:pm:i:jl:xy:c:v:k:i:t:EC:S:qd", long_options,
+    c = getopt_long(argc, argv, "hg:r:s:o:na:b:B:pm:i:jl:xy:c:v:k:i:t:EC:S:A:qd", long_options,
                     &option_index);
 
     // Detect the end of the options.
@@ -438,6 +442,9 @@ int main_normalize(int argc, char **argv) {
     //   extract_paths_b = optarg;
     //   normalize_type = "none";
     //   break;
+    case 'A':
+      alignment_algorithm = optarg;
+      break;
 
     case 'q':
       disable_gbwt_update = true;
@@ -602,7 +609,7 @@ int main_normalize(int argc, char **argv) {
     // normalize
     cerr << "running normalize" << endl;
     algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
-      *graph, *gbwt, *gbwt_graph, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", disable_gbwt_update, debug_print);
+      *graph, *gbwt, *gbwt_graph, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
     if (normalize_region)
     {
       // if we've specified the normalize_region with -a and -b, then we just normalize that region. //todo: add gbwt update?

@@ -4,9 +4,35 @@
 #include "../vg.hpp"
 #include <string>
 #include <gbwtgraph/gbwtgraph.h>
+#include <spoa/spoa/spoa.hpp>
+#include "bdsg/hash_graph.hpp"
 
 namespace vg {
 namespace algorithms {
+
+//sPOA classes added
+
+class POA_PathInfo{
+public:
+    path_handle_t path_handle;
+    uint32_t poa_id;
+    bool biclique_side;
+
+    POA_PathInfo(path_handle_t path_handle, uint32_t poa_id, bool biclique_side);
+    POA_PathInfo()=default;
+};
+
+
+class POA_Subgraph{
+public:
+    // The small graph resulting from POA of overlap sequences
+    bdsg::HashGraph graph;
+
+    // In terms of the biclique, record the side of each overlap and the name needed to fetch that path after copying
+    array <map <handle_t, POA_PathInfo>, 2> paths_per_handle;
+
+    POA_Subgraph()=default;
+};
 
 class SnarlNormalizer {
   public:
@@ -19,6 +45,7 @@ class SnarlNormalizer {
                     const int threads,
                     const int max_alignment_size = INT_MAX, //TODO: add a _max_handle_length default length
                     const string path_finder = "GBWT", /*alternative is "exhaustive"*/
+                    const string alignment_algorithm = "sPOA",
                     const bool disable_gbwt_update = false,
                     const bool debug_print = false);
 
@@ -84,6 +111,7 @@ class SnarlNormalizer {
     const bool _disable_gbwt_update;
     const bool _debug_print; // for printing info that isn't necessarily something gone wrong.
     const int _threads;
+    const string _alignment_algorithm;
     //////////////////////////////////////////////////////////////////////////////////////
     // finding information on original graph:
     //////////////////////////////////////////////////////////////////////////////////////
@@ -111,6 +139,15 @@ class SnarlNormalizer {
     //////////////////////////////////////////////////////////////////////////////////////
     // creation of new graph:
     //////////////////////////////////////////////////////////////////////////////////////
+    //begin poa fxns:
+    VG poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
+
+    void add_alignments_to_poa(const function<void(const string&,const string&)>& add_alignment, uint32_t first_seq_id, size_t i, vector <POA_Subgraph> subgraphs);
+
+    void convert_spoa_to_bdsg(spoa::Graph& spoa_graph, size_t i, vector <POA_Subgraph> subgraphs);
+    bdsg::HashGraph gfa_graph;
+
+    //end poa fxns.
 
     VG align_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 
@@ -145,6 +182,7 @@ class SnarlNormalizer {
 
     RebuildParameters set_parameters();
     
+
 
 
 

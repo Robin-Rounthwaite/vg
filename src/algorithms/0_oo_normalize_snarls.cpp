@@ -61,11 +61,12 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const int threads,
                                  const int max_alignment_size, /*= MAX_INT*/
                                  const string path_finder, /*= "GBWT"*/
+                                 const string alignment_algorithm, /*= "sPOA"*/
                                  const bool disable_gbwt_update, /*= false*/
-                                const bool debug_print /*= false*/)
+                                 const bool debug_print /*= false*/)
 : _graph(graph), _gbwt(gbwt), _max_alignment_size(max_alignment_size),
       _max_handle_size(max_handle_size), _max_region_size(max_region_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder), _gbwt_graph(gbwt_graph),
-      _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
+       _alignment_algorithm(alignment_algorithm), _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
 
 
 /**
@@ -145,10 +146,10 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     // for (auto roots : snarl_roots) 
     for (auto region : normalize_regions) 
     {
-        // if (region.first != 263599)
-        // {
-        //     continue;
-        // }
+        if (region.first != 996838)
+        {
+            continue;
+        }
         snarl_num++;
         // if (snarl_num > start_snarl_num)
         // {
@@ -1674,18 +1675,31 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
                 }
             }
         }
+        
         // cerr << "haps in haplotypes: " << endl;
         // for (string hap : get<0>(haplotypes))
         // {
         //     cerr << hap << endl;
         // }
         // Align the new snarl:
-        VG new_snarl = align_source_to_sink_haplotypes(get<0>(haplotypes));
+        VG new_snarl;
+        if (_alignment_algorithm == "TCoffee")
+        {
+            new_snarl = align_source_to_sink_haplotypes(get<0>(haplotypes));
+        }
+        else if (_alignment_algorithm == "sPOA")
+        {
+            new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes));
+        }
+        // else if (_alignment_algorithm == "kalign") //todo: implement use of kalign. Then, update the error message in the else statement.
+        // {
 
-        //todo: remove debug:
-        
-        
-
+        // }
+        else
+        {
+            cerr << "error:[vg normalize] _alignment_algorithm variable must be set as either T-Coffee or sPOA." << endl;
+            exit(1);
+        }
 
         //preprocess new_snarl for log_gbwt_changes:
         bool single_stranded = handlealgs::is_single_stranded(&new_snarl);
@@ -1944,13 +1958,14 @@ VG SnarlNormalizer::align_source_to_sink_haplotypes(
     stringstream ss;
     for (string seq : row_strings) {
         // todo: debug_statement
-        // cerr << "seq in alignment:" << seq << endl;
+        cerr << "seq in alignment:" << seq << endl;
         ss << endl << seq;
     }
     // ss << align;
     MSAConverter myMSAConverter = MSAConverter();
     myMSAConverter.load_alignments(ss, "seqan");
     VG snarl = myMSAConverter.make_graph();
+
     snarl.clear_paths();
 
     pair<vector<handle_t>, vector<handle_t>> source_and_sink =
