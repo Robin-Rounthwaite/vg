@@ -139,9 +139,6 @@
 	path = deps/tabixpp
 	url = https://github.com/ekg/tabixpp.git
 	branch = master
-[submodule "kalign"]
-	path = deps/kalign
-	url = https://github.com/TimoLassmann/kalign.git
 [submodule "spoa"]
 	path = deps/spoa
 	url = https://github.com/rvaser/spoa.git

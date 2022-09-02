@@ -41,7 +41,7 @@ TODO:    the snarl.
 
 // todo: add cyclic snarls to the ones to skip, if cyclic snarls turns out to be frequent. Right now, I want to know when I have a cyclic snarl.
 
-int _big_snarl_alignment_job = 200;
+int _big_snarl_alignment_job = 900;
 
 namespace vg {
 namespace algorithms{
@@ -146,10 +146,10 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     // for (auto roots : snarl_roots) 
     for (auto region : normalize_regions) 
     {
-        if (region.first != 996838)
-        {
-            continue;
-        }
+        // if (region.first != 996838)
+        // {
+        //     continue;
+        // }
         snarl_num++;
         // if (snarl_num > start_snarl_num)
         // {
@@ -202,8 +202,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         // else
         // {
         //     cerr << "normalizing snarl number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
-        // }
-        // cerr << "normalizing snarl number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
+        // }200: " << region.first << " and sink at: " << region.second << endl;
         if (_debug_print)
         {
             // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
@@ -281,11 +280,18 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         // }
 
     }
-
+    
+    cerr << "Finished normalization. Generating statistics..." << endl;
     int post_norm_net_snarl_size = 0;
     unordered_set<id_t> post_norm_touched_border_nodes;
+    unordered_set<pair<id_t, id_t>> snarls_found_after_norm;
     for (auto region : normalize_regions)
     {
+        if (_skipped_snarls.find(region) != _skipped_snarls.end()){
+            continue;
+        }
+        snarls_found_after_norm.emplace(region);
+        
         //iterate through all regions after normalization, to measure total amount of sequence within those regions.
         SubHandleGraph region_graph = extract_subgraph(_graph, region.first, region.second);
         // if (!handlealgs::is_acyclic(&region_graph)) {
@@ -293,24 +299,25 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         //     cerr << "ERROR: I shouldn't have a cyclic region at this point?!" << endl;
         //     continue;
         // }
-        bool skip_this_subgraph = false;
-        region_graph.for_each_handle([&](handle_t handle){
-            const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(region_graph.get_id(handle)));
-            // const gbwt::SearchState debug_state = _gbwt_graph.get_state(_gbwt_graph.get_handle(region_graph.get_id(handle))); //todo: consider trying this, in both orientations?
-            if (debug_state.empty()) //then we skipped this graph during normalization, so we should skip it here as well.
-            {
-                skip_this_subgraph = true;
-                return;
-            }
-            // else
-            // {
-            //     return false;
-            // }
-        }, true);
-        if (skip_this_subgraph)
-        {
-            continue;
-        }
+        // bool skip_this_subgraph = false;
+        // region_graph.for_each_handle([&](handle_t handle){
+        //     const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(region_graph.get_id(handle)));
+        //     // const gbwt::SearchState debug_state = _gbwt_graph.get_state(_gbwt_graph.get_handle(region_graph.get_id(handle))); //todo: consider trying this, in both orientations?
+        //     if (debug_state.empty()) //then we skipped this graph during normalization, so we should skip it here as well.
+        //     {
+        //         // cerr << "skipping" << endl;
+        //         skip_this_subgraph = true;
+        //         return;
+        //     }
+        //     // else
+        //     // {
+        //     //     return false;
+        //     // }
+        // }, true);
+        // if (skip_this_subgraph)
+        // {
+        //     continue;
+        // }
 
 
         region_graph.for_each_handle([&](const handle_t handle){
@@ -332,6 +339,29 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
             }
         });
     }
+
+    // //todo: remove this debug code:
+    // int unskipped_snarls_not_found_after_norm = 0;
+    // for (auto unskipped_snarl : _unskipped_snarls)
+    // {
+    //     if (snarls_found_after_norm.find(unskipped_snarl) == snarls_found_after_norm.end())
+    //     {
+    //         unskipped_snarls_not_found_after_norm += 1;
+    //     }
+    // }
+    // cerr << "unskipped_snarls_not_found_after_norm: " << unskipped_snarls_not_found_after_norm << endl;
+    // cerr << "_unskipped_snarls.size(): " << _unskipped_snarls.size() << endl;
+
+    // int snarls_found_after_norm_that_were_skipped = 0;
+    // for (auto snarl_found_after_norm : snarls_found_after_norm)
+    // {
+    //     if (_unskipped_snarls.find(snarl_found_after_norm) == _unskipped_snarls.end())
+    //     {
+    //         snarls_found_after_norm_that_were_skipped += 1;
+    //     }
+    // }
+    // cerr << "snarls_found_after_norm_that_were_skipped: " << snarls_found_after_norm_that_were_skipped << endl;
+    // cerr << "snarls_found_after_norm.size(): " << snarls_found_after_norm.size() << endl;
 
     int num_top_snarls_tracked = 10; // hardcoded for debugging convenience. //todo: change?
     // partial_sort(_snarl_size_changes.begin(), _snarl_size_changes.begin() + num_top_snarls_tracked,_snarl_size_changes.end(), []());
@@ -376,6 +406,8 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     }
 
     // Detect the top worst snarl changes:
+    int snarls_that_grow_after_norm = 0;
+    int snarls_that_shrink_after_norm = 0;
     auto worst_compare = [](const pair<pair<id_t, id_t>, pair<int, int>> left, const pair<pair<id_t, id_t>, pair<int, int>> right) 
     {
         return (right.second.second - right.second.first) <= (left.second.second - left.second.first);
@@ -383,6 +415,14 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     vector<pair<pair<id_t, id_t>, pair<int, int>>> worst_snarl_changes;
     for (pair<pair<id_t, id_t>, pair<int, int>> region : _snarl_size_changes)
     {
+        if (region.second.second - region.second.first > 0)
+        {
+            snarls_that_grow_after_norm += 1;
+        }
+        else if (region.second.second - region.second.first < 0)
+        {
+            snarls_that_shrink_after_norm += 1;
+        }
         // cerr << "deciding whether or not to insert following value: " << region.second.first << " , " << region.second.second << endl;
         if (worst_snarl_changes.size() < num_top_snarls_tracked)
         {
@@ -444,10 +484,11 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
 
     //todo: replace error_record system with object-wide variables that are edited whenever needed in normalize_snarl(). If I feel like making the code easier to read and edit.
     // float percent_snarl_sequence_reduced = static_cast<float>((post_norm_net_snarl_size/_pre_norm_net_snarl_size)*100.0);
-    float percent_snarl_sequence_change = (static_cast<float>(post_norm_net_snarl_size)/static_cast<float>(_pre_norm_net_snarl_size))*100.0;
+    float percent_snarl_sequence_change = ((static_cast<float>(post_norm_net_snarl_size)-static_cast<float>(_pre_norm_net_snarl_size))/static_cast<float>(_pre_norm_net_snarl_size))*100.0;
     // cerr.precision(2);
     cerr << endl
          << "normalization arguments:" << endl
+         << "aligner (-A): " << _alignment_algorithm << endl
          << "max normalization region size (-k): " << _max_region_size << " snarls" << endl //todo: change to "bases" if/when I change _max_region_size's metric.
          << "max snarl spacing (-i): " << _max_snarl_spacing << endl //todo: add units. Handles? bases? I don't recall.
          << "max number of threads in an alignment (-m): " << _max_alignment_size << endl
@@ -458,13 +499,13 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
          << "had haplotypes starting/ending in the middle of the snarl ("
          << full_error_record[1] << "),\n"
          << "the snarl was cyclic (" << full_error_record[3] << " snarls)" << endl
-         << "or the snarl contained handles not represented by the GBWT haplotypes (" << full_error_record[7] << " snarls).\n"
-         << "fraction of snarls skipped as a result of incomplete gbwt: " << ((double)skipped_snarl_num/((double)unskipped_snarl_num + (double)skipped_snarl_num))*100 << "%" << endl 
-         << "average size of a skipped-because-gbwt snarl: " << (double)skipped_snarl_sizes/(double)skipped_snarl_num << " bases" << endl
-         << "average size of an unskipped snarl: " << (double)unskipped_snarl_sizes/(double)unskipped_snarl_num << " bases" << endl
-         << "total quantity of skipped-because-gbwt sequence: " << skipped_snarl_sizes << " bases" << endl
-         << "total quantity of unskipped sequence: " << unskipped_snarl_sizes << " bases" << endl
-         << "fraction of sequence skipped as a result of incomplete gbwt: " << ((double)skipped_snarl_sizes/((double)unskipped_snarl_sizes + (double)skipped_snarl_sizes))*100 << "%" << endl 
+         << "or the snarl contained handles not represented by the GBWT haplotypes (" << full_error_record[7] << " snarls).\n" 
+         << "fraction of snarls skipped as a result of incomplete gbwt: " << ((double)_skipped_snarls.size()/((double)_unskipped_snarl_num + (double)_skipped_snarls.size()))*100 << "%" << endl 
+         << "average size of a skipped-because-gbwt snarl: " << (double)_skipped_snarl_sizes/(double)_skipped_snarls.size() << " bases" << endl
+         << "average size of an unskipped snarl: " << (double)_unskipped_snarl_sizes/(double)_unskipped_snarl_num << " bases" << endl
+         << "total quantity of skipped-because-gbwt sequence: " << _skipped_snarl_sizes << " bases" << endl
+         << "total quantity of unskipped sequence: " << _unskipped_snarl_sizes << " bases" << endl
+         << "fraction of sequence skipped as a result of incomplete gbwt: " << ((double)_skipped_snarl_sizes/((double)_unskipped_snarl_sizes + (double)_skipped_snarl_sizes))*100 << "%" << endl 
 
         //  << "or the snarl was trivial - composed of only one or two nodes (" //removed because trivial snarls are now removed in the clustering stage, which are not tracked..
         //  << full_error_record[6] << " snarls)."
@@ -479,6 +520,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
          << post_norm_net_snarl_size - _pre_norm_net_snarl_size << " bases" << endl;
     cerr << "percent sequence change: "
          <<  percent_snarl_sequence_change << "%" << endl;
+    cerr << "total snarls that shrink in size: " << snarls_that_shrink_after_norm << endl;
     cerr << "top " << num_top_snarls_tracked << " snarls *reduction* in size (probably desirable): " << endl;
     cerr << "leftmost_id  rightmost_id  original_size  normalized_size  (change_in_size;  percent change)" << endl;
     
@@ -488,6 +530,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         cerr << region.first.first << "   " << region.first.second << "   " << region.second.first << "   " << region.second.second << "   (" << region.second.second - region.second.first << ";" << "   " << ((((double)region.second.second - (double)region.second.first)/(double)region.second.first)*100.0) << "%)" << endl;
     }
 
+    cerr << "total snarls that grow in size: " << snarls_that_grow_after_norm << endl;
     cerr << "top " << num_top_snarls_tracked << " snarls *increase* in size (probably undesirable): " << endl;
     cerr << "leftmost_id  rightmost_id  original_size  normalized_size  (change_in_size;  percent change)" << endl;
     
@@ -497,16 +540,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         cerr << region.first.first << "   " << region.first.second << "   " << region.second.first << "   " << region.second.second << "   (" << region.second.second - region.second.first << ";" << "   " << ((((double)region.second.second - (double)region.second.first)/(double)region.second.first)*100.0) << "%)" << endl;
     }
 
-    // cerr << "PROBLEMTIC CALCULATION FOLLOWS:" << endl;
-    // cerr << "amount of sequence in normalized snarls before normalization: "
-    //      << snarl_sequence_change.first << endl;
-    // cerr << "amount of sequence in normalized snarls after normalization: "
-    //      << snarl_sequence_change.second << endl;
-    // cerr << "total sequence reduction: "
-    //      << snarl_sequence_change.first - snarl_sequence_change.second << endl;
-    // cerr << "percent sequence reduction (size_after_norm/size_before_norm): "
-    //      << snarl_sequence_change.second/snarl_sequence_change.first << endl;
-    cerr << "generating gbwt for normalized graph..." << endl;
+    cerr << "number of snarls calling for abpoa: " << _alignments_calling_for_abpoa.size() << endl;
 
     tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = make_tuple(_gbwt_graph, _gbwt_changelog, _gbwt);
     return gbwt_update_items;
@@ -1365,8 +1399,8 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
 
     if (error_record[7])
     {
-        skipped_snarl_sizes += snarl_size; //todo: remove this later for efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped).
-        skipped_snarl_num ++;
+        _skipped_snarl_sizes += snarl_size;
+        _skipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
         return error_record;
     }
 
@@ -1382,6 +1416,8 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
     if (!handlealgs::is_acyclic(&snarl)) {
         cerr << "snarl at " << source_id << " is cyclic. Skipping." << endl;
         error_record[3] = true;
+        _skipped_snarl_sizes += snarl_size;
+        _skipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
         return error_record;
     }
 
@@ -1420,7 +1456,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
 
         // count the number of bases in the snarl (fixed counter, no doublecounting).
         if(snarl.get_id(handle) == leftmost_id || snarl.get_id(handle) == rightmost_id)
-        { 
+        {
             // if this node is a border node, only count it if it hasn't been counted already. 
             if(_touched_border_nodes.find(snarl.get_id(handle)) == _touched_border_nodes.end())
             {
@@ -1450,7 +1486,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
     tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes;
     SnarlSequenceFinder sequence_finder = SnarlSequenceFinder(_graph, snarl, _gbwt_graph, source_id, sink_id, backwards);
-    
+    _unskipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
     vector<pair<gbwt::vector_type, string>> source_to_sink_gbwt_paths;
     if (_path_finder == "GBWT") {
         tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<id_t>>
@@ -1689,7 +1725,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes));
+            new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num);
         }
         // else if (_alignment_algorithm == "kalign") //todo: implement use of kalign. Then, update the error message in the else statement.
         // {
@@ -1814,8 +1850,8 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         cerr << "normalized snarl size is <= zero: " << error_record[5] << endl;
         cerr << "snarl number: " << snarl_num << endl;
     }
-    unskipped_snarl_sizes+=snarl_size; //todo: remove for increased efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped). 
-    unskipped_snarl_num++;
+    _unskipped_snarl_sizes+=snarl_size; //todo: remove for increased efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped). 
+    _unskipped_snarl_num++;
 
     return error_record;
 

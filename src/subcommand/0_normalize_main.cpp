@@ -637,9 +637,18 @@ int main_normalize(int argc, char **argv) {
       // apply_gbwt_changelog
       if (!disable_gbwt_update)
       {
-        cerr << "applying changes from normalization to the gbwt." << endl;
+        auto _gbwt_update_start = chrono::high_resolution_clock::now();    
+        
+        cerr << "generating gbwt for normalized graph..." << endl;
+        cerr << "(If you cancel the normalize operation now, the normalized graph will remain saved to cout. However, its corresponding gbwt will be not be generated.)" << endl;
+
         gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
         save_gbwt(normalized_gbwt, output_gbwt_file, true);
+        
+        auto _gbwt_update_end = chrono::high_resolution_clock::now();    
+
+        chrono::duration<double> apply_gbwt_changelog_time = _gbwt_update_end - _gbwt_update_start;
+        cerr << "Time spent generating the updated gbwt: " << apply_gbwt_changelog_time.count() << " s" << endl;
       }
     }
 

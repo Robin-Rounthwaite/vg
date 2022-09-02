@@ -84,10 +84,11 @@ class SnarlNormalizer {
     int _handles_not_touched_by_gbwt = 0;
     int _sequence_not_touched_by_gbwt = 0;
     // int _snarls_skipped_because_gbwt_misses_handles = 0; //currently handled by messy system of error_record vectors. See: error_record[7] in normalize_snarls(). //todo: change?
-    int skipped_snarl_sizes = 0;
-    int skipped_snarl_num = 0;
-    int unskipped_snarl_sizes = 0;
-    int unskipped_snarl_num = 0;
+    int _skipped_snarl_sizes = 0;
+    int _unskipped_snarl_sizes = 0;
+    int _unskipped_snarl_num = 0;
+    unordered_set<pair<id_t, id_t>> _skipped_snarls;
+    unordered_set<pair<id_t, id_t>> _unskipped_snarls;
 //     vector<int> skipped_snarl_sizes.push_back(snarl_size); //todo: remove this later for efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped).
 //     
     // vector<int> unskipped_snarl_sizes.push_back(snarl_size); //todo: remove for increased efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped). 
@@ -100,6 +101,7 @@ class SnarlNormalizer {
     // a result of changes in the border handles where snarls overlap.
     // format: key: pair of leftmost,rightmost ids. value: size of snarl before,after normalization. 
     map<pair<id_t, id_t>, pair<int, int>> _snarl_size_changes;
+    vector<int> _alignments_calling_for_abpoa; //todo: delete this after I've implemented abpoa?
 
     // the maximum number of threads allowed to align in a given snarl. If the number of
     // threads exceeds this threshold, the snarl is skipped.
@@ -140,14 +142,9 @@ class SnarlNormalizer {
     // creation of new graph:
     //////////////////////////////////////////////////////////////////////////////////////
     //begin poa fxns:
-    VG poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
+    VG poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num);
 
-    void add_alignments_to_poa(const function<void(const string&,const string&)>& add_alignment, uint32_t first_seq_id, size_t i, vector <POA_Subgraph> subgraphs);
-
-    void convert_spoa_to_bdsg(spoa::Graph& spoa_graph, size_t i, vector <POA_Subgraph> subgraphs);
-    bdsg::HashGraph gfa_graph;
-
-    //end poa fxns.
+    VG kalign_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 
     VG align_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 
