@@ -1495,11 +1495,11 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
     tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes;
     SnarlSequenceFinder sequence_finder = SnarlSequenceFinder(_graph, snarl, _gbwt_graph, source_id, sink_id, backwards);
-    _unskipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
     vector<pair<gbwt::vector_type, string>> source_to_sink_gbwt_paths;
     if (_path_finder == "GBWT") {
         tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<id_t>>
             gbwt_haplotypes = sequence_finder.find_gbwt_haps();
+
 
         // cerr << "sizes of gbwt_haplotypes output: " << get<0>(gbwt_haplotypes).size() << " " << get<1>(gbwt_haplotypes).size() << " " << get<2>(gbwt_haplotypes).size() << endl;
 
@@ -1583,6 +1583,18 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         // }
         // Convert the haplotypes from vector<handle_t> format to string format.
         get<0>(haplotypes) = format_handle_haplotypes_to_strings(_graph, _gbwt_graph, get<0>(gbwt_haplotypes));
+
+        int max_spoa_length = 750; // somewhere between 500-1000 bases, sPOA starts to struggle. That's why I'll eventually want abPOA to take over.
+        for (string hap : get<0>(haplotypes))
+        {
+            if (hap.size() > max_spoa_length)
+            {
+                _skipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
+                _alignments_calling_for_abpoa.push_back(snarl_num);
+                return error_record;
+            }
+        }
+        
         //todo: possibly remove the duplicate storage of gbwt info in source_to_sink_gbwt_paths, by finding a way to only pass the gbwt info to the "log_gbwt_changes" function. (currently, get<0>haplotypes will also include any source-to-sink paths embedded in the graph.)
         //deep copy of gbwt_haplotypes.
         for (vector<handle_t> hap_handles : get<0>(gbwt_haplotypes))
@@ -1638,6 +1650,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
              << "'." << endl;
         exit(1);
     }
+
 
 
 
@@ -1784,20 +1797,21 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         // //todo: debug_statement
         // integrate_snarl(new_snarl, embedded_paths, sink_id, source_id);
         pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, embedded_paths, source_id, sink_id, backwards);
+        _unskipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
 
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
         SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
 
         log_gbwt_changes(source_to_sink_gbwt_paths, integrated_snarl);
 
-        integrated_snarl.for_each_handle([&](const handle_t handle) {
-            if (integrated_snarl.get_id(handle) == 2605470)
-            {
-                cerr << "while iterating through all handles in the snarl, " << endl;
-                cerr << "found the handle missing from the updated gbwt. It's touched in snarl number " << snarl_num << " with leftmost_id " << leftmost_id << " and rightmost_id " << rightmost_id << endl;
-            }
+        // integrated_snarl.for_each_handle([&](const handle_t handle) {
+        //     if (integrated_snarl.get_id(handle) == 2605470)
+        //     {
+        //         cerr << "while iterating through all handles in the snarl, " << endl;
+        //         cerr << "found the handle missing from the updated gbwt. It's touched in snarl number " << snarl_num << " with leftmost_id " << leftmost_id << " and rightmost_id " << rightmost_id << endl;
+        //     }
 
-        });
+        // });
 
 
         // Print a heads-up about snarls that require an alignment with a greater number of 

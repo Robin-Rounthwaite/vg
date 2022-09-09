@@ -79,8 +79,8 @@ class SnarlNormalizer {
     map<pair<id_t, id_t>, pair<int, int>> _snarl_size_changes;
     vector<int> _alignments_calling_for_abpoa; //todo: delete this after I've implemented abpoa?
 
-    // the maximum number of threads allowed to align in a given snarl. If the number of
-    // threads exceeds this threshold, the snarl is skipped.
+    // the maximum number of haplotypes allowed to align in a given snarl. If the number of
+    // haplotypes exceeds this threshold, the snarl is skipped.
     const int _max_alignment_size;
     const int _max_handle_size;
     const int _max_region_size;
