@@ -10,30 +10,6 @@
 namespace vg {
 namespace algorithms {
 
-//sPOA classes added
-
-class POA_PathInfo{
-public:
-    path_handle_t path_handle;
-    uint32_t poa_id;
-    bool biclique_side;
-
-    POA_PathInfo(path_handle_t path_handle, uint32_t poa_id, bool biclique_side);
-    POA_PathInfo()=default;
-};
-
-
-class POA_Subgraph{
-public:
-    // The small graph resulting from POA of overlap sequences
-    bdsg::HashGraph graph;
-
-    // In terms of the biclique, record the side of each overlap and the name needed to fetch that path after copying
-    array <map <handle_t, POA_PathInfo>, 2> paths_per_handle;
-
-    POA_Subgraph()=default;
-};
-
 class SnarlNormalizer {
   public:
     virtual ~SnarlNormalizer() = default;

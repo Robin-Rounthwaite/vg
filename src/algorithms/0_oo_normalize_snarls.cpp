@@ -4,12 +4,12 @@
 #include "0_snarl_sequence_finder.hpp"
 #include <string>
 
-// #include <deps/seqan/include/seqan/align.h>
-// #include <deps/seqan/include/seqan/graph_align.h>
-// #include <deps/seqan/include/seqan/graph_msa.h>
 #include <seqan/align.h>
 #include <seqan/graph_align.h>
 #include <seqan/graph_msa.h>
+
+#include <abpoa/abpoa.h>
+
 
 #include <gbwtgraph/gbwtgraph.h>
 #include "../gbwt_helper.hpp"
@@ -366,7 +366,6 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     int num_top_snarls_tracked = 10; // hardcoded for debugging convenience. //todo: change?
     // partial_sort(_snarl_size_changes.begin(), _snarl_size_changes.begin() + num_top_snarls_tracked,_snarl_size_changes.end(), []());
 
-
     // Detect the top best snarl changes:
     auto best_compare = [](const pair<pair<id_t, id_t>, pair<int, int>> left, const pair<pair<id_t, id_t>, pair<int, int>> right) 
     {
@@ -404,7 +403,10 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         //     break;
         // }
     }
-
+    int size_of_all_shrinking_snarls_pre_norm = 0;
+    int size_of_all_shrinking_snarls_post_norm = 0;
+    int size_of_all_growing_snarls_pre_norm = 0;
+    int size_of_all_growing_snarls_post_norm = 0;
     // Detect the top worst snarl changes:
     int snarls_that_grow_after_norm = 0;
     int snarls_that_shrink_after_norm = 0;
@@ -415,13 +417,18 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     vector<pair<pair<id_t, id_t>, pair<int, int>>> worst_snarl_changes;
     for (pair<pair<id_t, id_t>, pair<int, int>> region : _snarl_size_changes)
     {
+        
         if (region.second.second - region.second.first > 0)
         {
             snarls_that_grow_after_norm += 1;
+            size_of_all_growing_snarls_pre_norm += region.second.first;
+            size_of_all_growing_snarls_post_norm += region.second.second;
         }
         else if (region.second.second - region.second.first < 0)
         {
             snarls_that_shrink_after_norm += 1;
+            size_of_all_shrinking_snarls_pre_norm += region.second.first;
+            size_of_all_shrinking_snarls_post_norm += region.second.second;
         }
         // cerr << "deciding whether or not to insert following value: " << region.second.first << " , " << region.second.second << endl;
         if (worst_snarl_changes.size() < num_top_snarls_tracked)
@@ -521,6 +528,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     cerr << "percent sequence change: "
          <<  percent_snarl_sequence_change << "%" << endl;
     cerr << "total snarls that shrink in size: " << snarls_that_shrink_after_norm << endl;
+    cerr << "percent change of snarls that shrink in size: " << (((double)size_of_all_shrinking_snarls_post_norm - (double)size_of_all_shrinking_snarls_pre_norm)/(double)snarls_that_shrink_after_norm)*100 << "%" << endl;  
     cerr << "top " << num_top_snarls_tracked << " snarls *reduction* in size (probably desirable): " << endl;
     cerr << "leftmost_id  rightmost_id  original_size  normalized_size  (change_in_size;  percent change)" << endl;
     
@@ -531,6 +539,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     }
 
     cerr << "total snarls that grow in size: " << snarls_that_grow_after_norm << endl;
+    cerr << "percent change of snarls that grow in size: " << (((double)size_of_all_growing_snarls_post_norm - (double)size_of_all_growing_snarls_pre_norm)/(double)snarls_that_grow_after_norm)*100 << "%" << endl;  
     cerr << "top " << num_top_snarls_tracked << " snarls *increase* in size (probably undesirable): " << endl;
     cerr << "leftmost_id  rightmost_id  original_size  normalized_size  (change_in_size;  percent change)" << endl;
     
@@ -1994,7 +2003,7 @@ VG SnarlNormalizer::align_source_to_sink_haplotypes(
     stringstream ss;
     for (string seq : row_strings) {
         // todo: debug_statement
-        cerr << "seq in alignment:" << seq << endl;
+        // cerr << "seq in alignment:" << seq << endl;
         ss << endl << seq;
     }
     // ss << align;
@@ -2692,7 +2701,6 @@ void SnarlNormalizer::make_one_edit(id_t leftmost_id, id_t rightmost_id)
 
     _gbwt_changelog.push_back(make_pair(old_path, new_path));
 }
-
 
 
 }
