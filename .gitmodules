@@ -131,6 +131,7 @@
 [submodule "deps/kalign"]
 	path = deps/kalign
 	url = https://github.com/TimoLassmann/kalign.git
+	branch = cmake
 [submodule "deps/htslib"]
 	path = deps/htslib
 	url = https://github.com/samtools/htslib.git
@@ -143,6 +144,8 @@
 	path = deps/spoa
 	url = https://github.com/rvaser/spoa.git
 [submodule "deps/kalign/"]
+	path = deps/kalign
+	url = https://github.com/TimoLassmann/kalign.git
 	branch = cmake
 [submodule "deps/abPOA"]
 	path = deps/abPOA
