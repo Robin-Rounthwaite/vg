@@ -1747,14 +1747,15 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            if (leftmost_id == 996838)
-            {
-                new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num, true);
-            }
-            else
-            {
-                new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num);
-            }
+            new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num);
+            // if (leftmost_id == 996838)
+            // {
+            //     new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num, true);
+            // }
+            // else
+            // {
+            //     new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num);
+            // }
         }
         // else if (_alignment_algorithm == "kalign") //todo: implement use of kalign. Then, update the error message in the else statement.
         // {
