@@ -56,7 +56,7 @@ INCLUDE_FLAGS :=-I$(CWD)/$(INC_DIR) -isystem $(CWD)/$(INC_DIR) -I. -I$(CWD)/$(SR
 
 # Define libraries to link against.
 LD_LIB_DIR_FLAGS := -L$(CWD)/$(LIB_DIR)
-LD_LIB_FLAGS := $(CWD)/$(LIB_DIR)/libvgio.a -lvcflib -ltabixpp -lgssw -lssw -lsublinearLS -lpthread -lncurses -lgcsa2 -lgbwtgraph -lgbwt -ldivsufsort -ldivsufsort64 -lvcfh -lraptor2 -lpinchesandcacti -l3edgeconnected -lsonlib -lfml -lstructures -lbdsg -lxg -lsdsl -lzstd -lhandlegraph -lspoa -labpoa -llibkalign
+LD_LIB_FLAGS := $(CWD)/$(LIB_DIR)/libvgio.a -lvcflib -ltabixpp -lgssw -lssw -lsublinearLS -lpthread -lncurses -lgcsa2 -lgbwtgraph -lgbwt -ldivsufsort -ldivsufsort64 -lvcfh -lraptor2 -lpinchesandcacti -l3edgeconnected -lsonlib -lfml -lstructures -lbdsg -lxg -lsdsl -lzstd -lhandlegraph -lspoa -labpoa
 # LD_LIB_FLAGS := $(CWD)/$(LIB_DIR)/libvgio.a -lvcflib -ltabixpp -lgssw -lssw -lsublinearLS -lpthread -lncurses -lgcsa2 -lgbwtgraph -lgbwt -ldivsufsort -ldivsufsort64 -lvcfh -lraptor2 -lpinchesandcacti -l3edgeconnected -lsonlib -lfml -lstructures -lbdsg -lxg -lsdsl -lzstd -lhandlegraph -lspoa -llibkalign
 # We omit Boost Program Options for now; we find it in a platform-dependent way.
 # By default it has no suffix
@@ -296,7 +296,7 @@ ATOMIC_QUEUE_DIR=deps/atomic_queue
 SEQAN_DIR=deps/seqan
 SPOA_DIR=deps/spoa
 ABPOA_DIR=deps/abPOA
-KALIGN_DIR=deps/kalign
+# KALIGN_DIR=deps/kalign
 
 # Dependencies that go into libvg's archive
 # These go in libvg but come from dependencies
@@ -335,7 +335,7 @@ LIB_DEPS += $(LIB_DIR)/libbdsg.a
 LIB_DEPS += $(LIB_DIR)/libxg.a
 LIB_DEPS += $(LIB_DIR)/libspoa.a
 LIB_DEPS += $(LIB_DIR)/libabpoa.a
-LIB_DEPS += $(LIB_DIR)/liblibkalign.a
+# LIB_DEPS += $(LIB_DIR)/liblibkalign.a
 ifneq ($(shell uname -s),Darwin)
     # On non-Mac (i.e. Linux), where ELF binaries are used, pull in libdw which
     # backward-cpp will use.
@@ -383,8 +383,6 @@ DEPS += $(INC_DIR)/BooPHF.h
 DEPS += $(INC_DIR)/mio/mmap.hpp
 DEPS += $(INC_DIR)/atomic_queue.h
 DEPS += $(INC_DIR)/seqan/align.h
-# DEPS += $(INC_DIR)/libkalign.h
-# DEPS += $(INC_DIR)/spoa/spoa.hpp
 # DEPS += $(INC_DIR)/msa.h #kalign
 
 .PHONY: clean get-deps deps test set-path objs static static-docker docs man .pre-build .check-environment .check-git .no-git 
@@ -734,12 +732,9 @@ $(INC_DIR)/seqan/align.h: $(SEQAN_DIR)/include/*
 $(LIB_DIR)/libspoa.a: $(SPOA_DIR)/include/* $(SPOA_DIR)/src/*
 	+. ./source_me.sh && cd $(SPOA_DIR) && rm -Rf build && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make && $(MAKE) $(FILTER) && cp lib/libspoa.a $(CWD)/$(LIB_DIR) && cp -r ../include/ $(CWD)/$(INC_DIR)/spoa/
 
-# kalign
-# $(INC_DIR)/libkalign.h: $(KALIGN_DIR)/src/libkalign.h $(LIB_DIR)/liblibkalign.a
-# 	+. ./source_me.sh && cd $(KALIGN_DIR) && cp src/libkalign.h $(CWD)/$(INC_DIR)/
-# $(LIB_DIR)/liblibkalign.a: $(KALIGN_DIR)/src/libkalign.c $(KALIGN_DIR)/src/libkalign.h
-$(LIB_DIR)/liblibkalign.a: $(KALIGN_DIR)/src/CMakeLists.txt
-	+. ./source_me.sh && cd $(KALIGN_DIR) && rm -Rf build && mkdir build && cd build && cmake .. && $(MAKE) $(FILTER) && cp src/liblibkalign.a $(CWD)/$(LIB_DIR) && cp src/libkalign.h $(CWD)/$(INC_DIR)/
+# #todo: update the include instructions to account for the new changes to libkalign.
+# $(LIB_DIR)/liblibkalign.a: $(KALIGN_DIR)/src/CMakeLists.txt
+# 	+. ./source_me.sh && cd $(KALIGN_DIR) && rm -Rf build && mkdir build && cd build && cmake .. && $(MAKE) $(FILTER) && cp src/liblibkalign.a $(CWD)/$(LIB_DIR) && cp src/libkalign.h $(CWD)/$(INC_DIR)/
 
 # abpoa
 $(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/include/abpoa.h $(ABPOA_DIR)/include/simd_instruction.h #$(ABPOA_DIR)/lib/libabpoa.a
