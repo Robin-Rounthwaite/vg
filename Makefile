@@ -383,7 +383,7 @@ DEPS += $(INC_DIR)/BooPHF.h
 DEPS += $(INC_DIR)/mio/mmap.hpp
 DEPS += $(INC_DIR)/atomic_queue.h
 DEPS += $(INC_DIR)/seqan/align.h
-DEPS += $(INC_DIR)/libkalign.h
+# DEPS += $(INC_DIR)/libkalign.h
 # DEPS += $(INC_DIR)/spoa/spoa.hpp
 # DEPS += $(INC_DIR)/msa.h #kalign
 
@@ -735,12 +735,11 @@ $(LIB_DIR)/libspoa.a: $(SPOA_DIR)/include/* $(SPOA_DIR)/src/*
 	+. ./source_me.sh && cd $(SPOA_DIR) && rm -Rf build && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make && $(MAKE) $(FILTER) && cp lib/libspoa.a $(CWD)/$(LIB_DIR) && cp -r ../include/ $(CWD)/$(INC_DIR)/spoa/
 
 # kalign
-$(KALIGN_DIR)/src/libkalign.h: $(KALIGN_DIR)/src/CMakeLists.txt 
-	+. ./source_me.sh && cd $(KALIGN_DIR) && rm -Rf build && mkdir build && cd build && cmake .. && $(MAKE) $(FILTER) && 
-$(INC_DIR)/libkalign.h: $(KALIGN_DIR)/src/libkalign.h $(LIB_DIR)/liblibkalign.a
-	+. ./source_me.sh && cd $(KALIGN_DIR) && cp src/libkalign.h $(CWD)/$(INC_DIR)/
-$(LIB_DIR)/liblibkalign.a: $(KALIGN_DIR)/src/libkalign.h
-	+. ./source_me.sh && cp src/liblibkalign.a $(CWD)/$(LIB_DIR)
+# $(INC_DIR)/libkalign.h: $(KALIGN_DIR)/src/libkalign.h $(LIB_DIR)/liblibkalign.a
+# 	+. ./source_me.sh && cd $(KALIGN_DIR) && cp src/libkalign.h $(CWD)/$(INC_DIR)/
+# $(LIB_DIR)/liblibkalign.a: $(KALIGN_DIR)/src/libkalign.c $(KALIGN_DIR)/src/libkalign.h
+$(LIB_DIR)/liblibkalign.a: $(KALIGN_DIR)/src/CMakeLists.txt
+	+. ./source_me.sh && cd $(KALIGN_DIR) && rm -Rf build && mkdir build && cd build && cmake .. && $(MAKE) $(FILTER) && cp src/liblibkalign.a $(CWD)/$(LIB_DIR) && cp src/libkalign.h $(CWD)/$(INC_DIR)/
 
 # abpoa
 $(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/include/abpoa.h $(ABPOA_DIR)/include/simd_instruction.h #$(ABPOA_DIR)/lib/libabpoa.a
