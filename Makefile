@@ -741,7 +741,7 @@ $(LIB_DIR)/liblibkalign.a: $(KALIGN_DIR)/src/libkalign.c $(KALIGN_DIR)/src/libka
 	+. ./source_me.sh && cd $(KALIGN_DIR) && rm -Rf build && mkdir build && cd build && cmake .. && $(MAKE) $(FILTER) && cp src/liblibkalign.a $(CWD)/$(LIB_DIR)
 
 # abpoa
-$(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/include/abpoa.h $(ABPOA_DIR)/include/simd_instruction.h $(ABPOA_DIR)/lib/libabpoa.a
+$(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/include/abpoa.h $(ABPOA_DIR)/include/simd_instruction.h #$(ABPOA_DIR)/lib/libabpoa.a
 # $(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/src/*.c $(ABPOA_DIR)/src/*.h
 # $(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/src/abpoa.c
 	+. ./source_me.sh && cd $(ABPOA_DIR) && $(MAKE) $(FILTER) && cp lib/libabpoa.a $(CWD)/$(LIB_DIR) && cp -r include/ $(CWD)/$(INC_DIR)/abpoa/
