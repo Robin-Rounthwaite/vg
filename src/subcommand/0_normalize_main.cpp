@@ -239,6 +239,8 @@ void help_normalize(char **argv) {
       // << endl
       << "    -A, --alignment_algorithm      Can be either 'TCoffee' (MSA, slow) or 'sPOA' (POA, fast). Default is sPOA."
       << endl
+      << "    -O, --output_msa      Prints the alignment MSA for the given subgraph (specified w/ -a and -b) to cout. Also requires -g, and optionally -r for a speedup. Currently only implemented for sPOA."
+      << endl
       << "    -q, --disable_gbwt_update      skips the (sometimes lengthy) gbwt editing process after normalization. Note that there is no way to generate a new, haplotype-based gbwt based on a normalized graph without exporting the updated gbwt at this stage."
       << endl
       << "    -d, --debug_print      prints the location of every snarl/region being normalized. It also announces certain special cases - of particular note, when a snarl has increased in size after normalization."
@@ -283,6 +285,7 @@ int main_normalize(int argc, char **argv) {
   // string extract_paths_a; //associated with -C_old argument
   // string extract_paths_b; //associated with -D argument
   string alignment_algorithm = "sPOA";
+  bool output_msa = false;
   bool disable_gbwt_update = false;
   bool debug_print = false;
   int c;
@@ -318,12 +321,13 @@ int main_normalize(int argc, char **argv) {
         //  {"compare_extracts", required_argument, 0, 'C_old'},
         //  {"compare_extracts_second_file", required_argument, 0, 'D'},
          {"alignment_algorithm", required_argument, 0, 'A'},
+         {"output_msa", no_argument, 0, 'O'},
          {"disable_gbwt_update", no_argument, 0, 'q'},
          {"debug_print", no_argument, 0, 'd'},
          {0, 0, 0, 0}};
 
     int option_index = 0;
-    c = getopt_long(argc, argv, "hg:r:s:o:na:b:B:pm:i:jl:xy:c:v:k:i:t:EC:S:A:qd", long_options,
+    c = getopt_long(argc, argv, "hg:r:s:o:na:b:B:pm:i:jl:xy:c:v:k:i:t:EC:S:A:Oqd", long_options,
                     &option_index);
 
     // Detect the end of the options.
@@ -446,6 +450,11 @@ int main_normalize(int argc, char **argv) {
       alignment_algorithm = optarg;
       break;
 
+    case 'O':
+      output_msa = true;
+      disable_gbwt_update = true;
+      break;
+
     case 'q':
       disable_gbwt_update = true;
       break;
@@ -533,13 +542,15 @@ int main_normalize(int argc, char **argv) {
     std::ifstream snarl_stream;
     string snarl_file = snarls;
     snarl_stream.open(snarl_file);
-    if (!snarl_stream) {
+    if (!snarl_stream && !output_msa) {
       cerr << "error:[vg normalize] Cannot open Snarls file " << snarl_file
             << endl;
       exit(1);
     }
-    cerr << "before snarl manager is created" << endl;
+    cerr << "before snarl manager is created..." << endl;
+    //todo: remove "new"?
     SnarlManager *snarl_manager = new SnarlManager(snarl_stream);
+    cerr << "snarl manager created." << endl;
 
     // snarl_roots 
     // Depending on user specifications, we may want to normalize some specified snarls:
@@ -610,7 +621,13 @@ int main_normalize(int argc, char **argv) {
     cerr << "running normalize" << endl;
     algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
       *graph, *gbwt, *gbwt_graph, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
-    if (normalize_region)
+    
+    if (output_msa)
+    {
+      cerr << "printing the msa associated with the subgraph with the leftmost_id at " << leftmost_id << " and rightmost_id at " << rightmost_id << "." << endl;
+      normalizer.output_msa(leftmost_id, rightmost_id);
+    }
+    else if (normalize_region)
     {
       // if we've specified the normalize_region with -a and -b, then we just normalize that region. //todo: add gbwt update?
       normalizer.normalize_snarl(leftmost_id, rightmost_id, false, 0);
@@ -664,7 +681,7 @@ int main_normalize(int argc, char **argv) {
   }
 
   // snarl_analyzer identifies the size of every top-level snarl, outputs in a
-  // document specified with format "source\tsink\tsize\n"
+  // specified document with format "source\tsink\tsize\n"
   if (snarl_sizes.size() != 0) {
     // cerr << "messing with graph pointers here!" << endl;
     shared_ptr<MutablePathDeletableHandleGraph> graph;

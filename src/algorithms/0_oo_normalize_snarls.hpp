@@ -32,6 +32,8 @@ class SnarlNormalizer {
 
     static SubHandleGraph extract_subgraph(const HandleGraph &graph, const id_t leftmost_id, const id_t rightmost_id);
 
+    virtual void output_msa(const id_t leftmost_id, const id_t rightmost_id);
+
     //////////////////////////////////////////////////////////////////////////////////////
     // format-type switching:
     //////////////////////////////////////////////////////////////////////////////////////
@@ -117,8 +119,7 @@ class SnarlNormalizer {
     //////////////////////////////////////////////////////////////////////////////////////
     // creation of new graph:
     //////////////////////////////////////////////////////////////////////////////////////
-    //begin poa fxns:
-    VG poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num);
+    VG poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num, const bool output_msa=false);
 
     VG kalign_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 

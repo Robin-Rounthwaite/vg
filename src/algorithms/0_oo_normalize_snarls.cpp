@@ -1747,7 +1747,14 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num);
+            if (leftmost_id == 996838)
+            {
+                new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num, true);
+            }
+            else
+            {
+                new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num);
+            }
         }
         // else if (_alignment_algorithm == "kalign") //todo: implement use of kalign. Then, update the error message in the else statement.
         // {
@@ -2716,6 +2723,20 @@ void SnarlNormalizer::make_one_edit(id_t leftmost_id, id_t rightmost_id)
     _gbwt_changelog.push_back(make_pair(old_path, new_path));
 }
 
+void SnarlNormalizer::output_msa(const id_t leftmost_id, const id_t rightmost_id)
+{
+    SubHandleGraph snarl = extract_subgraph(_graph, leftmost_id, rightmost_id);
+
+    SnarlSequenceFinder sequence_finder = SnarlSequenceFinder(_graph, snarl, _gbwt_graph, leftmost_id, rightmost_id, false);
+
+    tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<id_t>>
+            gbwt_haplotypes = sequence_finder.find_gbwt_haps();
+
+    unordered_set<string> haplotypes = format_handle_haplotypes_to_strings(_graph, _gbwt_graph, get<0>(gbwt_haplotypes));
+
+    //true, because I want to print the msa to cout.
+    poa_source_to_sink_haplotypes(haplotypes, 0, true);
+}
 
 }
 }
