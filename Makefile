@@ -730,7 +730,7 @@ $(INC_DIR)/seqan/align.h: $(SEQAN_DIR)/include/*
 
 # spoa
 $(LIB_DIR)/libspoa.a: $(SPOA_DIR)/include/* $(SPOA_DIR)/src/*
-	+. ./source_me.sh && cd $(SPOA_DIR) && rm -Rf build && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make && $(MAKE) $(FILTER) && cp lib/libspoa.a $(CWD)/$(LIB_DIR) && cp -r ../include/ $(CWD)/$(INC_DIR)/spoa/
+	+. ./source_me.sh && cd $(SPOA_DIR) && rm -Rf build && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && $(MAKE) $(FILTER) && cp lib/libspoa.a $(CWD)/$(LIB_DIR) && cp -r ../include/ $(CWD)/$(INC_DIR)/spoa/
 
 # #todo: update the include instructions to account for the new changes to libkalign.
 # $(LIB_DIR)/liblibkalign.a: $(KALIGN_DIR)/src/CMakeLists.txt
