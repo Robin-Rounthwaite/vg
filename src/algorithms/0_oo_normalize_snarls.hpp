@@ -170,6 +170,8 @@ class SnarlNormalizer {
     void make_one_edit(id_t leftmost_id, id_t rightmost_id);
     void get_all_gbwt_sequences(id_t source, id_t sink_id, bool backwards);
 
+    // void SnarlNormalizer::snarl_stats(const vector<const Snarl *> &snarl_roots);
+
     
 };
 }

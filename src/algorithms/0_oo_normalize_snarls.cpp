@@ -68,12 +68,55 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
       _max_handle_size(max_handle_size), _max_region_size(max_region_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder), _gbwt_graph(gbwt_graph),
        _alignment_algorithm(alignment_algorithm), _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
 
+// // we want the sizes here to be in bases, not in handles/number of snarls.
+// int _max_region_size = 1000;
+// int _max_snarl_spacing = 1000;
+/*
+ *Goal of snarl stats: give a sense of how big the average snarl is, as well as whatever else I'd like to know about snarls. Used to figure out the recommended clustering gap, cap on alignment size, etc.
+*/
+// void SnarlNormalizer::snarl_stats(const vector<const Snarl *> &snarl_roots) {    
+//     //first, I just want to know what the distribution of snarl sizes are.
+//     vector<int> snarl_sizes;
+//     int sum_size = 0;
+//     int avg_size = 0;
+//     int size_more_than_thousand = 0;
+//     int size_more_than_three_thousand = 0;
+//     for (auto snarl : snarl_roots)
+//     {
+//         SubHandleGraph snarl_graph = SnarlNormalizer::extract_subgraph(_graph, region.first, region.second);
+//         int total_size = 0;
+//         snarl_graph.for_each_handle([&](const handle_t handle){
+//             total_size += _graph.get_sequence(handle).size();
+//         });
+//         sum_size += total_size;
+//         if (total_size > 1000)
+//         {
+//             size_more_than_thousand += 1;
+//         }
+//         if (total_size > 3000)
+//         {
+//             size_more_than_three_thousand += 1;
+//         }
+//         snarl_sizes.push_back(total_size);
+
+//     }
+//     avg_size = sum_size/snarl_sizes.size(); 
+
+//     cerr << "sum_size " << sum_size << endl;
+//     cerr << "avg_size " << avg_size << endl;
+//     cerr << "size_more_than_thousand " << size_more_than_thousand << endl;
+//     cerr << "size_more_than_three_thousand " << size_more_than_three_thousand << endl;
+    
+    
+// }
+
 
 /**
  * Iterates over all top-level snarls in _graph, and normalizes them.
  * @param snarl_stream file stream from .snarl.pb output of vg snarls
 */
 tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_roots) {
+    // snarl_stats(snarl_roots);
     //Extend each of the normalize_regions to encompass multiple snarls from snarl_roots, if max_region_size > 1.
     //normalize_regions is a pair indicating: leftmost_id, rightmost_id. Note this is equivalent to a snarl of source_id=leftmost_id, sink_id=rightmost_id, backward=false.
     // select a subset of snarls for debugging purposes.
@@ -1233,9 +1276,9 @@ vector<pair<id_t, id_t>> SnarlNormalizer::get_normalize_regions(const vector<con
     // for (auto region : regions)
     // {
     //     SubHandleGraph region_graph = extract_subgraph(_graph, region.first, region.second);
-    //     region_graph.for_each_handle([&](const handle_t handle){
-    //         all_region_nodes_file << _graph.get_id(handle) << endl;
-    //     });
+        //     region_graph.for_each_handle([&](const handle_t handle){
+        //         all_region_nodes_file << _graph.get_id(handle) << endl;
+        //     });
     // }
     // all_region_nodes_file.close();
 
