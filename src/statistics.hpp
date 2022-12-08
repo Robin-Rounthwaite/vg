@@ -48,7 +48,7 @@ double lognormal_pdf(double x, double mu, double sigma);
  * out of log space.
  */
 inline double add_log(double log_x, double log_y) {
-    return log_x > log_y ? log_x + log(1.0 + exp(log_y - log_x)) : log_y + log(1.0 + exp(log_x - log_y));
+    return log_x > log_y ? log_x + log1p(exp(log_y - log_x)) : log_y + log1p(exp(log_x - log_y));
 }
 
 /*
@@ -56,7 +56,7 @@ inline double add_log(double log_x, double log_y) {
  * them out of log space.
  */
 inline double subtract_log(double log_x, double log_y) {
-    return log_x + log(1.0 - exp(log_y - log_x));
+    return log_x + log1p(-exp(log_y - log_x));
 }
 
 /**
@@ -1018,7 +1018,7 @@ public:
         auto used_bits = numeric_limits<long long unsigned int>::digits - unused_bits;
         
         // Get just that max used bit
-        OutType used_bit = 1 << (used_bits - 1);
+        OutType used_bit = OutType(1) << (used_bits - 1);
         
         // If a generated number from the RNG has this bit flag in it, it has
         // passed the largest complete power of 2 it can make and needs to be

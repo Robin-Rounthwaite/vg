@@ -2278,6 +2278,7 @@ namespace vg {
         from.for_each_annotation([&](const string& anno_name, multipath_alignment_t::anno_type_t type, const void* value) {
             switch (type) {
                 case multipath_alignment_t::Null:
+                    to.set_annotation(anno_name);
                     break;
                 case multipath_alignment_t::Double:
                     to.set_annotation(anno_name, *((const double*) value));
@@ -2504,11 +2505,11 @@ namespace vg {
             }
         }
     }
-    
-    vector<vector<int64_t>> connected_components(const multipath_alignment_t& multipath_aln) {
-        
-        int64_t comps = 0;
-        
+
+    void connected_comps_do(const multipath_alignment_t& multipath_aln,
+                            function<void(void)>& on_new_component,
+                            function<void(size_t)>& on_new_node) {
+                
         vector<vector<int64_t>> reverse_edge_lists(multipath_aln.subpath_size());
         
         for (int64_t i = 0; i < multipath_aln.subpath_size(); i++) {
@@ -2524,14 +2525,13 @@ namespace vg {
         
         vector<bool> collected(multipath_aln.subpath_size(), false);
         
-        vector<vector<int64_t>> components;
-        
         for (int64_t i = 0; i < multipath_aln.subpath_size(); i++) {
             if (collected[i]) {
                 continue;
             }
             
-            components.emplace_back();
+            // start traversing a new component
+            on_new_component();
             
             vector<int64_t> stack{i};
             collected[i] = true;
@@ -2539,7 +2539,8 @@ namespace vg {
                 int64_t at = stack.back();
                 stack.pop_back();
                 
-                components.back().push_back(at);
+                // traverse a new node in the component
+                on_new_node(at);
                 
                 const subpath_t& subpath = multipath_aln.subpath(at);
                 for (int64_t j = 0; j < subpath.next_size(); j++) {
@@ -2564,8 +2565,31 @@ namespace vg {
                 }
             }
         }
+    }
+
+    size_t num_connected_components(const multipath_alignment_t& multipath_aln) {
+        size_t num_comps = 0;
+        function<void(void)> on_new_component = [&](void) {
+            ++num_comps;
+        };
+        function<void(size_t)> on_new_node = [](size_t i) {
+            // nothing to do
+        };
+        connected_comps_do(multipath_aln, on_new_component, on_new_node);
+        return num_comps;
+    }
+    
+    vector<vector<int64_t>> connected_components(const multipath_alignment_t& multipath_aln) {
         
-        return std::move(components);
+        vector<vector<int64_t>> components;
+        function<void(void)> on_new_component = [&](void) {
+            components.emplace_back();
+        };
+        function<void(size_t)> on_new_node = [&](size_t i) {
+            components.back().push_back(i);
+        };
+        connected_comps_do(multipath_aln, on_new_component, on_new_node);
+        return components;
     }
     
     void extract_sub_multipath_alignment(const multipath_alignment_t& multipath_aln,
@@ -3437,7 +3461,7 @@ namespace vg {
                 }
                 
                 if (next_pos && next_pos->node_id() == pos.node_id() && next_pos->is_reverse() == pos.is_reverse()
-                    && next_pos->offset() == pos.offset() + from_length) {
+                    && next_pos->offset() == pos.offset() + from_length && !curr_runs.empty()) {
                     // we only care about transitions that are between nodes, this one is within a node
                     
 #ifdef debug_cigar
@@ -3471,21 +3495,40 @@ namespace vg {
                 }
                 cerr << "crossing a connection? " << across_connection << endl;
 #endif
+      
+                // check that we can extend all of the current runs, but not when going over
+                // a connection or not at the start of a node
+                // note: we only extend any run if all of the runs can extend, or else we might miss
+                // adjacencies into the middle of a run
+                bool all_extendable = false;
+                if (!across_connection && pos.offset() == 0) {
+                    all_extendable = graph.for_each_step_on_handle(handle, [&](const step_handle_t& step) {
+                        if (graph.get_path_handle_of_step(step) != path_handle ||
+                            (graph.get_handle_of_step(step) != handle) != rev) {
+                            // we're only concerned about one strand of this one path
+                            return true;
+                        }
+                        step_handle_t prev = rev ? graph.get_next_step(step) : graph.get_previous_step(step);
+                        auto it = curr_runs.find(prev);
+                        return it == curr_runs.end() ? false : it->second.second == 0;
+                    });
+                }
+                
                 graph.for_each_step_on_handle(handle, [&](const step_handle_t& step) {
                     if (graph.get_path_handle_of_step(step) != path_handle ||
                         (graph.get_handle_of_step(step) != handle) != rev) {
                         // we're only concerned about one strand of this one path
                         return;
                     }
-                    step_handle_t prev = rev ? graph.get_next_step(step) : graph.get_previous_step(step);
-
+                    
                     size_t remaining = (graph.get_length(graph.get_handle_of_step(step))
                                         - from_length - pos.offset());
-                    auto it = curr_runs.find(prev);
-                    if (it != curr_runs.end() && !across_connection && it->second.second == 0 &&
-                        pos.offset() == 0) {
+
+                    if (all_extendable) {
                         // this is the next step we would expect along a previous run, and it's
                         // not across a connection
+                        step_handle_t prev = rev ? graph.get_next_step(step) : graph.get_previous_step(step);
+                        auto it = curr_runs.find(prev);
                         next_runs[step] = make_pair(it->second.first, remaining);
                         auto& run_node = run_graph[it->second.first];
 #ifdef debug_cigar
@@ -3494,7 +3537,6 @@ namespace vg {
                         
                         ++get<2>(run_node);
                         get<3>(run_node) = step;
-                        curr_runs.erase(it);
                     }
                     else {
                         // we're at the start of a new run, or we just crossed a connection, start
@@ -3509,36 +3551,38 @@ namespace vg {
                 
                 // TODO: are there situations where i would need to split a run into multiple chunks
                 // in order to find the full length?
-                
-                // check if any of the unextended runs can make a long-distance adjacency
-                // to the new runs
-                for (const auto& curr_run : curr_runs) {
-                    // an unextended run from the previous iteration
-                    for (size_t run_idx = num_runs_before_extend; run_idx < run_graph.size(); ++run_idx) {
-                        // fresh new run that we just found
-                        auto& run_node = run_graph[run_idx];
-                        
-                        int64_t dist;
-                        if (rev) {
-                            dist = (graph.get_position_of_step(curr_run.first)
-                                    - graph.get_position_of_step(get<3>(run_node))
-                                    + mapping.position().offset() + curr_run.second.second
-                                    - graph.get_length(graph.get_handle_of_step(get<3>(run_node))));
-                        }
-                        else {
-                            dist = (graph.get_position_of_step(get<3>(run_node))
-                                    - graph.get_position_of_step(curr_run.first)
-                                    + mapping.position().offset() + curr_run.second.second
-                                    - graph.get_length(graph.get_handle_of_step(curr_run.first)));
-                        }
-                        if (dist >= 0) {
-                            // they are in increasing order (relative to the strand)
-
-                            // add an edge
-                            get<5>(run_graph[curr_run.second.first]).emplace_back(run_idx, dist);
+                if (!all_extendable) {
+                    // check if any of the unextended runs can make a long-distance adjacency
+                    // to the new runs
+                    
+                    for (const auto& curr_run : curr_runs) {
+                        // an unextended run from the previous iteration
+                        for (size_t run_idx = num_runs_before_extend; run_idx < run_graph.size(); ++run_idx) {
+                            // fresh new run that we just found
+                            auto& run_node = run_graph[run_idx];
+                            
+                            int64_t dist;
+                            if (rev) {
+                                dist = (graph.get_position_of_step(curr_run.first)
+                                        - graph.get_position_of_step(get<3>(run_node))
+                                        + mapping.position().offset() + curr_run.second.second
+                                        - graph.get_length(graph.get_handle_of_step(get<3>(run_node))));
+                            }
+                            else {
+                                dist = (graph.get_position_of_step(get<3>(run_node))
+                                        - graph.get_position_of_step(curr_run.first)
+                                        + mapping.position().offset() + curr_run.second.second
+                                        - graph.get_length(graph.get_handle_of_step(curr_run.first)));
+                            }
+                            if (dist >= 0) {
+                                // they are in increasing order (relative to the strand)
+                                
+                                // add an edge
+                                get<5>(run_graph[curr_run.second.first]).emplace_back(run_idx, dist);
 #ifdef debug_cigar
-                            cerr << "adjacency of length " << dist << " from " << curr_run.second.first << " to " << run_idx << endl;
+                                cerr << "adjacency of length " << dist << " from " << curr_run.second.first << " to " << run_idx << endl;
 #endif
+                            }
                         }
                     }
                 }
@@ -3771,7 +3815,7 @@ namespace vg {
         cerr << "coalescing runs of I/D..." << endl;
 #endif
 
-        consolidate_ID_runs(cigar);
+        simiplify_cigar(cigar);
         
 #ifdef debug_cigar
         cerr << "final cigar: ";
@@ -4009,7 +4053,7 @@ namespace vg {
         
         // do the paths represent valid alignments of the associated read string and graph path?
         
-        auto validate_mapping_edits = [&](const path_mapping_t& mapping, const string& subseq) {
+        auto validate_mapping_edits = [&](const path_mapping_t& mapping, const string& subseq, size_t s, size_t m) {
             handle_t handle = handle_graph.get_handle(mapping.position().node_id(), mapping.position().is_reverse());
             size_t node_idx = mapping.position().offset();
             size_t seq_idx = 0;
@@ -4019,7 +4063,7 @@ namespace vg {
                     for (size_t j = 0; j < edit.from_length(); j++, node_idx++, seq_idx++) {
                         if (handle_graph.get_base(handle, node_idx) != subseq[seq_idx]) {
 #ifdef debug_verbose_validation
-                            cerr << "validation failure on match that does not match on node " << handle_graph.get_id(handle) << (handle_graph.get_is_reverse(handle) ? "-" : "+") << endl;
+                            cerr << "validation failure on match that does not match on node " << handle_graph.get_id(handle) << (handle_graph.get_is_reverse(handle) ? "-" : "+") << " on subpath " << s << ", mapping " << m << endl;
                             cerr << "node sequence: " << handle_graph.get_sequence(handle) << ", offset: " << node_idx << endl;
                             cerr << "read subsequence: " << subseq << ", offset: " << seq_idx << endl;
                             
@@ -4094,7 +4138,7 @@ namespace vg {
             size_t read_start = subpath_read_interval[i].first;
             for (size_t j = 0; j < path.mapping_size(); j++) {
                 size_t read_mapping_len = mapping_to_length(path.mapping(j));
-                if (!validate_mapping_edits(path.mapping(j), multipath_aln.sequence().substr(read_start, read_mapping_len))) {
+                if (!validate_mapping_edits(path.mapping(j), multipath_aln.sequence().substr(read_start, read_mapping_len), i, j)) {
                     return false;
                 }
                 read_start += read_mapping_len;
@@ -4341,6 +4385,49 @@ namespace vg {
                 to_return += to_string(multipath_aln.start(i));
             }
             to_return += "]";
+        }
+        int anno_num = 0;
+        multipath_aln.for_each_annotation([&](const string& name,
+                                              multipath_alignment_t::anno_type_t type,
+                                              const void* annotation) {
+            if (anno_num == 0) {
+                to_return += ", annotations: {";
+            }
+            else {
+                to_return += ", ";
+            }
+            switch (type) {
+                case multipath_alignment_t::Null:
+                    to_return += name;
+                    break;
+                case multipath_alignment_t::Double:
+                {
+                    to_return += name + ": ";
+                    // handle the annoying lack of an integer annotation
+                    double val = *((const double*) annotation);
+                    if (trunc(val) == val) {
+                        to_return += to_string((int64_t) val);
+                    }
+                    else {
+                        to_return += to_string(val);
+                    }
+                    break;
+                }
+                case multipath_alignment_t::Bool:
+                    to_return += name + ": " + (*((const bool*) annotation) ? "true" : "false");
+                    break;
+                case multipath_alignment_t::String:
+                    to_return += name + ": \"" + *((const string*) annotation) + "\"";
+                    break;
+                default:
+                    cerr << "error: unrecognized annotation type" << endl;
+                    exit(1);
+                    break;
+            }
+            ++anno_num;
+        });
+        if (anno_num != 0) {
+            to_return += "}";
         }
         to_return += "}";
         return to_return;

@@ -208,29 +208,30 @@ TEST_CASE("Target to alignment extraction", "[target-to-aln]") {
     
     xg::XG xg_index;
     xg_index.from_path_handle_graph(VG(graph));
+    path_handle_t path_handle = xg_index.get_path_handle("path");
     
     SECTION("Subpath getting gives us the expected 1bp alignment") {
-        Alignment target = target_alignment(&xg_index, "path", 1, 2, "feature", false);
+        Alignment target = target_alignment(&xg_index, path_handle, 1, 2, "feature", false);
         REQUIRE(alignment_from_length(target) == 2 - 1);
     }
     
     SECTION("Subpath getting gives us the expected 10bp alignment") {
-        Alignment target = target_alignment(&xg_index, "path", 10, 20, "feature", false);
+        Alignment target = target_alignment(&xg_index, path_handle, 10, 20, "feature", false);
         REQUIRE(alignment_from_length(target) == 20 - 10);
     }
     
     SECTION("Subpath getting gives us the expected 14bp alignment") {
-        Alignment target = target_alignment(&xg_index, "path", 0, 14, "feature", false);
+        Alignment target = target_alignment(&xg_index, path_handle, 0, 14, "feature", false);
         REQUIRE(alignment_from_length(target) == 14);
     }
     
     SECTION("Subpath getting gives us the expected 21bp alignment") {
-        Alignment target = target_alignment(&xg_index, "path", 0, 21, "feature", false);
+        Alignment target = target_alignment(&xg_index, path_handle, 0, 21, "feature", false);
         REQUIRE(alignment_from_length(target) == 21);
     }
     
     SECTION("Subpath getting gives us the expected inverted 7bp alignment") {
-        Alignment target = target_alignment(&xg_index, "path", 0, 7, "feature", true);
+        Alignment target = target_alignment(&xg_index, path_handle, 0, 7, "feature", true);
         REQUIRE(alignment_from_length(target) == 7);
         REQUIRE(target.path().mapping(0).position().node_id() == n2->id());
         REQUIRE(target.path().mapping(1).position().node_id() == n0->id());
@@ -240,7 +241,7 @@ TEST_CASE("Target to alignment extraction", "[target-to-aln]") {
     
 }
 
-TEST_CASE("consolidate_ID_runs merges runs of adjacent I's and D's in cigars", "[alignment][surject]") {
+TEST_CASE("simiplify_cigar merges runs of adjacent I's and D's in cigars", "[alignment][surject]") {
     
     vector<pair<int, char>> cigar{
         make_pair(2, 'D'),
@@ -252,7 +253,7 @@ TEST_CASE("consolidate_ID_runs merges runs of adjacent I's and D's in cigars", "
         make_pair(1, 'I')
     };
 
-    consolidate_ID_runs(cigar);
+    simiplify_cigar(cigar);
     REQUIRE(cigar.size() == 5);
     bool consolidated_1 = ((cigar[0] == make_pair(6, 'D') && cigar[1] == make_pair(1, 'I'))
                            || (cigar[0] == make_pair(1, 'I') && cigar[1] == make_pair(6, 'D')));
@@ -261,6 +262,25 @@ TEST_CASE("consolidate_ID_runs merges runs of adjacent I's and D's in cigars", "
     
     REQUIRE(consolidated_1);
     REQUIRE(consolidated_2);
+}
+
+TEST_CASE("simiplify_cigar merges runs of adjacent operations and removes empty operations", "[alignment][surject]") {
+    
+    vector<pair<int, char>> cigar{
+        make_pair(2, 'S'),
+        make_pair(1, 'M'),
+        make_pair(1, 'M'),
+        make_pair(0, 'D'),
+        make_pair(1, 'I'),
+        make_pair(1, 'M')
+    };
+    
+    simiplify_cigar(cigar);
+    REQUIRE(cigar.size() == 4);
+    REQUIRE(cigar[0] == make_pair(2, 'S'));
+    REQUIRE(cigar[1] == make_pair(2, 'M'));
+    REQUIRE(cigar[2] == make_pair(1, 'I'));
+    REQUIRE(cigar[3] == make_pair(1, 'M'));
 }
 
 TEST_CASE("Inter-alignment distance computation for HTS output formats matches BWA", "[alignment]") {

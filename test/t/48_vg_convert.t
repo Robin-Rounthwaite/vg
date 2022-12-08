@@ -5,7 +5,9 @@ BASH_TAP_ROOT=../deps/bash-tap
 
 PATH=../bin:$PATH # for vg
 
-plan tests 69
+export LC_ALL="C" # force a consistent sort order
+
+plan tests 100
 
 vg construct -r complex/c.fa -v complex/c.vcf.gz > c.vg
 cat <(vg view c.vg | grep ^S | sort) <(vg view c.vg | grep L | uniq | wc -l) <(vg paths -v c.vg -E) > c.info
@@ -40,15 +42,7 @@ cat <(vg view c1.vg | grep ^S | sort) <(vg view c1.vg | grep L | uniq | wc -l) <
 diff c.info c1.info
 is "$?" 0 "vg convert maintains same nodes throughout gfa conversion"
 
-rm -f c.gfa c1.vg c1.info
-
-vg convert c.vg -o > c.odgi
-vg convert c.odgi -v > c1.vg
-cat <(vg view c1.vg | grep ^S | sort) <(vg view c1.vg | grep L | uniq | wc -l) <(vg paths -v c1.vg -E) > c1.info
-diff c.info c1.info
-is "$?" 0 "vg convert maintains same nodes throughout ODGI conversion"
-
-rm -f c.vg c.odgi c1.vg c.info c1.info
+rm -f c.vg c.gfa c1.vg c1.info
 
 # some less rigorous tests I made without noticing that the earlier ones had already been written
 vg construct -r small/x.fa -v small/x.vcf.gz > x.vg
@@ -57,7 +51,6 @@ vg view x.vg > x.gfa
 is "$(vg convert -a x.vg | vg view - | wc -l)" "$(wc -l < x.gfa)" "hash graph conversion looks good"
 is "$(vg convert -p x.vg | vg view - | wc -l)" "$(wc -l < x.gfa)" "packed graph conversion looks good"
 is "$(vg convert -v x.vg | vg view - | wc -l)" "$(wc -l < x.gfa)" "vg conversion looks good"
-is "$(vg convert -o x.vg | vg view - | wc -l)" "$(wc -l < x.gfa)" "odgi conversion looks good"
 is "$(vg convert -f x.vg | vg convert -g - | vg view - | wc -l)" "$(wc -l < x.gfa)" "gfa conversion looks good"
 is "$(vg convert -x x.vg | vg find -n 1 -c 300 -x - | vg view - | wc -l)" "$(wc -l < x.gfa)" "xg conversion looks good"
 
@@ -113,7 +106,7 @@ printf "*	78	0	78	+	>20>21>23>24>26>27>29>30>32>33>35	102	22	101	71	79	60	AS:i:4
 #manually convert to cg:
 printf "*	78	0	78	+	>20>21>23>24>26>27>29>30>32>33>35	102	22	101	71	79	60	AS:i:47	cg:Z:13M1X1X8M3I16M1X1X18M5D16M\n" > mut.cg.gaf
 #this is what we expect back, mut.gaf where insertions and snps are converted to Ns:
-printf "*	78	0	78	+	>20>21>23>24>26>27>29>30>32>33>35	102	22	101	71	79	60	AS:i:47	cs:Z::13*GN*GN:8+NNN:16*GN*TN:18-AC-T-AG:16\n" > mut.cs.exp.gaf
+printf "*	78	0	78	+	>20>21>23>24>26>27>29>30>32>33>35	102	22	101	71	79	60	AS:i:47	cs:Z::13*GN*GN:8+NNN:16*GN*TN:18-ACTAG:16\n" > mut.cs.exp.gaf
 vg convert x.vg -F mut.cg.gaf -t 1 | vg convert x.vg -G - -t 1 > mut.cs.back.gaf
 diff mut.cs.back.gaf mut.cs.exp.gaf
 is "$?" 0 "vg convert cg-gaf -> gam -> cs-gaf gives expected output (snps converted to matches, insertion converted to Ns)"
@@ -140,7 +133,7 @@ is "$?" 0 "vg convert gam -> gaf -> gam ->gaf makes same gaf each time on 1mb1kg
 
 printf '{"name": "split", "path": {"mapping": [{"edit": [{"from_length": 13, "to_length": 13}], "position": {"node_id": "1", "offset": "10"}}, {"edit": [{"from_length": 2, "to_length": 2}], "position": {"node_id": "3", "offset": "5"}}]}}' | vg view -JaG - > split.gam
 vg convert zflat.vg -G split.gam > split.gaf
-is "$(awk '{print $13}' split.gaf)" "cs:Z::13-CCAGTGCTC-GCATC:2" "split alignment converted using deletions to represent internal offsets"
+is "$(awk '{print $13}' split.gaf)" "cs:Z::13-CCAGTGCTCGCATC:2" "split alignment converted using deletions to represent internal offsets"
 vg convert zflat.vg -F split.gaf | vg convert zflat.vg -G - > split-back.gaf
 diff split.gaf split-back.gaf
 is "$?" 0 "vg convert gam -> gaf ->gam -> gaf makes same gaf each time for split alignment"
@@ -195,7 +188,7 @@ is "$?" 0 "converting gfa and equivalent rgfa produces same output"
 
 rm -f tiny.gfa.gfa tiny.rgfa.gfa
 
-is "$(vg convert -g tiny/tiny.rgfa -r 1 | vg view - | grep y | awk '{print $1","$2","$3}')" "P,y[35],2+" "rank-1 rgfa subpath found"
+is "$(vg convert -g tiny/tiny.rgfa -r 1 | vg paths -M --paths-by y -x - | grep -v "^#" | cut -f1)" "y[35]" "rank-1 rgfa subpath found"
 
 vg convert -g tiny/tiny.rgfa -T gfa-id-mapping.tsv > /dev/null
 grep ^S tiny/tiny.rgfa  | awk '{print $2}' | sort > rgfa_nodes
@@ -218,103 +211,212 @@ is "$?" 0 "rgfa export roundtrips back to normal P-lines"
 
 rm -f tiny.gfa.rgfa tiny.gfa.gfa tiny.gfa.rgfa.gfa
 
+#####
+# Walk conversion
+#####
 
 # GFA to GBWTGraph to HashGraph to GFA
 vg gbwt -o components.gbwt -g components.gg -G graphs/components_walks.gfa
+sort graphs/components_walks.gfa > correct.gfa
 vg convert -b components.gbwt -a components.gg > components.hg 2> /dev/null
 is $? 0 "GBWTGraph to HashGraph conversion"
 grep "^S" graphs/components_walks.gfa | sort > sorted.gfa
 vg view components.hg | grep "^S" | sort > converted.gfa
 cmp sorted.gfa converted.gfa
 is $? 0 "GFA -> GBWTGraph -> HashGraph -> GFA conversion maintains segments"
+grep "^W" graphs/components_walks.gfa | sort > sorted.gfa
+vg view components.hg | grep "^W" | sort > converted.gfa
+cmp sorted.gfa converted.gfa
+is $? 0 "GFA -> GBWTGraph -> HashGraph -> GFA conversion maintains walks"
 
 # GFA to GBZ to HashGraph to GFA
 vg gbwt -g components.gbz --gbz-format -G graphs/components_walks.gfa
-vg convert -Z -a components.gbz > components.hg 2> /dev/null
+vg convert -a components.gbz > components.hg 2> /dev/null
 is $? 0 "GBZ to HashGraph conversion"
+grep "^S" graphs/components_walks.gfa | sort > sorted.gfa
 vg view components.hg | grep "^S" | sort > converted.gfa
 cmp sorted.gfa converted.gfa
 is $? 0 "GFA -> GBZ -> HashGraph -> GFA conversion maintains segments"
 
 # GBWTGraph to GFA with walks (needs 1 thread)
 vg convert -b components.gbwt -f -t 1 components.gg > extracted.gfa
-is $? 0 "GBWTGraph to GFA conversion with walks"
+is $? 0 "GBWTGraph to GFA conversion with walks, GBWTGraph algorithm"
 cmp extracted.gfa graphs/components_walks.gfa
-is $? 0 "GBWTGraph to GFA conversion creates the correct normalized GFA file"
+is $? 0 "GBWTGraph to GFA conversion with GBWTGraph algorithm creates the correct normalized GFA file"
+vg convert --vg-algorithm -b components.gbwt -f -t 1 components.gg | sort - > extracted.gfa
+is $? 0 "GBWTGraph to GFA conversion with walks, vg algorithm"
+cmp extracted.gfa correct.gfa
+is $? 0 "GBWTGraph to GFA conversion with vg algorithm creates the correct possibly-unnormalized GFA file"
 
 # GBZ to GFA with walks (needs 1 thread)
-vg convert -Z -f -t 1 components.gbz > extracted.gfa
-is $? 0 "GBZ to GFA conversion with walks"
+vg convert -f -t 1 components.gbz > extracted.gfa
+is $? 0 "GBZ to GFA conversion with walks, GBWTGraph algorithm"
 cmp extracted.gfa graphs/components_walks.gfa
-is $? 0 "GBZ to GFA conversion creates the correct normalized GFA file"
+is $? 0 "GBZ to GFA conversion with GBWTGraph algorithm creates the correct normalized GFA file"
+
+#####
+# Path and walk conversion
+#####
+
+# GFA to HashGraph to GFA with walks and paths
+vg convert -g graphs/components_paths_walks.gfa -a > components.hg
+is $? 0 "GFA to HashGraph conversion"
+sort graphs/components_paths_walks.gfa > correct.gfa
+vg view components.hg | sort > converted.gfa
+cmp correct.gfa converted.gfa
+is $? 0 "GFA -> HashGraph -> GFA conversion maintains segments, links, walks, and paths"
 
 rm -f components.gbwt components.gg components.gbz
 rm -f components.hg
-rm -f sorted.gfa converted.gfa
+rm -f sorted.gfa converted.gfa correct.gfa
 rm -f extracted.gfa
-
 
 # GFA to GBWTGraph and GBZ with paths and walks
 vg gbwt -o components.gbwt -g components.gg -G graphs/components_paths_walks.gfa
 vg gbwt -g components.gbz --gbz-format -G graphs/components_paths_walks.gfa
 vg convert -g -a graphs/components_paths_walks.gfa > direct.hg
-vg paths -v direct.hg -A > correct_paths.gaf
+vg paths --generic-paths -v direct.hg -A | sort > correct_paths.gaf
+vg paths --sample "sample" -v direct.hg -A | sort > correct_haplotypes.gaf
+sort graphs/components_paths_walks.gfa > correct.gfa
 
 # GBWTGraph to HashGraph with paths and walks
 vg convert -b components.gbwt -a components.gg > components.hg
-is $? 0 "GBWTGraph to HashGraph conversion with reference paths"
-vg paths -A -v components.hg > hg_paths.gaf
+is $? 0 "GBWTGraph to HashGraph conversion with generic paths"
+vg paths --generic-paths -A -v components.hg | sort > hg_paths.gaf
 cmp hg_paths.gaf correct_paths.gaf
-is $? 0 "GBWTGraph to HashGraph conversion creates the correct reference paths"
+is $? 0 "GBWTGraph to HashGraph conversion creates the correct generic paths"
+vg paths --sample "sample" -v components.hg -A | sort > hg_haplotypes.gaf
+cmp hg_haplotypes.gaf correct_haplotypes.gaf
+is $? 0 "GBWTGraph to HashGraph conversion creates the correct haplotype paths"
 
 # GBZ to HashGraph with paths and walks
-vg convert -Z -a components.gbz > components.hg
-is $? 0 "GBZ to HashGraph conversion with reference paths"
-vg paths -A -v components.hg > gbz_hg_paths.gaf
+vg convert -a components.gbz > components.hg
+is $? 0 "GBZ to HashGraph conversion with generic paths"
+vg paths --generic-paths -A -v components.hg | sort > gbz_hg_paths.gaf
 cmp gbz_hg_paths.gaf correct_paths.gaf
-is $? 0 "GBZ to HashGraph conversion creates the correct reference paths"
+is $? 0 "GBZ to HashGraph conversion creates the correct generic paths"
+vg paths --sample "sample" -v components.hg -A | sort > gbz_hg_haplotypes.gaf
+cmp gbz_hg_haplotypes.gaf correct_haplotypes.gaf
+is $? 0 "GBZ to HashGraph conversion creates the correct haplotype paths"
 
 # GBWTGraph to XG with paths and walks
 vg convert -b components.gbwt -x components.gg > components.xg
-is $? 0 "GBWTGraph to XG conversion with reference paths"
-vg paths -A -v components.xg > xg_paths.gaf
+is $? 0 "GBWTGraph to XG conversion with generic paths"
+vg paths --generic-paths -A -v components.xg | sort > xg_paths.gaf
 cmp xg_paths.gaf correct_paths.gaf
-is $? 0 "GBWTGraph to XG conversion creates the correct reference paths"
+is $? 0 "GBWTGraph to XG conversion creates the correct generic paths"
+vg paths --sample "sample" -v components.xg -A | sort > xg_haplotypes.gaf
+cmp xg_haplotypes.gaf correct_haplotypes.gaf
+is $? 0 "GBWTGraph to XG conversion creates the correct haplotype paths"
 
 # GBZ to XG with paths and walks
-vg convert -Z -x components.gbz > components.xg
-is $? 0 "GBZ to XG conversion with reference paths"
-vg paths -A -v components.xg > gbz_xg_paths.gaf
+vg convert -x components.gbz > components.xg
+is $? 0 "GBZ to XG conversion with generic paths"
+vg paths --generic-paths -A -v components.xg | sort > gbz_xg_paths.gaf
 cmp gbz_xg_paths.gaf correct_paths.gaf
-is $? 0 "GBZ to XG conversion creates the correct reference paths"
+is $? 0 "GBZ to XG conversion creates the correct generic paths"
+vg paths --sample "sample" -v components.xg -A | sort > gbz_xg_haplotypes.gaf
+cmp gbz_xg_haplotypes.gaf correct_haplotypes.gaf
+is $? 0 "GBZ to XG conversion creates the correct haplotype paths"
+
+# GBZ to HashGraph and XG while dropping haplotypes
+vg convert -x --drop-haplotypes components.gbz > no_haplotypes.xg
+is $? 0 "GBZ to XG conversion while dropping haplotypes"
+is "$(vg paths -L -x no_haplotypes.xg | wc -l)" "2" "No haplotypes in the converted graph"
+vg convert -xa --drop-haplotypes components.gbz > no_haplotypes.hg
+is $? 0 "GBZ to HashGraph conversion while dropping haplotypes"
+is "$(vg paths -L -x no_haplotypes.hg | wc -l)" "2" "No haplotypes in the converted graph"
 
 # GBWTGraph to GFA with paths and walks (needs 1 thread)
 vg convert -b components.gbwt -f -t 1 components.gg > extracted.gfa
-is $? 0 "GBWTGraph to GFA conversion with paths and walks"
+is $? 0 "GBWTGraph to GFA conversion with paths and walks, GBWTGraph algorithm"
 cmp extracted.gfa graphs/components_paths_walks.gfa
-is $? 0 "GBWTGraph to GFA conversion creates the correct normalized GFA file"
+is $? 0 "GBWTGraph to GFA conversion with GBWTGraph algorithm creates the expected normalized GFA file"
+vg convert --vg-algorithm -b components.gbwt -f -t 1 components.gg | sort - > extracted.gfa
+is $? 0 "GBWTGraph to GFA conversion with paths and walks, vg algorithm"
+cmp extracted.gfa correct.gfa
+is $? 0 "GBWTGraph to GFA conversion with vg algorithm creates the correct possibly-unnormalized GFA file"
+
+# GBWTGraph to HashGraph to GFA with paths and walks
+vg convert -b components.gbwt -t 1 components.gg -a > extracted.hg
+is $? 0 "GBWTGraph to HashGraph conversion with paths and walks"
+vg convert -f -t1 extracted.hg | sort - > extracted.gfa
+is $? 0 "HashGraph to GFA conversion with paths and walks"
+cmp extracted.gfa correct.gfa
+is $? 0 "GBWTGraph to HashGraph to GFA conversion creates the correct possibly-unnormalized GFA file"
+vg convert --no-wline -f -t1 extracted.hg > no-walks.gfa
+is $? 0 "HashGraph to GFA conversion writing walks as paths"
+is "$(grep "^W" no-walks.gfa | wc -l)" "0" "HashGraph to GFA conversion writing walks as paths produces no walks"
+is "$(grep "^P" no-walks.gfa | wc -l)" ""$(grep "^[PW]" correct.gfa | wc -l)"" "HashGraph to GFA conversion writing walks as paths produces all expected paths"
 
 # GBZ to GFA with paths and walks (needs 1 thread)
-vg convert -Z -f -t 1 components.gbz > gbz.gfa
-is $? 0 "GBZ to GFA conversion with paths and walks"
+vg convert --gbwtgraph-algorithm  -f -t 1 components.gbz > gbz.gfa
+is $? 0 "GBZ to GFA conversion with paths and walks, GBWTGraph algorithm"
 cmp gbz.gfa graphs/components_paths_walks.gfa
-is $? 0 "GBZ to GFA conversion creates the correct normalized GFA file"
+is $? 0 "GBZ to GFA conversion with GBWTGraph algorithm creates the correct normalized GFA file"
 
 # Multithreaded GBZ to GFA with paths and walks
-vg convert -Z -f components.gbz | sort > sorted.gfa
-sort graphs/components_paths_walks.gfa > correct.gfa
+vg convert -f components.gbz | sort > sorted.gfa
 cmp sorted.gfa correct.gfa
 is $? 0 "GBZ to GFA conversion works with multiple threads"
 
 rm -f components.gbwt components.gg components.gbz
-rm -f direct.hg correct_paths.gaf
-rm -f components.hg hg_paths.gaf gbz_hg_paths.gaf
-rm -f components.xg xg_paths.gaf gbz_xg_paths.gaf
-rm -f extracted.gfa gbz.gfa
+rm -f direct.hg correct_paths.gaf correct_haplotypes.gaf
+rm -f components.hg hg_paths.gaf hg_haplotypes.gaf gbz_hg_paths.gaf gbz_hg_haplotypes.gaf
+rm -f components.xg xg_paths.gaf xg_haplotypes.gaf gbz_xg_paths.gaf gbz_xg_haplotypes.gaf
+rm -f no_haplotypes.xg no_haplotypes.hg
+rm -f extracted.gfa gbz.gfa extracted.hg
 rm -f sorted.gfa correct.gfa
 
+#####
+# Reference path conversion
+#####
 
+# GFA to GBZ to GFA with reference paths
+vg paths -M -x graphs/gfa_with_reference.gfa | sort >paths.truth.txt
+vg gbwt -G graphs/gfa_with_reference.gfa --gbz-format -g gfa_with_reference.gbz
+vg paths -M -x gfa_with_reference.gbz | sort >paths.gbz.txt
+cmp paths.gbz.txt paths.truth.txt
+is "${?}" "0" "GFA -> GBZ conversion preserves path metadata"
+vg convert -f gfa_with_reference.gbz >extracted.gfa
+vg paths -M -x extracted.gfa | sort >paths.gfa.txt
+cmp paths.gfa.txt paths.truth.txt
+is "${?}" "0" "GFA -> GBZ -> GFA conversion preserves path metadata"
+vg convert -g graphs/gfa_with_reference.gfa -a > gfa_with_reference.hg
+vg paths -M -x gfa_with_reference.hg | sort >paths.hg.txt
+cmp paths.hg.txt paths.truth.txt
+is "${?}" "0" "GFA -> HashGraph conversion preserves path metadata"
+vg convert gfa_with_reference.hg -f > extracted.gfa
+vg paths -M -x extracted.gfa | sort >paths.gfa.txt
+cmp paths.gfa.txt paths.truth.txt
+is "${?}" "0" "GFA -> HashGraph -> GFA conversion preserves path metadata"
+
+# We can't do rGFA to GBZ directly until the GBWTGraph GFA parser learns to read tags
+# rGFA to HashGraph to GBZ to GFA
+vg paths -M -x graphs/rgfa_with_reference.rgfa | sort >paths.truth.txt
+vg convert -a graphs/rgfa_with_reference.rgfa > rgfa_with_reference.hg
+vg gbwt -x rgfa_with_reference.hg -E --gbz-format -g rgfa_with_reference.gbz
+vg paths -M -x rgfa_with_reference.gbz | sort >paths.gbz.txt
+cmp paths.gbz.txt paths.truth.txt
+is "${?}" "0" "rGFA -> HashGraph -> GBZ conversion preserves path metadata"
+vg convert -f rgfa_with_reference.gbz >extracted.gfa
+vg paths -M -x extracted.gfa | sort >paths.gfa.txt
+cmp paths.gfa.txt paths.truth.txt
+is "${?}" "0" "rGFA -> HashGraph -> GBZ -> GFA conversion preserves path metadata"
+
+# We should be able to handle GFA where the P lines and rGFA tags are redundant
+# and cover the same paths, like in HPRC release graphs.
+vg convert -a graphs/components_paths_rgfa.gfa > components_paths_rgfa.hg
+is "${?}" "0" "GFA -> HashGraph conversion works with redundant paths"
+is "$(vg paths --list -x components_paths_rgfa.hg | wc -l)" "1" "GFA -> HashGraph conversion with redundant paths keeps one copy of the redundant path"
+
+rm -f paths.truth.txt paths.gbz.txt paths.gfa.txt paths.hg.txt
+rm -f gfa_with_reference.gbz rgfa_with_reference.gbz gfa_with_reference.hg components_paths_rgfa.hg rgfa_with_reference.hg extracted.gfa 
+
+#####
 # GFA Streaming
+#####
+
 vg convert -g tiny/tiny.gfa -p | vg convert -f - | sort > tiny.roundtrip.gfa
 vg convert tiny/tiny.gfa -p | vg convert -f - | sort > tiny.roundtrip2.gfa
 diff tiny.roundtrip.gfa tiny.roundtrip2.gfa
@@ -326,7 +428,7 @@ cat tiny.unsort.gfa | vg convert -p - 2> tiny.roundtrip3.stderr | vg convert -f 
 cat tiny.roundtrip3.stderr
 diff tiny.roundtrip.gfa tiny.roundtrip3.gfa
 is $? 0 "Streaming an unsorted GFA gives same output as sorted"
-is $(grep "warning:\[gfa\]" tiny.roundtrip3.stderr | wc -l) 1 "Warning given when falling back to temp GFA buffer file"
+is $(grep -i "warning:\[gfa" tiny.roundtrip3.stderr | wc -l) 1 "Warning given when falling back to temp GFA buffer file"
 
 cat tiny/tiny.gfa | vg convert -p - 2> tiny.roundtrip4.stderr | vg convert -f - | sort > tiny.roundtrip4.gfa
 cat tiny.roundtrip4.stderr
@@ -345,7 +447,7 @@ cat tiny.unsort.gfa | vg mod -X 3 - 2> tiny.chop3.3.stderr | vg ids -s - | sort 
 cat tiny.chop3.3.stderr
 diff tiny.chop3.gfa tiny.chop3.3.gfa
 is $? 0 "Modding unsorted GFA stream produces same output as going through convert"
-is $(grep "warning:\[gfa\]" tiny.chop3.3.stderr | wc -l) 1 "Warning given when falling back to temp GFA buffer file in mod"
+is $(grep -i "warning:\[gfa" tiny.chop3.3.stderr | wc -l) 1 "Warning given when falling back to temp GFA buffer file in mod"
 vg mod -X 3 tiny.unsort.gfa 2> tiny.chop3.4.stderr | vg ids -s - | sort > tiny.chop3.4.gfa
 cat tiny.chop3.4.stderr
 diff tiny.chop3.gfa tiny.chop3.4.gfa
@@ -358,10 +460,37 @@ rm -f tiny.unsort.gfa
 rm -f tiny.chop3.gfa tiny.chop3.1.gfa  tiny.chop3.2.gfa  tiny.chop3.3.gfa tiny.chop3.4.gfa
 rm -f tiny.chop3.3.stderr tiny.chop3.4.stderr
 
-vg view tiny/tiny.gfa | sort > tiny.rgfa.1
-cat tiny/tiny.gfa | vg view - | sort > tiny.rgfa.2
+vg view tiny/tiny.rgfa | sort > tiny.rgfa.1
+cat tiny/tiny.rgfa | vg view - | sort > tiny.rgfa.2
 diff tiny.rgfa.1 tiny.rgfa.2
 is $? 0 "rGFA handled consistently when streaming as when loaded from file"
 
+rm -f tiny.rgfa.1 tiny.rgfa.2
 
+printf ">a\nAATTGGGATGGGGGTTATGCTAGACGTTGACGTATACGCAAGGTATTACGTCTGAATTGCCTCTGGGGCCAGTGGGGGCGTACACCCCTCGGCTCAATATTAATGAAGGGGGTGTTCTCCCACTCAAAGTCCACCTCGGAGCCACGCTTGGAGGTTGCAAGGACCACCATCCTATCCCGAGTTAGGACGCTGTTTACGCAGATACCTGCTCGGACGACACGTTAAGAGTCCTCGGGTAAATCATTTGTGAGTCGTTCAGGGGCTCCGCTGCGCAACATTGGCAAGGGCCCGAGTGCGGGCATGAAATAAAGTGAGATGGCACGAGCGTCC\n" > ref.fa
+printf ">b\nTATGGGATGGGGTTTGCTAGACGTTGACGTATACCAAGGTATTACTCAAGTCTCGGCAGTGGGGGCGTACACCCCTCGGTCAATTATGAAGGGGGGTCTCCGACTCAAATCACTCGGAGCACGCTGGAGGTTGCAAGGCACCACCTATCCGAGTTAACGCTGTTACGCAGATACCTGCTCGGAGAACGTTAAGATCGGTAAATCATTTTCGTTCAGGGGCTACGGCGCAACATGAGGGCCCGAGGCGGGCATGAAATAAGTGAGATGGCACGCTC\n" > query.fa
+vg construct -r ref.fa > ref.vg
+vg index -g ref.gcsa -k 16 ref.vg
+vg map -f query.fa -x ref.vg -g ref.gcsa  > out.gam
+vg convert ref.vg -G out.gam > out.gaf
+vg convert ref.vg -F out.gaf > out2.gam
+vg convert ref.vg -G out2.gam > out2.gaf
+diff out.gaf out2.gaf
+is $? 0 "GAF-GAM double roundtrip works on deletion problem case for chunked vg output (GAF check)"
+vg validate ref.vg -a out2.gam
+is $? 0 "GAF-GAM double roundtrip works on deletion problem case for chunked vg output (GAM check)"
 
+rm -f ref.vg ref.gcsa out.gam out.gaf out2.gam
+
+vg construct -r ref.fa -m 1000 > ref.vg
+vg construct -r ref.fa > ref.vg
+vg index -g ref.gcsa -k 16 ref.vg
+vg map -f query.fa -x ref.vg -g ref.gcsa  > out.gam
+vg convert ref.vg -G out.gam > out.gaf
+vg convert ref.vg -F out.gaf > out2.gam
+vg convert ref.vg -G out2.gam > out2.gaf
+diff out.gaf out2.gaf
+is $? 0 "GAF-GAM double roundtrip works on deletion problem case for chunked vg output for long node (GAF check)"
+vg validate ref.vg -a out2.gam
+is $? 0 "GAF-GAM double roundtrip works on deletion problem case for chunked vg output for long node (GAM check)"
+rm -f ref.fa query.fa ref.vg ref.gcsa out.gam out.gaf out2.gam

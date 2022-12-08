@@ -735,7 +735,7 @@ int main_map(int argc, char** argv) {
       }
     }
 
-    thread_count = get_thread_count();
+    thread_count = vg::get_thread_count();
 
     // TODO: We need a Mapper for every thread because the Mapper's fragment
     // length distribution isn't yet thread safe.  
@@ -748,7 +748,7 @@ int main_map(int argc, char** argv) {
     // Look up all the paths we might need to surject to.
     vector<tuple<path_handle_t, size_t, size_t>> paths;
     if (hts_output) {
-        paths = get_sequence_dictionary(ref_paths_name, *xgidx);
+        paths = get_sequence_dictionary(ref_paths_name, {}, *xgidx);
     }
     
     // Set up output to an emitter that will handle serialization and surjection
@@ -958,7 +958,7 @@ int main_map(int argc, char** argv) {
 #pragma omp parallel for
         for (size_t i = 0; i < ref.index->sequenceNames.size(); ++i) {
             auto& name = ref.index->sequenceNames[i];
-            string seq = nonATGCNtoN(toUppercase(ref.getSequence(name)));
+            string seq = vg::nonATGCNtoN(vg::toUppercase(ref.getSequence(name)));
             align_seq(name, seq);
         }
     }

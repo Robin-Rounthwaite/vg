@@ -13,7 +13,6 @@
 
 #include "bdsg/packed_graph.hpp"
 #include "bdsg/hash_graph.hpp"
-#include "bdsg/odgi.hpp"
 
 #include <handlegraph/util.hpp>
 
@@ -560,16 +559,13 @@ TEST_CASE("Deletable handle graphs work", "[handle][vg]") {
     }
 }
 
-TEST_CASE("divide_handle works on both strands", "[handle][vg][odgi][packed][hashgraph]") {
+TEST_CASE("divide_handle works on both strands", "[handle][vg][packed][hashgraph]") {
     vector<pair<MutablePathMutableHandleGraph*, MutablePathMutableHandleGraph*>> implementations;
     
     // Add implementations
     
     VG vg, vg2;
     implementations.push_back(make_pair(&vg, &vg2));
-
-    bdsg::ODGI og, og2;
-    implementations.push_back(make_pair(&og, &og2));
 
     bdsg::HashGraph hg, hg2;
     implementations.push_back(make_pair(&hg, &hg2));
@@ -618,16 +614,13 @@ TEST_CASE("divide_handle works on both strands", "[handle][vg][odgi][packed][has
     }
 }
 
-TEST_CASE("divide_handle and destroy_handle work together on both strands", "[handle][vg][odgi][packed][hashgraph]") {
+TEST_CASE("divide_handle and destroy_handle work together on both strands", "[handle][vg][packed][hashgraph]") {
     vector<pair<MutablePathMutableHandleGraph*, MutablePathMutableHandleGraph*>> implementations;
     
     // Add implementations
     
     VG vg, vg2;
     implementations.push_back(make_pair(&vg, &vg2));
-
-    bdsg::ODGI og, og2;
-    implementations.push_back(make_pair(&og, &og2));
 
     bdsg::HashGraph hg, hg2;
     implementations.push_back(make_pair(&hg, &hg2));
@@ -2523,7 +2516,27 @@ TEST_CASE("Mutable handle graphs with mutable paths work", "[handle][packed][has
     }
     
 }
+
+TEST_CASE("handlegraph PathMetadata name format preserves ranges on generic paths", "[handle]") {
+
+    std::string path_name = PathMetadata::create_path_name(
+        PathSense::GENERIC,
+        PathMetadata::NO_SAMPLE_NAME,
+        "randompath",
+        PathMetadata::NO_HAPLOTYPE,
+        PathMetadata::NO_PHASE_BLOCK,
+        {10, PathMetadata::NO_END_POSITION}
+    );
     
+    REQUIRE(PathMetadata::parse_sense(path_name) == PathSense::GENERIC);
+    REQUIRE(PathMetadata::parse_sample_name(path_name) == PathMetadata::NO_SAMPLE_NAME);
+    REQUIRE(PathMetadata::parse_locus_name(path_name) == "randompath");
+    REQUIRE(PathMetadata::parse_haplotype(path_name) == PathMetadata::NO_HAPLOTYPE);
+    REQUIRE(PathMetadata::parse_phase_block(path_name) == PathMetadata::NO_PHASE_BLOCK);
+    auto subrange = PathMetadata::parse_subrange(path_name);
+    REQUIRE(subrange.first == 10);
+    REQUIRE(subrange.second == PathMetadata::NO_END_POSITION);
+}
 
 }
 }

@@ -11,7 +11,7 @@
 #include "subcommand.hpp"
 
 #include "../alignment.hpp"
-#include "../min_distance.hpp"
+#include "../snarl_distance_index.hpp"
 #include "../vg.hpp"
 #include <vg/io/stream.hpp>
 #include <vg/io/vpkg.hpp>
@@ -164,7 +164,7 @@ int main_gamcompare(int argc, char** argv) {
     // True path positions. For each alignment name, store a mapping from reference path names
     // to sets of (sequence offset, is_reverse). There is usually either one position per
     // alignment or one position per node.
-    string_hash_map<string, map<string, vector<pair<size_t, bool> > > > true_path_positions;
+    vg::string_hash_map<string, map<string, vector<pair<size_t, bool> > > > true_path_positions;
     function<void(Alignment&)> record_path_positions = [&true_path_positions](Alignment& aln) {
         auto val = alignment_refpos_to_path_offsets(aln);
 #pragma omp critical (truth_table)
@@ -173,7 +173,7 @@ int main_gamcompare(int argc, char** argv) {
 
     // True graph positions. For each alignment name, we find the maximal read intervals that correspond
     // to a gapless alignment between the read and a single node.
-    string_hash_map<string, std::vector<MappingRun>> true_graph_positions;
+    vg::string_hash_map<string, std::vector<MappingRun>> true_graph_positions;
     function<void(Alignment&)> record_graph_positions = [&true_graph_positions](Alignment& aln) {
         if (aln.path().mapping_size() > 0) {
 #pragma omp critical (truth_table)
@@ -215,9 +215,9 @@ int main_gamcompare(int argc, char** argv) {
     }
 
     // Load the distance index.
-    std::unique_ptr<MinimumDistanceIndex> distance_index;
+    unique_ptr<SnarlDistanceIndex> distance_index;
     if (!distance_name.empty()) {
-        distance_index = vg::io::VPKG::load_one<MinimumDistanceIndex>(distance_name);
+        distance_index = vg::io::VPKG::load_one<SnarlDistanceIndex>(distance_name);
     }
 
     // We have a buffered emitter for annotated alignments, if we're not outputting text
@@ -251,13 +251,13 @@ int main_gamcompare(int argc, char** argv) {
     };
    
     // We want to count correct reads
-    vector<size_t> correct_counts(get_thread_count(), 0);
+    vector<size_t> correct_counts(vg::get_thread_count(), 0);
 
     //Get stats for calculating the score
-    vector<size_t> read_count_by_thread (get_thread_count(), 0);
-    vector<vector<size_t>> mapq_count_by_thread (get_thread_count());
-    vector<vector<size_t>> correct_count_by_mapq_by_thread(get_thread_count());
-    for (size_t i = 0 ; i < get_thread_count() ; i++) {
+    vector<size_t> read_count_by_thread (vg::get_thread_count(), 0);
+    vector<vector<size_t>> mapq_count_by_thread (vg::get_thread_count());
+    vector<vector<size_t>> correct_count_by_mapq_by_thread(vg::get_thread_count());
+    for (size_t i = 0 ; i < vg::get_thread_count() ; i++) {
         mapq_count_by_thread[i].resize(61, 0);
         correct_count_by_mapq_by_thread[i].resize(61,0);
     }
@@ -265,13 +265,15 @@ int main_gamcompare(int argc, char** argv) {
     // This function annotates every read with distance and correctness, and batch-outputs them.
     function<void(Alignment&)> annotate_test = [&](Alignment& aln) {
         bool found = false;
-        if (distance_index == nullptr) {
+        if (distance_name.empty()) {
+            //If the distance index isn't used
             auto iter = true_path_positions.find(aln.name());
             if (iter != true_path_positions.end()) {
                 alignment_set_distance_to_correct(aln, iter->second);
                 found = true;
             }
         } else {
+            //If the distance index gets used
             auto iter = true_graph_positions.find(aln.name());
             if (iter != true_graph_positions.end() && aln.path().mapping_size() > 0) {
                 std::vector<MappingRun> read_mappings = base_mappings(aln);
@@ -288,13 +290,13 @@ int main_gamcompare(int argc, char** argv) {
                     if (start < limit) {
                         pos_t read_pos = read_iter->pos_at(start);
                         pos_t truth_pos = truth_iter->pos_at(start);
-                        int64_t forward = distance_index->min_distance(read_pos, truth_pos);
-                        if (forward != -1) {
-                            distance = std::min(forward, distance);
+                        size_t forward = minimum_distance(*distance_index, read_pos, truth_pos);
+                        if (forward != std::numeric_limits<size_t>::max()) {
+                            distance = std::min((int64_t)forward, distance);
                         }
-                        int64_t reverse = distance_index->min_distance(truth_pos, read_pos);
-                        if (reverse != -1) {
-                            distance = std::min(reverse, distance);
+                        size_t reverse = minimum_distance(*distance_index, truth_pos, read_pos);
+                        if (reverse != std::numeric_limits<size_t>::max()) {
+                            distance = std::min((int64_t)reverse, distance);
                         }
                     }
                     if (read_iter->limit() <= limit) {
@@ -385,7 +387,7 @@ int main_gamcompare(int argc, char** argv) {
         size_t total_reads = 0;
         vector<size_t> mapq_count (61, 0);
         vector<size_t> correct_count_by_mapq (61, 0);
-        for (size_t i = 0 ; i < get_thread_count() ; i++) {
+        for (size_t i = 0 ; i < vg::get_thread_count() ; i++) {
             total_reads += read_count_by_thread.at(i);
             for (size_t mq = 0 ; mq < mapq_count_by_thread.at(i).size() ; mq++) {
                 if (mq >= mapq_count.size()) {

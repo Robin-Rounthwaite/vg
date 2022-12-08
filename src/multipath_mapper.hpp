@@ -20,7 +20,7 @@
 #include "multipath_alignment.hpp"
 #include "snarls.hpp"
 #include "haplotypes.hpp"
-#include "min_distance.hpp"
+#include "snarl_distance_index.hpp"
 #include "path_component_index.hpp"
 #include "splicing.hpp"
 #include "memoizing_graph.hpp"
@@ -44,7 +44,7 @@ namespace vg {
     
         MultipathMapper(PathPositionHandleGraph* graph, gcsa::GCSA* gcsa_index, gcsa::LCPArray* lcp_array,
                         haplo::ScoreProvider* haplo_score_provider = nullptr, SnarlManager* snarl_manager = nullptr,
-                        MinimumDistanceIndex* distance_index = nullptr);
+                        SnarlDistanceIndex* distance_index = nullptr);
         ~MultipathMapper();
         
         /// Map read in alignment to graph and make multipath alignments.
@@ -408,13 +408,13 @@ namespace vg {
         /// Combine all of the significant alignments into one. Requires alignments to be sorted by
         /// significance already
         void agglomerate_alignments(vector<multipath_alignment_t>& multipath_alns_out,
-                                    vector<double>* multiplicities = nullptr) const;
+                                    vector<double>* multiplicities = nullptr);
         
         /// Combine all of the significant alignments into one pair. Requires alignments to be sorted by
         /// significance already
         void agglomerate_alignment_pairs(vector<pair<multipath_alignment_t, multipath_alignment_t>>& multipath_aln_pairs_out,
                                          vector<pair<pair<size_t, size_t>, int64_t>>& cluster_pairs,
-                                         vector<double>& multiplicities) const;
+                                         vector<double>& multiplicities);
         
         /// Before returning, remove alignments that are likely noise and add a placeholder
         /// for an unmapped read if necessary
@@ -565,8 +565,9 @@ namespace vg {
         
         /// Compute a mapping quality from a list of scores, using the selected method.
         /// Optionally considers non-present duplicates of the scores encoded as multiplicities
-        int32_t compute_raw_mapping_quality_from_scores(const vector<double>& scores,
-                                                        bool have_qualities, const vector<double>* multiplicities = nullptr) const;
+        /// Depending on settings, may only return mapping qualities for a prefix of the scores
+        vector<int32_t> compute_raw_mapping_qualities_from_scores(const vector<double>& scores, bool have_qualities,
+                                                                  const vector<double>* multiplicities = nullptr) const;
         
         
         /// Sorts mappings by score and store mapping quality of the optimal alignment in the multipath_alignment_t object
@@ -678,7 +679,7 @@ namespace vg {
         DinucleotideMachine dinuc_machine;
         SpliceStats splice_stats;
         SnarlManager* snarl_manager;
-        MinimumDistanceIndex* distance_index;
+        SnarlDistanceIndex* distance_index;
         unique_ptr<PathComponentIndex> path_component_index;
         
         static const size_t RESCUED;

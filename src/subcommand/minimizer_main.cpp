@@ -34,7 +34,7 @@
 #include "../index_registry.hpp"
 #include "../utility.hpp"
 #include "../handle.hpp"
-#include "../min_distance.hpp"
+#include "../snarl_distance_index.hpp"
 
 #include <gbwtgraph/index.h>
 
@@ -239,12 +239,13 @@ int main_minimizer(int argc, char** argv) {
     }
 
     // Distance index.
-    std::unique_ptr<MinimumDistanceIndex> distance_index;
+    std::unique_ptr<SnarlDistanceIndex> distance_index;
     if (!distance_name.empty()) {
+        // new distance index
         if (progress) {
-            std::cerr << "Loading MinimumDistanceIndex from " << distance_name << std::endl;
+            std::cerr << "Loading SnarlDistanceIndex from " << distance_name << std::endl;
         }
-        distance_index = vg::io::VPKG::load_one<MinimumDistanceIndex>(distance_name);
+        distance_index = vg::io::VPKG::load_one<SnarlDistanceIndex>(distance_name);
     }
 
     // Build the index.
@@ -263,7 +264,7 @@ int main_minimizer(int argc, char** argv) {
         });
     } else {
         gbwtgraph::index_haplotypes(gbz->graph, *index, [&](const pos_t& pos) -> gbwtgraph::payload_type {
-            return MIPayload::encode(distance_index->get_minimizer_distances(pos));
+            return MIPayload::encode(get_minimizer_distances(*distance_index,pos));
         });
     }
 

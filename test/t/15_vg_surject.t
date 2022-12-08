@@ -6,7 +6,7 @@ BASH_TAP_ROOT=../deps/bash-tap
 PATH=../bin:$PATH # for vg
 
 
-plan tests 39
+plan tests 46
 
 vg construct -r small/x.fa >j.vg
 vg index -x j.xg j.vg
@@ -36,6 +36,16 @@ is $(vg surject -p x -x x.xg -t 1 -s j.gam | grep -v "@" | cut -f3 | grep x | wc
 
 is $(vg surject -x x.xg -t 1 -s j.gam | grep -v "@" | cut -f3 | grep x | wc -l) \
     100 "vg surject doesn't need to be told which path to use"
+    
+vg paths -X -x x.vg | vg view -aj - | jq '.name = "sample#0#x#0"' | vg view -JGa - > paths.gam
+vg paths -X -x x.vg | vg view -aj - | jq '.name = "ref#0#x[55]"' | vg view -JGa - >> paths.gam
+vg augment x.vg -i paths.gam > x.aug.vg
+vg index -x x.aug.xg x.aug.vg
+
+is $(vg surject -x x.aug.xg -t 1 -s j.gam | grep -v "@" | cut -f3 | grep "ref#0#x" | wc -l) \
+    100 "vg surject picks a reference-sense path if it is present"
+
+rm x.aug.vg x.aug.xg paths.gam
 
 is $(vg surject -p x -x x.xg -t 1 x.gam | vg view -a - | wc -l) \
     100 "vg surject works for every read simulated from a dense graph"
@@ -130,9 +140,9 @@ is $(vg map -b minigiab/NA12878.chr22.tiny.bam -x m.xg -g m.gcsa | vg surject -p
 is $(vg map -f minigiab/NA12878.chr22.tiny.fq.gz -x m.xg -g m.gcsa | vg surject -p q -x m.xg -s - | grep chr22.bin8.cram:166:6027 | grep BBBBBFBFI | wc -l) 1 "mapping reproduces qualities from fastq input"
 is $(vg map -f minigiab/NA12878.chr22.tiny.fq.gz -x m.xg -g m.gcsa --gaf | vg surject -p q -x m.xg -s - -G | grep chr22.bin8.cram:166:6027 | grep BBBBBFBFI | wc -l) 1 "mapping reproduces qualities from GAF input"
 
-is "$(zcat < minigiab/NA12878.chr22.tiny.fq.gz | head -n 4000 | vg mpmap -B -p -x m.xg -g m.gcsa -f - | vg surject -m -x m.xg -p q -s - | samtools view | wc -l)" 1000 "surject works on GAMP input"
+is "$(zcat < minigiab/NA12878.chr22.tiny.fq.gz | head -n 4000 | vg mpmap -B -p -x m.xg -g m.gcsa -M 1 -f - | vg surject -m -x m.xg -p q -s - | samtools view | wc -l)" 1000 "surject works on GAMP input"
 
-is "$(vg sim -x m.xg -n 500 -l 150 -a -s 768594 -i 0.01 -e 0.01 -p 250 -v 50 | vg view -aX - | vg mpmap -B -p -b 200 -x m.xg -g m.gcsa -i -f - | vg surject -m -x m.xg -i -p q -s - | samtools view | wc -l)" 1000 "surject works on paired GAMP input"
+is "$(vg sim -x m.xg -n 500 -l 150 -a -s 768594 -i 0.01 -e 0.01 -p 250 -v 50 | vg view -aX - | vg mpmap -B -p -b 200 -x m.xg -g m.gcsa -i -M 1 -f - | vg surject -m -x m.xg -i -p q -s - | samtools view | wc -l)" 1000 "surject works on paired GAMP input"
 
 rm -rf minigiab.vg* m.xg m.gcsa
 
@@ -170,4 +180,19 @@ is "$(cat perpendicular.sam | grep -v "^@" | cut -f2)" "4" "vg surject leaves a 
 
 rm -f perpendicular.sam
 
+vg construct -r small/x.fa > x.vg
+cat <(vg view x.vg) <(vg view x.vg | grep P | sed 's/P\tx/P\ty/') | vg convert -g - > x.pathdup.vg
+vg index -x x.xg -g x.gcsa x.pathdup.vg
+vg sim -x x.xg -n 20 -l 40 -p 60 -v 10 -a > x.gam
+vg mpmap -x x.xg -g x.gcsa -n dna --suppress-mismapping -B -G x.gam -i -F GAM -I 60 -D 10 > mapped.gam
+vg mpmap -x x.xg -g x.gcsa -n dna --suppress-mismapping -B -G x.gam -i -F GAMP -I 60 -D 10 > mapped.gamp
+
+is "$(vg surject -x x.xg -s -t 1 mapped.gam | grep -v '@' | wc -l)" 40 "GAM surject can return only primaries"
+is "$(vg surject -x x.xg -M -s -t 1 mapped.gam | grep -v '@' | wc -l)" 80 "GAM surject can return multimappings"
+is "$(vg surject -x x.xg -M -i -s -t 1 mapped.gam | grep -v '@' | wc -l)" 80 "GAM surject can return paired multimappings"
+is "$(vg surject -x x.xg -s -m -t 1 mapped.gamp | grep -v '@' | wc -l)" 40 "GAMP surject can return only primaries"
+is "$(vg surject -x x.xg -M -m -s -t 1 mapped.gamp | grep -v '@' | wc -l)" 80 "GAMP surject can return multimappings"
+is "$(vg surject -x x.xg -M -m -s -i -t 1 mapped.gamp | grep -v '@' | wc -l)" 80 "GAMP surject can return multimappings"
+
+rm x.vg x.pathdup.vg x.xg x.gcsa x.gcsa.lcp x.gam mapped.gam mapped.gamp
 

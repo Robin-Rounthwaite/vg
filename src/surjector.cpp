@@ -3,7 +3,21 @@
  * surjector.cpp: implements a class that surjects alignments onto paths
  */
 
+
 #include "surjector.hpp"
+
+#include "sequence_complexity.hpp"
+#include "alignment.hpp"
+#include "utility.hpp"
+#include "memoizing_graph.hpp"
+#include "multipath_alignment_graph.hpp"
+#include "split_strand_graph.hpp"
+
+#include "algorithms/extract_connecting_graph.hpp"
+#include "algorithms/prune_to_connecting_graph.hpp"
+#include "algorithms/component.hpp"
+
+#include "bdsg/hash_graph.hpp"
 
 //#define debug_spliced_surject
 //#define debug_anchored_surject
@@ -45,12 +59,48 @@ using namespace std;
         return surjected;
     }
 
+    vector<Alignment> Surjector::multi_surject(const Alignment& source,
+                                               const unordered_set<path_handle_t>& paths,
+                                               bool allow_negative_scores,
+                                               bool preserve_deletions) const {
+        vector<Alignment> surjected;
+        vector<tuple<string, int64_t, bool>> positions;
+        surject_internal(&source, nullptr, &surjected, nullptr, paths, positions,
+                         true, allow_negative_scores, preserve_deletions);
+        
+        for (size_t i = 0; i < surjected.size(); ++i) {
+            surjected[i].clear_refpos();
+            auto* pos = surjected[i].add_refpos();
+            pos->set_name(get<0>(positions[i]));
+            pos->set_offset(get<1>(positions[i]));
+            pos->set_is_reverse(get<2>(positions[i]));
+        }
+        
+        return surjected;
+    }
+
     Alignment Surjector::surject(const Alignment& source, const unordered_set<path_handle_t>& paths, string& path_name_out,
                                  int64_t& path_pos_out, bool& path_rev_out, bool allow_negative_scores,
                                  bool preserve_deletions) const {
-        Alignment surjected;
-        surject_internal(&source, nullptr, &surjected, nullptr, paths, path_name_out, path_pos_out,
-                         path_rev_out, allow_negative_scores, preserve_deletions);
+        vector<Alignment> surjected;
+        vector<tuple<string, int64_t, bool>> position;
+        surject_internal(&source, nullptr, &surjected, nullptr, paths, position,
+                         false, allow_negative_scores, preserve_deletions);
+        path_name_out = get<0>(position.front());
+        path_pos_out = get<1>(position.front());
+        path_rev_out = get<2>(position.front());
+        return move(surjected.front());
+    }
+
+    vector<Alignment> Surjector::multi_surject(const Alignment& source,
+                                               const unordered_set<path_handle_t>& paths,
+                                               vector<tuple<string, int64_t, bool>>& positions_out,
+                                               bool allow_negative_scores,
+                                               bool preserve_deletions) const {
+        vector<Alignment> surjected;
+        surject_internal(&source, nullptr, &surjected, nullptr, paths, positions_out,
+                         true, allow_negative_scores, preserve_deletions);
+        
         return surjected;
     }
 
@@ -58,27 +108,45 @@ using namespace std;
                                              string& path_name_out, int64_t& path_pos_out, bool& path_rev_out,
                                              bool allow_negative_scores, bool preserve_deletions) const {
 
-        multipath_alignment_t surjected;
-        surject_internal(nullptr, &source, nullptr, &surjected, paths, path_name_out, path_pos_out,
-                         path_rev_out, allow_negative_scores, preserve_deletions);
+        vector<multipath_alignment_t> surjected;
+        vector<tuple<string, int64_t, bool>> position;
+        surject_internal(nullptr, &source, nullptr, &surjected, paths, position,
+                         false, allow_negative_scores, preserve_deletions);
+        
+        path_name_out = move(get<0>(position.front()));
+        path_pos_out = get<1>(position.front());
+        path_rev_out = get<2>(position.front());
+        
+        return move(surjected.front());
+    }
+
+    vector<multipath_alignment_t> Surjector::multi_surject(const multipath_alignment_t& source,
+                                                           const unordered_set<path_handle_t>& paths,
+                                                           vector<tuple<string, int64_t, bool>>& positions_out,
+                                                           bool allow_negative_scores,
+                                                           bool preserve_deletions) const {
+        vector<multipath_alignment_t> surjected;
+        surject_internal(nullptr, &source, nullptr, &surjected, paths, positions_out,
+                         true, allow_negative_scores, preserve_deletions);
+        
         return surjected;
     }
     
     void Surjector::surject_internal(const Alignment* source_aln, const multipath_alignment_t* source_mp_aln,
-                                     Alignment* aln_out, multipath_alignment_t* mp_aln_out,
+                                     vector<Alignment>* alns_out, vector<multipath_alignment_t>* mp_alns_out,
                                      const unordered_set<path_handle_t>& paths,
-                                     string& path_name_out, int64_t& path_pos_out, bool& path_rev_out,
+                                     vector<tuple<string, int64_t, bool>>& positions_out, bool all_paths,
                                      bool allow_negative_scores, bool preserve_deletions) const {
 
         
         // we need one and only one data type: Alignment or multipath_alignment_t
         assert(!(source_aln && source_mp_aln));
-        assert((source_aln && aln_out) || (source_mp_aln && mp_aln_out));
-        
+        assert((source_aln && alns_out) || (source_mp_aln && mp_alns_out));
+                
 #ifdef debug_anchored_surject
-        cerr << "surjecting alignment: ";
+        cerr << "surjecting alignment ";
         if (source_mp_aln) {
-            cerr << debug_string(*source_mp_aln);
+            cerr << "with " << source_mp_aln->subpath_size() << " subpaths " << debug_string(*source_mp_aln);
         }
         else {
             cerr << pb2json(*source_aln);
@@ -104,6 +172,32 @@ using namespace std;
             }
         }
         
+        
+        // do we need to simplify a complicated multipath alignment?
+        multipath_alignment_t simplified_source_mp_aln;
+        // TODO: magic number
+        if (source_mp_aln && source_mp_aln->subpath_size() > 8 * source_mp_aln->sequence().size()) {
+            // the multipath alignment seems to have a very complex topology, we'll simplify it before
+            // generating a whole bunch of low-quality anchors
+            
+            // it's hard to know how much we need to prune to tame this thing, so we try tighter and tighter thresholds
+            int32_t diff = max<int32_t>(optimal_alignment_score(*source_mp_aln), 0);
+            do {
+                diff /= 2;
+                
+                // copy the const alignment so we can modify it
+                simplified_source_mp_aln = *source_mp_aln;
+                remove_low_scoring_sections(simplified_source_mp_aln, diff);
+                
+#ifdef debug_anchored_surject
+                cerr << "simplified complicated multipath alignment from " << source_mp_aln->subpath_size() << " to " << simplified_source_mp_aln.subpath_size() << " subpaths using score diff " << diff << endl;
+#endif
+                
+            } while (diff > 1 && simplified_source_mp_aln.subpath_size() > 8 * source_mp_aln->sequence().size());
+            
+            source_mp_aln = &simplified_source_mp_aln;
+        }
+        
         // make an overlay that will memoize the results of some expensive XG operations
         MemoizingGraph memoizing_graph(graph);
         
@@ -117,7 +211,7 @@ using namespace std;
             // the multipath alignment anchor algorithm can produce redundant paths if
             // the alignment's graph is not parsimonious, so we filter the shorter ones out
             for (pair<const pair<path_handle_t, bool>, pair<vector<path_chunk_t>, vector<pair<step_handle_t, step_handle_t>>>>& path_chunk_record : path_overlapping_anchors) {
-                filter_redundant_path_chunks(path_chunk_record.second.first, path_chunk_record.second.second,
+                filter_redundant_path_chunks(path_chunk_record.first.second, path_chunk_record.second.first, path_chunk_record.second.second,
                                              connections[path_chunk_record.first]);
             }
         }
@@ -235,8 +329,7 @@ using namespace std;
             if (!preserve_deletions && source_aln) {
                 // unspliced GAM -> GAM surjection
                 auto surjection = realigning_surject(&memoizing_graph, *source_aln, surj_record.first.first, surj_record.first.second,
-                                                     surj_record.second.first, path_range, allow_negative_scores,
-                                                     false, false);
+                                                     surj_record.second.first, surj_record.second.second, path_range, allow_negative_scores);
                 if (surjection.path().mapping_size() != 0) {
                     aln_surjections[surj_record.first] = make_pair(move(surjection), path_range);
                 }
@@ -281,71 +374,133 @@ using namespace std;
         // in case we didn't overlap any paths, add a sentinel so the following code still executes correctly
         if (aln_surjections.empty() && mp_aln_surjections.empty()) {
             // this surjection didn't get aligned
-            path_name_out = "";
-            path_rev_out = false;
-            path_pos_out = -1;
+            positions_out.emplace_back("", -1, false);
             if (source_mp_aln) {
-                *mp_aln_out = make_null_mp_alignment(source_mp_aln->sequence(), source_mp_aln->quality());
+                mp_alns_out->emplace_back(make_null_mp_alignment(source_mp_aln->sequence(), source_mp_aln->quality()));
+                // copy over annotations
+                // TODO: also redundantly copies over sequence and quality
+                transfer_read_metadata(*source_mp_aln, mp_alns_out->back());
             }
             else {
-                *aln_out = make_null_alignment(*source_aln);
+                alns_out->emplace_back(make_null_alignment(*source_aln));
             }
             return;
         }
-    
-        // choose which path surjection was best
-        pair<path_handle_t, bool> best_path_strand;
-        int32_t score = numeric_limits<int32_t>::min();
-        for (const auto& surjection : aln_surjections) {
-            if (surjection.second.first.score() >= score) {
-#ifdef debug_anchored_surject
-                cerr << "surjection against path " << graph->get_path_name(surjection.first.first) << " strand " << surjection.first.second << " achieves highest score of " << surjection.second.first.score() << ": " << pb2json(surjection.second.first) << endl;
-#endif
-                score = surjection.second.first.score();
-                best_path_strand = surjection.first;
-            }
-        }
-        for (const auto& surjection : mp_aln_surjections) {
-
-            int32_t surj_score = optimal_alignment_score(surjection.second.first, allow_negative_scores);
-            if (surj_score >= score) {
-#ifdef debug_anchored_surject
-                cerr << "surjection against path " << graph->get_path_name(surjection.first.first) << " strand " << surjection.first.second << " achieves highest score of " << surj_score << ": " << debug_string(surjection.second.first) << endl;
-#endif
-                score = surj_score;
-                best_path_strand = surjection.first;
-            }
-        }
-                
-        // find the position along the path
         
-        // retrieve the first/last positions of the best alignment and the corresponding
-        // path range
-        pair<step_handle_t, step_handle_t> path_range;
-        pos_t initial_pos, final_pos;
-        if (aln_out) {
-            auto& surjection = aln_surjections[best_path_strand];
-            initial_pos = initial_position(surjection.first.path());
-            final_pos = final_position(surjection.first.path());
-            path_range = surjection.second;
-            *aln_out = move(surjection.first);
+        string annotation_string;
+        if (annotate_with_all_path_scores) {
+            if (source_aln) {
+                annotation_string = path_score_annotations(aln_surjections);
+            }
+            else {
+                annotation_string = path_score_annotations(mp_aln_surjections);
+            }
+        }
+        
+        // choose which path strands we will output
+        vector<pair<path_handle_t, bool>> strands_to_output;
+        if (all_paths) {
+            vector<tuple<int32_t, path_handle_t, bool>> path_strands;
+            if (source_aln) {
+                for (const auto& surjection : aln_surjections) {
+                    path_strands.emplace_back(surjection.second.first.score(),
+                                              surjection.first.first, surjection.first.second);
+                }
+            }
+            else {
+                for (const auto& surjection : mp_aln_surjections) {
+                    path_strands.emplace_back(optimal_alignment_score(surjection.second.first, allow_negative_scores),
+                                              surjection.first.first, surjection.first.second);
+                }
+            }
+            sort(path_strands.begin(), path_strands.end());
+            for (const auto& path_strand : path_strands) {
+                strands_to_output.emplace_back(get<1>(path_strand), get<2>(path_strand));
+            }
         }
         else {
-            auto& surjection = mp_aln_surjections[best_path_strand];
-            initial_pos = initial_position(surjection.first.subpath().front().path());
-            final_pos = final_position(surjection.first.subpath().back().path());
-            path_range = surjection.second;
-            *mp_aln_out = move(surjection.first);
+            // choose which path surjection was best
+            pair<path_handle_t, bool> best_path_strand;
+            int32_t score = numeric_limits<int32_t>::min();
+            for (const auto& surjection : aln_surjections) {
+                if (surjection.second.first.score() >= score) {
+#ifdef debug_anchored_surject
+                    cerr << "surjection against path " << graph->get_path_name(surjection.first.first) << " strand " << surjection.first.second << " achieves highest score of " << surjection.second.first.score() << ": " << pb2json(surjection.second.first) << endl;
+#endif
+                    score = surjection.second.first.score();
+                    best_path_strand = surjection.first;
+                }
+            }
+            for (const auto& surjection : mp_aln_surjections) {
+                
+                int32_t surj_score = optimal_alignment_score(surjection.second.first, allow_negative_scores);
+                if (surj_score >= score) {
+#ifdef debug_anchored_surject
+                    cerr << "surjection against path " << graph->get_path_name(surjection.first.first) << " strand " << surjection.first.second << " achieves highest score of " << surj_score << ": " << debug_string(surjection.second.first) << endl;
+#endif
+                    score = surj_score;
+                    best_path_strand = surjection.first;
+                }
+            }
+            strands_to_output.emplace_back(best_path_strand);
         }
         
-        // use this info to set the path position
-        set_path_position(&memoizing_graph, initial_pos, final_pos, path_range.first, path_range.second,
-                          best_path_strand.second, path_name_out, path_pos_out, path_rev_out);
-        
-        
+        for (size_t i = 0; i < strands_to_output.size(); ++i) {
+            const auto& path_strand = strands_to_output[i];
+            
+            // find the position along the path
+            
+            // retrieve the first/last positions of the best alignment and the corresponding
+            // path range
+            pair<step_handle_t, step_handle_t> path_range;
+            pos_t initial_pos, final_pos;
+            if (source_aln) {
+                auto& surjection = aln_surjections[path_strand];
+                initial_pos = initial_position(surjection.first.path());
+                final_pos = final_position(surjection.first.path());
+                path_range = surjection.second;
+                alns_out->emplace_back(move(surjection.first));
+                
+                if (i != 0 || source_aln->is_secondary()) {
+                    alns_out->back().set_is_secondary(true);
+                }
+                
+                if (annotate_with_all_path_scores) {
+                    set_annotation(alns_out->back(), "all_scores", annotation_string);
+                }
+            }
+            else {
+                auto& surjection = mp_aln_surjections[path_strand];
+                initial_pos = initial_position(surjection.first.subpath().front().path());
+                final_pos = final_position(surjection.first.subpath().back().path());
+                path_range = surjection.second;
+                mp_alns_out->emplace_back(move(surjection.first));
+                
+                if (i != 0) {
+                    mp_alns_out->back().set_annotation("secondary", true);
+                }
+                else if (i == 0 && source_mp_aln->has_annotation("secondary")) {
+                    auto annotation = source_mp_aln->get_annotation("secondary");
+                    assert(annotation.first == multipath_alignment_t::Bool);
+                    mp_alns_out->back().set_annotation("secondary", *((bool*) annotation.second));
+                }
+                
+                if (annotate_with_all_path_scores) {
+                    mp_alns_out->back().set_annotation("all_scores", annotation_string);
+                }
+            }
+            
+            // use this info to set the path position
+            positions_out.emplace_back();
+            set_path_position(&memoizing_graph, initial_pos, final_pos, path_range.first, path_range.second,
+                              path_strand.second, get<0>(positions_out.back()), get<1>(positions_out.back()),
+                              get<2>(positions_out.back()));
+            
+            
 #ifdef debug_anchored_surject
-        cerr << "chose path " << path_name_out << " at position " << path_pos_out << (path_rev_out ? "-" : "+") << endl;
+            cerr << "chose path " << get<0>(positions_out.back()) << " at position " << get<1>(positions_out.back()) << (get<2>(positions_out.back()) ? "-" : "+") << endl;
 #endif
+        }
         
     }
 
@@ -742,7 +897,9 @@ using namespace std;
 
     vector<pair<vector<size_t>, vector<size_t>>> Surjector::find_constriction_bicliques(const vector<vector<size_t>>& adj,
                                                                                         const string& src_sequence,
-                                                                                        const vector<path_chunk_t>& path_chunks,
+                                                                                        const string& src_quality,
+                                                                                        vector<path_chunk_t>& path_chunks,
+                                                                                        vector<pair<step_handle_t, step_handle_t>>& ref_chunks,
                                                                                         const vector<tuple<size_t, size_t, int32_t>>& connections) const {
         
         auto connected_by_edge = [&](size_t i, size_t j) {
@@ -761,6 +918,10 @@ using namespace std;
             }
         };
         
+        // are we on the reverse or forward strand of the path
+        const bool path_rev = (graph->get_is_reverse(graph->get_handle_of_step(ref_chunks[0].first))
+                               != path_chunks[0].second.mapping(0).position().is_reverse());
+
         auto rev_adj = reverse_adjacencies(adj);
         
         size_t num_comps = 0;
@@ -809,14 +970,49 @@ using namespace std;
         }
 #endif
         
-        // divide up chunks by their component and their begin/end position on the read
-        unordered_map<pair<size_t, int64_t>, vector<size_t>> chunks_by_begin, chunks_by_end;
-        for (size_t i = 0; i < path_chunks.size(); ++i) {
-            pair<size_t, int64_t> key_begin(comps[i], path_chunks[i].first.first - src_sequence.begin());
-            pair<size_t, int64_t> key_end(comps[i], path_chunks[i].first.second - src_sequence.begin());
-            chunks_by_begin[key_begin].push_back(i);
-            chunks_by_end[key_end].push_back(i);
+        unordered_set<pair<size_t, bool>> enqueued;
+        vector<vector<pair<size_t, bool>>> adjacency_components;
+        for (size_t i = 0; i < adj.size(); ++i) {
+            for (bool left : {true, false}) {
+                if (!enqueued.count(make_pair(i, left))) {
+                    
+                    // start new adjacency component
+                    adjacency_components.emplace_back();
+                    auto& adj_component = adjacency_components.back();
+                    
+                    // init queue
+                    vector<pair<size_t, bool>> queue;
+                    queue.emplace_back(i, left);
+                    enqueued.emplace(i, left);
+                    
+                    // DFS bouncing back and forth across the sides
+                    while (!queue.empty()) {
+                        auto side = queue.back();
+                        queue.pop_back();
+                        adj_component.emplace_back(side);
+                        
+                        const auto& edges = side.second ? rev_adj[side.first] : adj[side.first];
+                        for (size_t j : edges) {
+                            if (!enqueued.count(make_pair(j, !side.second))) {
+                                enqueued.emplace(j, !side.second);
+                                queue.emplace_back(j, !side.second);
+                            }
+                        }
+                    }
+                    
+                }
+            }
         }
+        
+#ifdef debug_constrictions
+        cerr << "adjacency components" << endl;
+        for (size_t i = 0; i < adjacency_components.size(); ++i) {
+            cerr << "component " << i << ":" << endl;
+            for (auto side : adjacency_components[i]) {
+                cerr << "\t" << side.first << " " << "RL"[side.second] << endl;
+            }
+        }
+#endif
         
         // reorganize the connections into an adjacency list
         unordered_map<size_t, unordered_set<size_t>> connection_adj;
@@ -827,93 +1023,729 @@ using namespace std;
         // init return value
         vector<pair<vector<size_t>, vector<size_t>>> return_val;
         
-        // subroutine to check if a candidate partition is a biclique deletion constriction
-        auto test_candidate_biclique = [&](const unordered_set<size_t>& left_side,
-                                           const unordered_set<size_t>& right_side,
-                                           size_t comp_idx) {
-            // record which pairs have a connection
-            bool incompatible = false;
-            unordered_set<size_t> left_connected, right_connected;
-            for (auto left_it = left_side.begin(); left_it != left_side.end() && !incompatible; ++left_it) {
-                auto adj_it = connection_adj.find(*left_it);
-                if (adj_it != connection_adj.end()) {
-                    for (auto right_it = adj_it->second.begin(); right_it != adj_it->second.end() && !incompatible; ++right_it) {
-                        
+        for (auto& adj_component : adjacency_components) {
+            if (adj_component.size() == 1) {
+                // trivial component (probably at start or end)
+                continue;
+            }
+            
 #ifdef debug_constrictions
-                        cerr << "looking at connection between " << *left_it << " and " << *right_it << endl;
+            cerr << "checking adjacency component containing" << endl;
+            for (auto side : adj_component) {
+                cerr << "\t" << side.first << " " << "RL"[side.second] << endl;
+            }
 #endif
-                        if (right_side.count(*right_it)) {
-                            left_connected.insert(*left_it);
-                            right_connected.insert(*right_it);
+            
+            // record if there are any deletions
+            vector<size_t> deletion_chunks;
+            for (auto chunk_side : adj_component) {
+                if (path_chunks[chunk_side.first].first.first == path_chunks[chunk_side.first].first.second) {
+                    deletion_chunks.push_back(chunk_side.first);
+#ifdef debug_constrictions
+                    cerr << "chunk " << chunk_side.first << " is a deletion" << endl;
+#endif
+                }
+            }
+            
+            // iterate over choices of left/right side for deletion chunks
+            for (size_t iter = 0, end = (1 << min<size_t>(deletion_chunks.size(), 16)); iter < end; ++iter) {
+                          
+#ifdef debug_constrictions
+                cerr << "checking left-right combination " << iter << " of " << end << endl;
+#endif
+                
+                // we will fill out the left and right side of this potential splice biclique
+                unordered_set<size_t> left_side, right_side;
+                
+                size_t deletion_chunk_idx = 0;
+                for (auto chunk_side : adj_component) {
+                    if (deletion_chunk_idx < deletion_chunks.size() && chunk_side.first == deletion_chunks[deletion_chunk_idx]) {
+                        // deletions can go on either side,
+                        if (iter & (1 << deletion_chunk_idx)) {
+#ifdef debug_constrictions
+                            cerr << "deletion chunk " << chunk_side.first << " goes to left side" << endl;
+#endif
+                            left_side.insert(chunk_side.first);
                         }
                         else {
-                            // the direction of this connection are not consistent with the left and right
-                            // side of this iteration
 #ifdef debug_constrictions
-                            cerr << "connection is incompatible" << endl;
+                            cerr << "deletion chunk " << chunk_side.first << " goes to right side" << endl;
 #endif
-                            incompatible = true;
+                            right_side.insert(chunk_side.first);
+                        }
+                        ++deletion_chunk_idx;
+                    }
+                    else if (chunk_side.second) {
+                        right_side.insert(chunk_side.first);
+                    }
+                    else {
+                        left_side.insert(chunk_side.first);
+                    }
+                }
+                
+                // record which pairs have a connection
+                bool incompatible = false;
+                unordered_set<size_t> left_connected, right_connected;
+                for (auto left_it = left_side.begin(); left_it != left_side.end() && !incompatible; ++left_it) {
+                    auto adj_it = connection_adj.find(*left_it);
+                    if (adj_it != connection_adj.end()) {
+                        for (auto right_it = adj_it->second.begin(); right_it != adj_it->second.end() && !incompatible; ++right_it) {
+                            
+#ifdef debug_constrictions
+                            cerr << "looking at connection between " << *left_it << " and " << *right_it << endl;
+#endif
+                            if (right_side.count(*right_it)) {
+                                left_connected.insert(*left_it);
+                                right_connected.insert(*right_it);
+                            }
+                            else {
+                                // the direction of this connection are not consistent with the left and right
+                                // side of this iteration
+#ifdef debug_constrictions
+                                cerr << "connection is incompatible" << endl;
+#endif
+                                incompatible = true;
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            
-            if (incompatible) {
-                // the division of deletions to the left and right side is not compatible with the
-                // connections
-                return;
-            }
-            
-            // do the non-connected edges form a biclique?
-            for (auto left_it = left_side.begin(); left_it != left_side.end() && !incompatible; ++left_it) {
-                if (left_connected.count(*left_it)) {
+                
+                if (incompatible) {
+                    // the division of deletions to the left and right side is not compatible with the
+                    // connections
                     continue;
                 }
-                size_t num_clique_edges = 0;
-                for (auto i : adj[*left_it]) {
-                    if (right_connected.count(i)) {
-                        // we don't worry about it if the node has a connection, because it will lose
-                        // all of its edges anyway
+                
+                // do the non-connected edges form a biclique?
+                for (auto left_it = left_side.begin(); left_it != left_side.end() && !incompatible; ++left_it) {
+                    if (left_connected.count(*left_it)) {
                         continue;
                     }
-                    if (right_side.count(i) && connected_by_edge(*left_it, i)) {
-                        // this looks like it could be a splice junction
-                        ++num_clique_edges;
+                    size_t num_clique_edges = 0;
+                    for (auto i : adj[*left_it]) {
+                        if (right_connected.count(i)) {
+                            // we don't worry about it if the node has a connection, because it will lose
+                            // all of its edges anyway
+                            continue;
+                        }
+                        if (right_side.count(i)) {
+                            // this looks like it could be a splice junction
+                            ++num_clique_edges;
+                        }
+                        else {
+#ifdef debug_constrictions
+                            cerr << "adjacency " << *left_it << " -> " << i << " is " << (right_side.count(i) ? "not connected by a graph edge" : "missing") << endl;
+#endif
+                            incompatible = true;
+                            break;
+                        }
                     }
-                    else {
 #ifdef debug_constrictions
-                        cerr << "adjacency " << *left_it << " -> " << i << " is " << (right_side.count(i) ? "not connected by a graph edge" : "missing") << endl;
+                    cerr << "found " << num_clique_edges << " out of expected " << (right_side.size() - right_connected.size()) << " on " << *left_it << "L" << endl;
 #endif
-                        incompatible = true;
-                    }
+                    incompatible = incompatible || (num_clique_edges != right_side.size() - right_connected.size());
                 }
-                incompatible = incompatible || (num_clique_edges != right_side.size() - right_connected.size());
-            }
-            
-            if (incompatible) {
-                // we have edges going to outside the biclique, or we have edges missing
-                // from the biclique
-#ifdef debug_constrictions
-                cerr << "this left-right combination is incompatible" << endl;
-#endif
-                return;
-            }
-            
-            // count up the walks through this biclique
-            size_t walk_total = 0;
-            for (auto left_it = left_side.begin(); left_it != left_side.end() && !incompatible; ++left_it) {
-                for (auto j : adj[*left_it]) {
-                    walk_total += fwd[*left_it] * bwd[j];
-                }
-            }
-            
-#ifdef debug_constrictions
-            cerr << "biclique has a walk total of " << walk_total << " compared to component total " << total_comp_paths[comp_idx] << endl;
-#endif
-            
-            if (walk_total == total_comp_paths[comp_idx]) {
-                // all of the walks in this component go through this biclique, we've found a splice
                 
+                if (incompatible) {
+                    // we have edges going to outside the biclique, or we have edges missing
+                    // from the biclique
+#ifdef debug_constrictions
+                    cerr << "this left-right combination (" << iter << " of " << end << ") is incompatible" << endl;
+#endif
+                    continue;
+                }
+                
+                // count up the walks through this biclique
+                size_t walk_total = 0;
+                for (auto left_it = left_side.begin(); left_it != left_side.end() && !incompatible; ++left_it) {
+                    for (auto j : adj[*left_it]) {
+                        walk_total += fwd[*left_it] * bwd[j];
+                    }
+                }
+                
+#ifdef debug_constrictions
+                cerr << "biclique has a walk total of " << walk_total << " compared to component total " << total_comp_paths[comps[adj_component.front().first]] << endl;
+#endif
+                
+                if (walk_total != total_comp_paths[comps[adj_component.front().first]]) {
+                    // not a constriction
+                    continue;
+                }
+                
+                for (auto left_it = left_side.begin(); left_it != left_side.end() && !incompatible; ++left_it) {
+                    if (left_connected.count(*left_it)) {
+                        continue;
+                    }
+                    size_t num_clique_edges = 0;
+                    for (auto i : adj[*left_it]) {
+                        if (right_connected.count(i)) {
+                            // we don't worry about it if the node has a connection, because it will lose
+                            // all of its edges anyway
+                            continue;
+                        }
+#ifdef debug_constrictions
+                        const auto& p1 = path_chunks[*left_it].second.mapping(path_chunks[*left_it].second.mapping_size() - 1).position();
+                        const auto& p2 = path_chunks[i].second.mapping(0).position();
+                        cerr << "read gap between " << *left_it << " and " << i << " is " << (path_chunks[i].first.first - path_chunks[*left_it].first.second) << ", connected by an edge at " << p1.node_id() << " " << p1.is_reverse() << " -> " << p2.node_id() << " " << p2.is_reverse() << "? " << connected_by_edge(*left_it, i) << endl;
+#endif
+                        if (path_chunks[*left_it].first.second != path_chunks[i].first.first || !connected_by_edge(*left_it, i)) {
+#ifdef debug_constrictions
+                            cerr << "fail deletion along edge condition in adjacency from " << *left_it << " to " << i << " with read positions " << (path_chunks[*left_it].first.second - src_sequence.begin()) << " and " << (path_chunks[i].first.first - src_sequence.begin()) << ", connected by edge? " << connected_by_edge(*left_it, i) << endl;
+#endif
+                            incompatible = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (incompatible) {
+
+#ifdef debug_constrictions
+                    cerr << "not all adjacencies in constriction are pure deletions on edges, attempting to repair the splice site"<< endl;
+#endif
+                    // it's a constriction biclique, but it doesn't have a pure deletion or pure adjacency
+                    // we'll try to see if we can recover a splice junction here by
+                    incompatible = false;
+                    
+                    int64_t max_dist = 0;
+                    for (auto i : left_side) {
+                        if (left_connected.count(i)) {
+                            continue;
+                        }
+                        const auto& final_mapping = *path_chunks[i].second.mapping().rbegin();
+                        for (auto j : right_side) {
+                            if (right_connected.count(j)) {
+                                continue;
+                            }
+                            const auto& initial_mapping = *path_chunks[j].second.mapping().begin();
+                            bool path_rev = (graph->get_is_reverse(graph->get_handle_of_step(ref_chunks[j].first))
+                                             != initial_mapping.position().is_reverse());
+                            int64_t path_dist = 0;
+                            if (path_rev) {
+                                path_dist = (graph->get_position_of_step(ref_chunks[i].second)
+                                             + graph->get_length(graph->get_handle_of_step(ref_chunks[i].second))
+                                             - final_mapping.position().offset()
+                                             - mapping_from_length(final_mapping)
+                                             - graph->get_position_of_step(ref_chunks[j].first)
+                                             - graph->get_length(graph->get_handle_of_step(ref_chunks[j].first))
+                                             + initial_mapping.position().offset());
+                            }
+                            else {
+                                path_dist = (graph->get_position_of_step(ref_chunks[j].first)
+                                             + initial_mapping.position().offset()
+                                             - graph->get_position_of_step(ref_chunks[i].second)
+                                             - final_mapping.position().offset()
+                                             - mapping_from_length(final_mapping));
+                            }
+                            max_dist = max(max_dist, path_dist);
+                        }
+                    }
+                    
+#ifdef debug_constrictions
+                    cerr << "max path distance is " << max_dist << ", compared to minimum for repair " << min_splice_repair_length << endl;
+#endif
+                    
+                    if (max_dist < min_splice_repair_length) {
+                        // all of the sides are close together on the path, so it's likely to be just variation
+                        // and even if not then it won't be too terrible to just align it
+                        continue;
+                    }
+                    
+                    // make alignmments to the connecting graph across all of these edges
+                    
+                    vector<vector<Alignment>> repair_alns;
+                    repair_alns.reserve(left_side.size());
+                    
+                    int64_t max_aln_length = (get_aligner()->longest_detectable_gap(src_sequence.size())
+                                              + (path_chunks[*right_side.begin()].first.first
+                                                 - path_chunks[*left_side.begin()].first.second));
+                    for (auto left_it = left_side.begin(); left_it != left_side.end() && !incompatible; ++left_it) {
+                        if (left_connected.count(*left_it)) {
+                            continue;
+                        }
+                        repair_alns.emplace_back();
+                        repair_alns.back().reserve(right_side.size());
+                        auto left_pos = final_position(path_chunks[*left_it].second);
+                        for (auto i : right_side) {
+                            if (right_connected.count(i)) {
+                                // we don't worry about it if the node has a connection, because it will lose
+                                // all of its edges anyway
+                                continue;
+                            }
+#ifdef debug_constrictions
+                            cerr << "attempting to repair splice adjacency from " << *left_it << " to " << i << " with read interval " << (path_chunks[*left_it].first.second - src_sequence.begin()) << ":" << (path_chunks[i].first.first - src_sequence.begin()) << endl;
+#endif
+                            
+                            auto right_pos = initial_position(path_chunks[i].second);
+                            
+                            bdsg::HashGraph connecting;
+                            auto id_trans = algorithms::extract_connecting_graph(graph, &connecting, max_aln_length,
+                                                                                 left_pos, right_pos, true);
+                            
+                            
+#ifdef debug_constrictions
+                            cerr << "connecting graph between " << left_pos << " and " << right_pos << ":" << endl;
+                            connecting.for_each_handle([&](const handle_t& handle) {
+                                cerr << connecting.get_id(handle) << " " << connecting.get_sequence(handle) << endl;
+                                connecting.follow_edges(handle, true, [&](const handle_t& prev) {
+                                    cerr << "\t" << connecting.get_id(prev) << " <-" << endl;
+                                });
+                                connecting.follow_edges(handle, false, [&](const handle_t& next) {
+                                    cerr << "\t-> " << connecting.get_id(next) << endl;
+                                });
+                            });
+#endif
+                            
+                            // remove any handles in the connecting graph that aren't on the path
+                            path_handle_t path_handle = graph->get_path_handle_of_step(ref_chunks.front().first);
+                            vector<handle_t> off_path_handles;
+                            connecting.for_each_handle([&](const handle_t& handle) {
+                                bool found = false;
+                                graph->for_each_step_on_handle(graph->get_handle(connecting.get_id(handle)),
+                                                               [&](const step_handle_t& step) {
+                                    found = graph->get_path_handle_of_step(step) == path_handle;
+                                    return !found;
+                                });
+                                if (!found) {
+                                    off_path_handles.push_back(handle);
+                                }
+                            });
+                            for (handle_t handle : off_path_handles) {
+                                connecting.destroy_handle(handle);
+                            }
+                            
+                            // TODO: we could probably dagify, but i don't want to worry about it yet
+                            if (connecting.get_node_count() == 0 || !handlealgs::is_directed_acyclic(&connecting)
+                                || algorithms::num_components(connecting) != 1) {
+#ifdef debug_constrictions
+                                cerr << "did not get well-behaved intervening graph: " << connecting.get_node_count() << " nodes, acyclic? " << handlealgs::is_directed_acyclic(&connecting) << ", components " << algorithms::num_components(connecting) << endl;
+#endif
+                                incompatible = true;
+                                break;
+                            }
+                            
+                            // make the graph single stranded
+                            auto orientation = handlealgs::single_stranded_orientation(&connecting);
+                            if (orientation.empty()) {
+#ifdef debug_constrictions
+                                cerr << "graph does not have a single stranded orientation" << endl;
+#endif
+                                incompatible = true;
+                                break;
+                            }
+                            for (auto handle : orientation) {
+                                if (id_trans[connecting.get_id(handle)] == id(left_pos)) {
+                                    if (connecting.get_is_reverse(handle) != is_rev(left_pos)) {
+                                        // the orientation we got doesn't match our bounding positions, flip it
+                                        for (auto& handle : orientation) {
+                                            handle = connecting.flip(handle);
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            unordered_map<id_t, pair<id_t, bool>> oriented_trans;
+                            for (auto& handle : orientation) {
+                                oriented_trans[connecting.get_id(handle)] = make_pair(id_trans[connecting.get_id(handle)],
+                                                                                      connecting.get_is_reverse(handle));
+                                handle = connecting.apply_orientation(handle);
+                            }
+
+#ifdef debug_constrictions
+                            cerr << "connecting graph after pruning to the path and orienting:" << endl;
+                            connecting.for_each_handle([&](const handle_t& handle) {
+                                cerr << connecting.get_id(handle) << " " << connecting.get_sequence(handle) << endl;
+                                connecting.follow_edges(handle, true, [&](const handle_t& prev) {
+                                    cerr << "\t" << connecting.get_id(prev) << " <-" << endl;
+                                });
+                                connecting.follow_edges(handle, false, [&](const handle_t& next) {
+                                    cerr << "\t-> " << connecting.get_id(next) << endl;
+                                });
+                            });
+#endif
+                            
+                            // make sure everything is still reachable after pruning
+                            // TODO: might be cheaper to not do the work for strict max length in extraction since
+                            // we duplicate it here, but also this code path is rare, so whatever
+                            algorithms::prune_to_connecting_graph(connecting, connecting.get_handle(id(left_pos)),
+                                                                  connecting.get_handle(id(right_pos)));
+                            
+#ifdef debug_constrictions
+                            cerr << "connecting graph after pruning for reachability:" << endl;
+                            connecting.for_each_handle([&](const handle_t& handle) {
+                                cerr << connecting.get_id(handle) << " " << connecting.get_sequence(handle) << endl;
+                                connecting.follow_edges(handle, true, [&](const handle_t& prev) {
+                                    cerr << "\t" << connecting.get_id(prev) << " <-" << endl;
+                                });
+                                connecting.follow_edges(handle, false, [&](const handle_t& next) {
+                                    cerr << "\t-> " << connecting.get_id(next) << endl;
+                                });
+                            });
+#endif
+                                                        
+                            repair_alns.back().emplace_back();
+                            auto& aln = repair_alns.back().back();
+                            aln.set_sequence(string(path_chunks[*left_it].first.second,
+                                                    path_chunks[i].first.first));
+                            if (!src_quality.empty()) {
+                                auto qual_begin = src_quality.begin() + (path_chunks[*left_side.begin()].first.second - src_sequence.begin());
+                                aln.set_quality(string(qual_begin, qual_begin + aln.sequence().size()));
+                            }
+                            
+                            // do the alignment
+                            get_aligner(!src_quality.empty())->align_global_banded(aln, connecting, 1, true);
+                            
+                            auto first_pos = aln.mutable_path()->mutable_mapping(0)->mutable_position();
+                            first_pos->set_offset(offset(left_pos));
+#ifdef debug_constrictions
+                            cerr << "raw connecting alignment" << endl;
+                            cerr << pb2json(aln) << endl;
+#endif
+                                                        
+                            if (mapping_from_length(aln.path().mapping(aln.path().mapping_size() - 1)) == 0
+                                && mapping_to_length(aln.path().mapping(aln.path().mapping_size() - 1)) == 0) {
+                                // the last mapping is to an empty node
+                                aln.mutable_path()->mutable_mapping()->DeleteSubrange(aln.path().mapping_size() - 1, 1);
+                            }
+                            
+                            if (aln.path().mapping_size() != 0 && mapping_from_length(aln.path().mapping(0)) == 0
+                                && mapping_to_length(aln.path().mapping(0)) == 0) {
+                                // the first mapping is to an empty node
+                                aln.mutable_path()->mutable_mapping()->DeleteSubrange(0, 1);
+                            }
+                            
+                            translate_oriented_node_ids(*aln.mutable_path(), oriented_trans);
+#ifdef debug_constrictions
+                            cerr << "processed connecting alignment" << endl;
+                            cerr << pb2json(aln) << endl;
+#endif
+                        }
+                    }
+                    
+                    if (incompatible) {
+                        // we couldn't make a short connecting graph for at least one of the edges
+                        continue;
+                    }
+                    
+                    // we'll record where along the alignment it gets divided into before/after the splice
+                    // records of (mapping index, final fwd step, final rev step, prefix end, suffix start)
+                    vector<vector<tuple<size_t, step_handle_t, step_handle_t, string::const_iterator, string::const_iterator>>> divisions(repair_alns.size());
+                    
+                    // TODO: we might not find the same break point if one of the adjacencies is just direct
+                    // across the path
+                    
+                    size_t left_idx = 0;
+                    for (auto left_it = left_side.begin(); left_it != left_side.end() && !incompatible; ++left_it) {
+                        if (left_connected.count(*left_it)) {
+                            continue;
+                        }
+                        
+                        size_t right_idx = 0;
+                        for (auto i : right_side) {
+                            if (right_connected.count(i)) {
+                                // we don't worry about it if the node has a connection, because it will lose
+                                // all of its edges anyway
+                                continue;
+                            }
+#ifdef debug_constrictions
+                            cerr << "checking divisibility from " << *left_it << " to " << i << endl;
+#endif
+                            
+                            auto& aln = repair_alns[left_idx][right_idx];
+                            
+                            step_handle_t fwd_step = ref_chunks[*left_it].second;
+                            step_handle_t rev_step = ref_chunks[i].first;
+                            bool shared_fwd_node = true;
+                            if (aln.path().mapping_size() != 0 && aln.path().mapping(0).position().offset() == 0) {
+                                // the start of the alignment is on a new node
+                                shared_fwd_node = false;
+                                fwd_step = path_rev ? graph->get_previous_step(fwd_step) : graph->get_next_step(fwd_step);
+                            }
+                            bool shared_rev_node = true;
+                            if (aln.path().mapping_size() != 0 && path_chunks[i].second.mapping(0).position().offset() == 0) {
+                                // the end of the alignment is on a new node
+                                shared_rev_node = false;
+                                rev_step = path_rev ? graph->get_next_step(rev_step) : graph->get_previous_step(rev_step);
+                            }
+                            
+                            // walk out the prefix of the alignment along the reference
+                            int64_t fwd_to_length = 0;
+                            int64_t fwd_idx = 0;
+                            while (fwd_idx < aln.path().mapping_size()) {
+                                handle_t handle = graph->get_handle_of_step(fwd_step);
+                                const auto& pos = aln.path().mapping(fwd_idx).position();
+                                if (graph->get_id(handle) != pos.node_id() ||
+                                    graph->get_is_reverse(handle) != (path_rev != pos.is_reverse())) {
+                                    break;
+                                }
+                                fwd_to_length += mapping_to_length(aln.path().mapping(fwd_idx));
+                                fwd_step = path_rev ? graph->get_previous_step(fwd_step) : graph->get_next_step(fwd_step);
+                                ++fwd_idx;
+                            }
+                            
+                            // walk the suffix of the alignment along the reference
+                            int64_t rev_to_length = 0;
+                            int64_t rev_idx = aln.path().mapping_size() - 1;
+                            while (rev_idx >= fwd_idx) {
+                                handle_t handle = graph->get_handle_of_step(rev_step);
+                                const auto& pos = aln.path().mapping(rev_idx).position();
+                                if (graph->get_id(handle) != pos.node_id() ||
+                                    graph->get_is_reverse(handle) != (path_rev != pos.is_reverse())) {
+                                    break;
+                                }
+                                rev_to_length += mapping_to_length(aln.path().mapping(rev_idx));
+                                rev_step = path_rev ? graph->get_next_step(rev_step) : graph->get_previous_step(rev_step);
+                                --rev_idx;
+                            }
+                            
+                            if (fwd_idx <= rev_idx) {
+                                // you can't walk out the whole alignment along the path
+#ifdef debug_constrictions
+                                cerr << "could not walk out alignment along the path" << endl;
+#endif
+                                incompatible = true;
+                                break;
+                            }
+                            
+                            if (fwd_idx != 0 || !shared_fwd_node) {
+                                // nudge back the forward step to the last match
+                                fwd_step = path_rev ? graph->get_next_step(fwd_step) : graph->get_previous_step(fwd_step);
+                            }
+                            if (rev_idx != aln.path().mapping_size() - 1 || !shared_rev_node) {
+                                // nudge back the reverse step to the last match
+                                rev_step = path_rev ? graph->get_previous_step(rev_step) : graph->get_next_step(rev_step);
+                            }
+#ifdef debug_constrictions
+                            cerr << "divided at mapping index " << fwd_idx << ", steps at " << graph->get_position_of_step(fwd_step) << ", " << graph->get_position_of_step(rev_step) << endl;
+#endif
+                            
+                            // record the break in the alignment
+                            divisions[left_idx].emplace_back(fwd_idx, fwd_step, rev_step,
+                                                             path_chunks[*left_it].first.second + fwd_to_length,
+                                                             path_chunks[i].first.first - rev_to_length);
+                            
+                            ++right_idx;
+                        }
+                        ++left_idx;
+                    }
+                    
+                    if (incompatible) {
+                        continue;
+                    }
+                    
+                    // now check to make sure that all prefixes are identical
+                    
+                    for (size_t i = 0; i < divisions.size() && !incompatible; ++i) {
+                        for (size_t j = 1, n = get<0>(divisions[i].front()); j < divisions.front().size() && !incompatible; ++j) {
+                            if (get<3>(divisions[i][j]) != get<3>(divisions[i].front())) {
+                                // they don't end at the same read position
+#ifdef debug_constrictions
+                                cerr << "after alignment, not all left adjacencies are at same read position" << endl;
+#endif
+                                incompatible = true;
+                                break;
+                            }
+                            if (get<0>(divisions[i][j]) != n) {
+                                // they don't have the same number of mappings
+                                incompatible = true;
+                                break;
+                            }
+                            // check for equivalence of the mappings
+                            for (size_t k = 0; k < n && !incompatible; ++k) {
+                                if (!mappings_equivalent(repair_alns[i][j].path().mapping(k),
+                                                         repair_alns[i][0].path().mapping(k))) {
+                                    incompatible = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (incompatible) {
+#ifdef debug_constrictions
+                        cerr << "not all alignment prefixes match" << endl;
+#endif
+                        continue;
+                    }
+                    
+                    // and also check to make sure that all suffixes are identical
+                    
+                    for (size_t j = 0; j < divisions[0].size() && !incompatible; ++j) {
+                        int64_t n = repair_alns[0][j].path().mapping_size() - get<0>(divisions[0][j]);
+                        for (size_t i = 1; i < divisions.size() && !incompatible; ++i) {
+                            
+                            if (get<4>(divisions[i][j]) != get<4>(divisions[0][j])) {
+                                // they don't end at the same read position
+#ifdef debug_constrictions
+                                cerr << "after alignment, not all right adjacencies are at same read position" << endl;
+#endif
+                                incompatible = true;
+                                break;
+                            }
+                            if (repair_alns[i][j].path().mapping_size() - get<0>(divisions[i][j]) != n) {
+                                // they don't have the same number of mappings
+                                incompatible = true;
+                                break;
+                            }
+                            for (size_t k = 0; k < n && !incompatible; ++k) {
+                                if (!mappings_equivalent(repair_alns[i][j].path().mapping(get<0>(divisions[i][j]) + k),
+                                                         repair_alns[0][j].path().mapping(get<0>(divisions[0][j]) + k))) {
+                                    // the mappings aren't equivalent
+                                    // TODO: a better condition would be equal scoring, same length
+                                    incompatible = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (incompatible) {
+#ifdef debug_constrictions
+                        cerr << "not all alignment suffixes match" << endl;
+#endif
+                        continue;
+                    }
+
+#ifdef debug_constrictions
+                    cerr << "splice adjacency is repairable, filling in paths" << endl;
+#endif
+                    
+                    // we've finally guaranteed that we can repair a missed splice edge alignment
+                    // and can now update the chunks accordingly
+                    
+                    size_t left = 0, right = 0;
+                    for (auto i : left_side) {
+                        if (left_connected.count(i)) {
+#ifdef debug_constrictions
+                            cerr << "skipping left side " << i << ", which has a connection" << endl;
+#endif
+                            continue;
+                        }
+                        size_t n = get<0>(divisions[left][0]);
+                        if (n == 0) {
+#ifdef debug_constrictions
+                            cerr << "left side " << i << " does not need to be extended" << endl;
+#endif
+                            ++left;
+                            continue;
+                        }
+#ifdef debug_constrictions
+                        cerr << "extend left sequence " << i << " from " << string(path_chunks[i].first.first, path_chunks[i].first.second);
+#endif
+                        
+                        path_chunks[i].first.second = get<3>(divisions[left][0]);
+                        
+#ifdef debug_constrictions
+                        cerr << " to " << string(path_chunks[i].first.first, path_chunks[i].first.second) << endl;
+                        cerr << "move left step from position " << graph->get_position_of_step(ref_chunks[i].second);
+#endif
+                        
+                        ref_chunks[i].second = get<1>(divisions[left][0]);
+#ifdef debug_constrictions
+                        cerr << " to " << graph->get_position_of_step(ref_chunks[i].second) << endl;
+#endif
+                        
+                        // check if we need to merge the first and last mappings
+                        size_t k = 0;
+                        auto final_mapping = path_chunks[i].second.mutable_mapping(path_chunks[i].second.mapping_size() - 1);
+                        const auto& final_position = final_mapping->position();
+                        const auto& aln = repair_alns[left][0];
+                        const auto& first_mapping = aln.path().mapping(0);
+                        const auto& first_position = first_mapping.position();
+                        if (final_position.node_id() == first_position.node_id() &&
+                            final_position.is_reverse() == first_position.is_reverse() &&
+                            final_position.offset() + mapping_from_length(*final_mapping) == first_position.offset()) {
+                            
+                            for (const auto& edit : first_mapping.edit()) {
+                                *final_mapping->add_edit() = edit;
+                            }
+                            ++k;
+                        }
+                        // copy over the rest of the mappings
+                        for (; k < n; ++k) {
+                            auto mapping = path_chunks[i].second.add_mapping();
+                            *mapping = aln.path().mapping(k);
+                            mapping->set_rank(path_chunks[i].second.mapping_size());
+                        }
+                        
+#ifdef debug_constrictions
+                        cerr << "extended left path " << i << " to " << pb2json(path_chunks[i].second) << endl;
+#endif
+                        ++left;
+                    }
+                    for (auto i : right_side) {
+                        if (right_connected.count(i)) {
+#ifdef debug_constrictions
+                            cerr << "skipping right side " << i << ", which has a connection" << endl;
+#endif
+                            continue;
+                        }
+                        size_t n = get<0>(divisions[0][right]);
+                        const auto& aln = repair_alns[0][right];
+                        if (n == aln.path().mapping_size()) {
+#ifdef debug_constrictions
+                            cerr << "right side " << i << " does not need to be extended" << endl;
+#endif
+                            ++right;
+                            continue;
+                        }
+#ifdef debug_constrictions
+                        cerr << "extend right sequence " << i << " from " << string(path_chunks[i].first.first, path_chunks[i].first.second);
+#endif
+                        
+                        path_chunks[i].first.first = get<4>(divisions[0][right]);
+                        
+#ifdef debug_constrictions
+                        cerr << " to " << string(path_chunks[i].first.first, path_chunks[i].first.second) << endl;
+                        cerr << "move right step from position " << graph->get_position_of_step(ref_chunks[i].first);
+#endif
+                        ref_chunks[i].first = get<2>(divisions[0][right]);
+#ifdef debug_constrictions
+                        cerr << " to " << graph->get_position_of_step(ref_chunks[i].first) << endl;
+#endif
+                        
+                        // copy the repair alignment
+                        Path concat_path;
+                        for (size_t k = n; k < aln.path().mapping_size(); ++k) {
+                            auto mapping = concat_path.add_mapping();
+                            *mapping = aln.path().mapping(k);
+                            mapping->set_rank(concat_path.mapping_size());
+                        }
+                        
+                        // check if we need to merge the first and last mappings
+                        auto final_mapping = concat_path.mutable_mapping(concat_path.mapping_size() - 1);
+                        const auto& final_position = final_mapping->position();
+                        const auto& first_mapping = path_chunks[i].second.mapping(0);
+                        const auto& first_position = first_mapping.position();
+                        size_t k = 0;
+                        if (final_position.node_id() == first_position.node_id() &&
+                            final_position.is_reverse() == first_position.is_reverse() &&
+                            final_position.offset() + mapping_from_length(*final_mapping) == first_position.offset()) {
+                            for (const auto& edit : first_mapping.edit()) {
+                                *final_mapping->add_edit() = edit;
+                            }
+                            ++k;
+                        }
+                        
+                        // copy over the rest of the original path chunk
+                        for (; k < path_chunks[i].second.mapping_size(); ++k) {
+                            auto mapping = concat_path.add_mapping();
+                            *mapping = path_chunks[i].second.mapping(k);
+                            mapping->set_rank(concat_path.mapping_size());
+                        }
+                        
+                        // replace the original path
+                        path_chunks[i].second = concat_path;
+                        
+#ifdef debug_constrictions
+                        cerr << "extended right path " << i << " to " << pb2json(path_chunks[i].second) << endl;
+#endif
+                        ++right;
+                    }
+                }
+                
+                // we found a pure deletion constriction biclique
 #ifdef debug_constrictions
                 cerr << "recording a constriction biclique" << endl;
 #endif
@@ -924,208 +1756,8 @@ using namespace std;
                 auto& biclique = return_val.back();
                 sort(biclique.first.begin(), biclique.first.end());
                 sort(biclique.second.begin(), biclique.second.end());
+
             }
-        };
-        
-        bool found_deletion_bicliques = false;
-        
-        for (const auto& end_record : chunks_by_end) {
-            
-            if (!chunks_by_begin.count(end_record.first)) {
-                // there are no chunks starting at the same read position
-                continue;
-            }
-            
-            
-#ifdef debug_constrictions
-            cerr << "looking for a constriction at position " <<  end_record.first.second << " among lefts:" << endl;
-            for (auto i : end_record.second) {
-                cerr << "\t" << i << endl;
-            }
-            cerr << "and rights:" << endl;
-            for (auto i : chunks_by_begin[end_record.first]) {
-                cerr << "\t" << i << endl;
-            }
-#endif
-            
-            // collect all of the path chunks that have no aligned read sequence
-            vector<size_t> deletion_chunks;
-            for (auto i : end_record.second) {
-                if (path_chunks[i].first.first == path_chunks[i].first.second) {
-                    deletion_chunks.push_back(i);
-                }
-            }
-            
-            // deletion chunks can go on either end, so we try all combinations
-            // TODO: magic number to prevent explosion
-            for (size_t iter = 0, end = (1 << min<size_t>(deletion_chunks.size(), 16)); iter < end; ++iter) {
-                
-                
-#ifdef debug_constrictions
-                cerr << "deletion combination iteration " << iter << " out of " << end << endl;
-#endif
-                
-                // we will fill out the left and right side of this potential splice biclique
-                unordered_set<size_t> left_side, right_side;
-                
-                // fill left side, handling pure deletions according to the iteration
-                size_t deletion_chunk_idx = 0;
-                for (auto i : end_record.second) {
-                    if (deletion_chunk_idx < deletion_chunks.size() && i == deletion_chunks[deletion_chunk_idx]) {
-                        if (iter & (1 << deletion_chunk_idx)) {
-                            left_side.insert(i);
-                        }
-                        else {
-                            right_side.insert(i);
-                        }
-                    }
-                    else {
-                        left_side.insert(i);
-                    }
-                }
-                // fill right side
-                for (auto i : chunks_by_begin[end_record.first]) {
-                    if (!left_side.count(i)) {
-                        right_side.insert(i);
-                    }
-                }
-                
-                if (!deletion_chunks.empty()) {
-                    // TODO: this solution will catch any bicliques that have a chance to be a constriction
-                    // (which requires that there is only one adjacent to either side) as long as there is only
-                    // one total to either side. in theory, it is possible to have further constrictions between
-                    // layers of deletion chunks
-                    
-                    // collect the left neighbors of left deletions and the right neighbors
-                    // of right deletions, as well as which of these are also in the left
-                    // or right partition
-                    unordered_set<size_t> left_neighbors, right_neighbors, lefter_side, righter_side;
-                    for (auto i : deletion_chunks) {
-                        if (left_side.count(i)) {
-                            for (auto j : rev_adj[i]) {
-                                left_neighbors.insert(j);
-                                if (left_side.count(j)) {
-                                    lefter_side.insert(j);
-                                }
-                            }
-                        }
-                        else {
-                            for (auto j : adj[i]) {
-                                right_neighbors.insert(j);
-                                if (right_side.count(j)) {
-                                    righter_side.insert(j);
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (!lefter_side.empty()) {
-                        // there's a group of nodes to the left of the left-side deletions that
-                        // are still within the partition
-                        
-                        // check if these nodes connect *ONLY* through left side deletions
-                        bool all_fully_to_left = true;
-                        for (auto i : lefter_side) {
-                            bool fully_to_left = true;
-                            for (auto j : adj[i]) {
-                                if (!left_side.count(j) || path_chunks[j].first.first != path_chunks[j].first.second) {
-                                    fully_to_left = false;
-                                    break;
-                                }
-                            }
-                            if (fully_to_left) {
-                                // this node is cut off from the rest of the graph by the left-side
-                                // deletions, we shouldn't look for it in the main biclique
-                                left_side.erase(i);
-                            }
-                            all_fully_to_left = all_fully_to_left && fully_to_left;
-                        }
-                        
-                        if (all_fully_to_left && lefter_side.size() == left_neighbors.size()) {
-                            // it looks like the left neighbors could even be their own biclique
-                            
-                            found_deletion_bicliques = true;
-                            
-#ifdef debug_constrictions
-                            cerr << "left-er of left deletions" << endl;
-                            for (auto i : lefter_side) {
-                                cerr << "\t" << i << endl;
-                            }
-                            cerr << "iter lefts:" << endl;
-                            for (auto i : left_side) {
-                                cerr << "\t" << i << endl;
-                            }
-#endif
-                            // and test the potential biclique to the left
-                            test_candidate_biclique(lefter_side, left_side, end_record.first.first);
-                        }
-                    }
-                    
-                    // TODO: repetitive (but not structured well to re-use code...)
-                    if (!righter_side.empty()) {
-                        // there's a group of nodes to the right of the right-side deletions that
-                        // are still within the partition
-                        
-                        // check if these nodes connect *ONLY* through right side deletions
-                        bool all_fully_to_right = true;
-                        for (auto i : righter_side) {
-                            bool fully_to_right = true;
-                            for (auto j : rev_adj[i]) {
-                                if (!right_side.count(j) || path_chunks[j].first.first != path_chunks[j].first.second) {
-                                    fully_to_right = false;
-                                    break;
-                                }
-                            }
-                            if (fully_to_right) {
-                                // this node is cut off from the rest of the graph by the right-side
-                                // deletions, we shouldn't look for it in the main biclique
-                                right_side.erase(i);
-                            }
-                            all_fully_to_right = all_fully_to_right && fully_to_right;
-                        }
-                        
-                        if (all_fully_to_right && righter_side.size() == right_neighbors.size()) {
-                            // it looks like the right neighbors could even be their own biclique
-                            
-                            found_deletion_bicliques = true;
-                            
-#ifdef debug_constrictions
-                            cerr << "iter rights:" << endl;
-                            for (auto i : right_side) {
-                                cerr << "\t" << i << endl;
-                            }
-                            cerr << "right-er of right deletions" << endl;
-                            for (auto i : righter_side) {
-                                cerr << "\t" << i << endl;
-                            }
-#endif
-                            // and test the potential biclique to the right
-                            test_candidate_biclique(right_side, righter_side, end_record.first.first);
-                        }
-                    }
-                }
-                
-#ifdef debug_constrictions
-                cerr << "iter left:" << endl;
-                for (auto i : left_side) {
-                    cerr << "\t" << i << endl;
-                }
-                cerr << "iter rights:" << endl;
-                for (auto i : right_side) {
-                    cerr << "\t" << i << endl;
-                }
-#endif
-                test_candidate_biclique(left_side, right_side, end_record.first.first);
-            }
-        }
-        
-        if (found_deletion_bicliques) {
-            // it's possible with all the deletion iterations to re-discover bicliques
-            // multiple times. if we did, get rid of them
-            
-            sort(return_val.begin(), return_val.end());
-            auto new_end = unique(return_val.begin(), return_val.end());
-            return_val.resize(new_end - return_val.begin());
         }
         
         return return_val;
@@ -1328,6 +1960,100 @@ using namespace std;
         }
     }
 
+    void Surjector::downsample_chunks(const string& src_sequence,
+                                      vector<path_chunk_t>& path_chunks,
+                                      vector<pair<step_handle_t, step_handle_t>>& ref_chunks,
+                                      vector<tuple<size_t, size_t, int32_t>>& connections) const {
+        int64_t total_cov = 0;
+        for (const auto& chunk : path_chunks) {
+            total_cov += chunk.first.second - chunk.first.first;
+        }
+        
+        if (total_cov < min_fold_coverage_for_downsample * src_sequence.size()) {
+#ifdef debug_spliced_surject
+            cerr << "average chunk coverage of " << double(total_cov) / src_sequence.size() << " is lower than downsample limit " << min_fold_coverage_for_downsample << endl;
+#endif
+            return;
+        }
+        
+#ifdef debug_spliced_surject
+        cerr << "attempt to downsample chunks to reduce coverage to " << downsample_coverage << endl;
+#endif
+        
+        // there might be a cleverer sweep line algorithm for this, but we'd still need
+        // something like a dynamic range max query for the removal stage...
+        vector<int> coverage(src_sequence.size(), 0);
+        for (auto& chunk : path_chunks) {
+            for (int64_t i = chunk.first.first - src_sequence.begin(), n = chunk.first.second - src_sequence.begin(); i < n; ++i) {
+                ++coverage[i];
+            }
+        }
+        unordered_set<size_t> connected;
+        for (const auto& connection : connections) {
+            connected.insert(get<0>(connection));
+            connected.insert(get<1>(connection));
+        }
+        
+        // sort so that we remove short anchors first
+        auto index = range_vector(path_chunks.size());
+        stable_sort(index.begin(), index.end(),
+                    [&](size_t i, size_t j) {
+            const auto& range1 = path_chunks[i].first;
+            const auto& range2 = path_chunks[j].first;
+            return range1.second - range1.first < range2.second - range2.first;
+        });
+        
+        unordered_set<size_t> to_remove;
+        for (auto i : index) {
+            auto& range = path_chunks[i].first;
+            if (connected.count(i) || range.second == range.first) {
+                // we want to preserve connections, and pure deletions are sometimes important
+                // for anchoring
+                continue;
+            }
+            int min_cov = std::numeric_limits<int>::max();
+            for (int64_t j = range.first - src_sequence.begin(), n = range.second - src_sequence.begin(); j < n; ++j) {
+                min_cov = min(min_cov, coverage[j]);
+            }
+            if (min_cov > downsample_coverage) {
+                // we can remove this one without blowing our target coverage
+                to_remove.insert(i);
+                for (int64_t j = range.first - src_sequence.begin(), n = range.second - src_sequence.begin(); j < n; ++j) {
+                    --coverage[j];
+                }
+            }
+        }
+        if (!to_remove.empty()) {
+#ifdef debug_spliced_surject
+            cerr << "removing " << to_remove.size() << " chunks" << endl;
+#endif
+            
+            vector<size_t> removed_so_far(path_chunks.size() + 1, 0);
+            for (size_t i = 0; i < path_chunks.size(); ++i) {
+                if (to_remove.count(i)) {
+#ifdef debug_spliced_surject
+                    cerr << "removing chunk " << i << ": " << string(path_chunks[i].first.first, path_chunks[i].first.second) << endl;
+#endif
+                    removed_so_far[i + 1] = removed_so_far[i] + 1;
+                }
+                else {
+                    if (removed_so_far[i]) {
+                        path_chunks[i - removed_so_far[i]] = move(path_chunks[i]);
+                        ref_chunks[i - removed_so_far[i]] = move(ref_chunks[i]);
+                    }
+                    removed_so_far[i + 1] = removed_so_far[i];
+                }
+            }
+            path_chunks.resize(path_chunks.size() - to_remove.size());
+            ref_chunks.resize(ref_chunks.size() - to_remove.size());
+            
+            for (auto& connection : connections) {
+                get<0>(connection) -= removed_so_far[get<0>(connection)];
+                get<1>(connection) -= removed_so_far[get<1>(connection)];
+            }
+        }
+    }
+
     multipath_alignment_t Surjector::spliced_surject(const PathPositionHandleGraph* path_position_graph,
                                                      const string& src_sequence, const string& src_quality,
                                                      const int32_t src_mapping_quality,
@@ -1417,10 +2143,53 @@ using namespace std;
         
 #ifdef debug_spliced_surject
         cerr << "removed " << insertions_removed.back() << " chunks" << endl;
+#endif
+        
+        if (path_chunks.size() == 1
+            && path_chunks.front().first.first == src_sequence.begin()
+            && path_chunks.front().first.second == src_sequence.end()) {
+            
+            // this is an unambiguous surjection, we can skip the hole process
+            
+            // ugly: we can save a little work by skipping these, since they get copied
+            // over in the calling environment anyway
+            //surjected.set_sequence(src_sequence);
+            //surjected.set_quality(src_quality);
+            surjected.set_mapping_quality(src_mapping_quality);
+            
+            auto surj_subpath = surjected.add_subpath();
+            from_proto_path(path_chunks.front().second, *surj_subpath->mutable_path());
+            
+            Alignment aln;
+            aln.set_sequence(src_sequence);
+            aln.set_quality(src_quality);
+            *aln.mutable_path() = move(path_chunks.front().second);
+            surj_subpath->set_score(get_aligner(!src_quality.empty())->score_contiguous_alignment(aln));
+            
+            surjected.add_start(0);
+            
+            path_range_out = ref_chunks.front();
+            
+#ifdef debug_spliced_surject
+            cerr << "surjection is unambiguous, skipping algorithm:" << endl;
+            cerr << debug_string(surjected) << endl;
+#endif
+            
+            return surjected;
+        }
+        
+#ifdef debug_spliced_surject
+        cerr << "checking for need to downsample chunks" << endl;
+#endif
+        
+        downsample_chunks(src_sequence, path_chunks, ref_chunks, connections);
+        
+#ifdef debug_spliced_surject
         cerr << "checking for need to cut anchors" << endl;
 #endif
         
         cut_anchors(rev_strand, path_chunks, ref_chunks, connections);
+        
         
 #ifdef debug_spliced_surject
         cerr << "making colinearity graph for " << path_chunks.size() << " path chunks" << endl;
@@ -1581,7 +2350,8 @@ using namespace std;
                 
                 // find bicliques that constrict the colinearity graph
                 auto constrictions = find_constriction_bicliques(colinear_adj_red, src_sequence,
-                                                                 path_chunks, connections);
+                                                                 src_quality, path_chunks,
+                                                                 ref_chunks, connections);
                 
 #ifdef debug_spliced_surject
                 cerr << "found " << constrictions.size() << " constriction bicliques:" << endl;
@@ -1642,6 +2412,11 @@ using namespace std;
                             splice_edges[get<0>(edge)].emplace_back(get<1>(edge), get<2>(edge), false);
                         }
                     }
+#ifdef debug_spliced_surject
+                    else {
+                        cerr << "actually did find any splice edges, not moving edges to the splice graph" <<  endl;
+                    }
+#endif
                 }
                 
                 
@@ -1735,12 +2510,19 @@ using namespace std;
         cerr << "surjecting " << comp_groups.size() << " constriction sections" << endl;
 #endif
         
-        vector<Alignment> sections;
         vector<pair<step_handle_t, step_handle_t>> section_path_ranges;
+        vector<Alignment> sections;
+        
+        // adjacent values are the range of copies of the section
+        vector<size_t> copy_range(comp_groups.size() + 1, 0);
+        // the index of the component group for each copy
+        vector<size_t> original_copy;
+        original_copy.reserve(comp_groups.size());
         
         for (size_t i = 0; i < comp_groups.size(); ++i) {
             pair<string::const_iterator, string::const_iterator> read_range;
             vector<path_chunk_t> section_path_chunks;
+            vector<pair<step_handle_t, step_handle_t>> section_ref_chunks;
                                     
             vector<size_t>& group = comp_groups[i];
                         
@@ -1748,6 +2530,7 @@ using namespace std;
             for (size_t j = 0; j < group.size(); ++j) {
                 
                 section_path_chunks.push_back(path_chunks[group[j]]);
+                section_ref_chunks.push_back(ref_chunks[group[j]]);
                 
                 if (j == 0 || read_range.first > path_chunks[group[j]].first.first) {
                     read_range.first = path_chunks[group[j]].first.first;
@@ -1772,14 +2555,14 @@ using namespace std;
                 *section_source.mutable_quality() = string(src_quality.begin() + (read_range.first - src_sequence.begin()),
                                                            src_quality.begin() + (read_range.second - src_sequence.begin()));
             }
-#ifdef debug_always_warn_on_too_long
+#if defined(debug_always_warn_on_too_long) || defined(debug_validate_anchored_multipath_alignment)
             // give it the full sequence as a name so we can see it later
             section_source.set_name(src_sequence);
 #endif
             
             // update the path chunk ranges to point into the dummy section read
-            for (size_t i = 0; i < section_path_chunks.size(); ++i) {
-                auto& chunk_range = section_path_chunks[i].first;
+            for (size_t j = 0; j < section_path_chunks.size(); ++j) {
+                auto& chunk_range = section_path_chunks[j].first;
                 chunk_range.first = section_source.sequence().begin() + (chunk_range.first - read_range.first);
                 chunk_range.second = section_source.sequence().begin() + (chunk_range.second - read_range.first);
             }
@@ -1789,26 +2572,51 @@ using namespace std;
             cerr << "consists of " << section_path_chunks.size() << " path chunks" << endl;
 #endif
             
-            // perform a full length surjection within the section section
+            // perform a full length surjection within the section
             section_path_ranges.emplace_back();
-            sections.push_back(realigning_surject(graph, section_source, path_handle, rev_strand, section_path_chunks,
-                                                  section_path_ranges.back(), true, true, true));
+            vector<pair<step_handle_t, step_handle_t>> all_path_ranges;
+            sections.emplace_back(realigning_surject(graph,
+                                                     section_source,
+                                                     path_handle,
+                                                     rev_strand,
+                                                     section_path_chunks,
+                                                     section_ref_chunks,
+                                                     section_path_ranges.back(),
+                                                     true,                          // allow negative scores (global)
+                                                     true,                          // preserve N alignments
+                                                     !comp_group_edges[i].empty(),  // sinks are anchors
+                                                     !comp_is_source[i],            // sources are anchors
+                                                     &all_path_ranges));
+            original_copy.push_back(i);
+            // if there are multiple copies of the section on the path, add those as well
+            for (size_t j = 1; j < all_path_ranges.size(); ++j) {
+                sections.emplace_back(sections.back());
+                section_path_ranges.emplace_back(all_path_ranges[j]);
+                original_copy.push_back(i);
+            }
+            copy_range[i + 1] = copy_range[i] + max<size_t>(all_path_ranges.size(), 1);
+            
+#ifdef debug_spliced_surject
+            cerr << "found " << all_path_ranges.size() << " path locations, recording in section copy interval " << copy_range[i] << ":" << copy_range[i + 1] << endl;
+#endif
             
             // remove any extraneous full length bonuses
             // TODO: technically, this can give a non-optimal alignment because it's post hoc to the dynamic programming
             const auto& aligner = *get_aligner(!src_quality.empty());
-            if (sections.back().path().mapping_size() != 0) {
-                if (read_range.first != src_sequence.begin()) {
-                    if (sections.back().path().mapping(0).edit(0).from_length() > 0) {
-                        sections.back().set_score(sections.back().score()
+            for (size_t j = copy_range[i], n = copy_range[i + 1]; j < n; ++j) {
+                if (sections[j].path().mapping_size() != 0) {
+                    if (read_range.first != src_sequence.begin()) {
+                        if (sections[j].path().mapping(0).edit(0).from_length() > 0) {
+                            sections[j].set_score(sections[j].score()
                                                   - aligner.score_full_length_bonus(true, section_source));
+                        }
                     }
-                }
-                if (read_range.second != src_sequence.end()) {
-                    const Mapping& m = sections.back().path().mapping(0);
-                    if (m.edit(m.edit_size() - 1).from_length() > 0) {
-                        sections.back().set_score(sections.back().score()
+                    if (read_range.second != src_sequence.end()) {
+                        const Mapping& m = sections[j].path().mapping(0);
+                        if (m.edit(m.edit_size() - 1).from_length() > 0) {
+                            sections[j].set_score(sections[j].score()
                                                   - aligner.score_full_length_bonus(false, section_source));
+                        }
                     }
                 }
             }
@@ -1819,35 +2627,82 @@ using namespace std;
                 cerr << "null alignment has no path range" << endl;
             }
             else {
-                cerr << "path range: " << graph->get_id(graph->get_handle_of_step(section_path_ranges.back().first)) << " " << graph->get_is_reverse(graph->get_handle_of_step(section_path_ranges.back().first)) << " " << graph->get_position_of_step(section_path_ranges.back().first) << " : " << graph->get_id(graph->get_handle_of_step(section_path_ranges.back().second)) << " " << graph->get_is_reverse(graph->get_handle_of_step(section_path_ranges.back().second)) << " " << graph->get_position_of_step(section_path_ranges.back().second) << endl;
+                for (auto path_range : all_path_ranges) {
+                    cerr << "path range: " << graph->get_id(graph->get_handle_of_step(path_range.first)) << " " << graph->get_is_reverse(graph->get_handle_of_step(path_range.first)) << " " << graph->get_position_of_step(path_range.first) << " : " << graph->get_id(graph->get_handle_of_step(path_range.second)) << " " << graph->get_is_reverse(graph->get_handle_of_step(path_range.second)) << " " << graph->get_position_of_step(path_range.second) << endl;
+                }
             }
 #endif
         }
         
         // distance between the path ranges of two sections
         // assumes direct adjacency over an edge, but this may not be true in the case of a connection
-        // TODO: repetitive with path_dist
-        auto section_path_dist = [&](size_t i, size_t j) {
+        // TODO: repetitive with path_distance
+        auto section_path_dist = [&](size_t i, size_t j) -> int64_t {
+            pos_t pos1 = final_position(sections[i].path());
+            pos_t pos2 = initial_position(sections[j].path());
+            step_handle_t step1 = section_path_ranges[i].second;
+            step_handle_t step2 = section_path_ranges[j].first;
             if (rev_strand) {
-                return (graph->get_position_of_step(section_path_ranges[i].second)
-                        - graph->get_position_of_step(section_path_ranges[j].first)
-                        - graph->get_length(graph->get_handle_of_step(section_path_ranges[j].first)));
-                
+                return (graph->get_position_of_step(step1)
+                        + graph->get_length(graph->get_handle_of_step(step1))
+                        - graph->get_position_of_step(step2)
+                        - graph->get_length(graph->get_handle_of_step(step2))
+                        + offset(pos2)
+                        - offset(pos1));
             }
             else {
-                return (graph->get_position_of_step(section_path_ranges[j].first)
-                        - graph->get_position_of_step(section_path_ranges[i].second)
-                        - graph->get_length(graph->get_handle_of_step(section_path_ranges[i].second)));
+                return (graph->get_position_of_step(step2)
+                        - graph->get_position_of_step(step1)
+                        + offset(pos2)
+                        - offset(pos1));
             }
         };
         
 #ifdef debug_spliced_surject
-        cerr << "computing optimal combination of sections" << endl;
+        cerr << "computing optimal combination of sections over section graph" << endl;
+        
+        cerr << "copy range array:" << endl;
+        for (auto i : copy_range) {
+            cerr << "\t" << i << endl;
+        }
+        cerr << "original copy array:" << endl;
+        for (auto i : original_copy) {
+            cerr << "\t" << i << endl;
+        }
+        cerr << "graph structure:" << endl;
+        for (size_t i = 0; i < sections.size(); ++i) {
+            cerr << i << " (original " << original_copy[i];
+            if (sections[i].path().mapping_size() != 0) {
+                cerr << " at " << graph->get_position_of_step(section_path_ranges[i].first) << " - " << graph->get_position_of_step(section_path_ranges[i].second);
+            }
+            cerr << "):" << endl;
+            if (sections[i].path().mapping_size() != 0) {
+                continue;
+            }
+            
+            for (auto& edge : comp_group_edges[original_copy[i]]) {
+                
+                for (size_t j = copy_range[get<0>(edge)], n = copy_range[get<0>(edge) + 1]; j < n; ++j) {
+                    if (sections[j].path().mapping_size() == 0) {
+                        cerr << "\tX " << j << " (null section)" << endl;
+                        continue;
+                    }
+                    auto d = section_path_dist(i, j);
+                    if (d >= 0) {
+                        cerr << "\t-> " << j << ", dist " << d << ", score " << get<1>(edge) << ", connection? " << get<2>(edge) << endl;
+                    }
+                    else {
+                        cerr << "\tX " << j << " (noncolinear, dist " << d << ")" << endl;
+                    }
+                }
+            }
+        }
 #endif
         
         // now we find use dynamic programming to find the best alignment across chunks
         
-        vector<int64_t> backpointer(sections.size(), -1);
+        // pairs of (section index, edge index)
+        vector<pair<int64_t, int64_t>> backpointer(sections.size(), pair<int64_t, int64_t>(-1, -1));
         vector<int32_t> score_dp(sections.size(), numeric_limits<int32_t>::min());
         
         // initialize the scores at sources or at any section if we're doing subpath
@@ -1861,69 +2716,110 @@ using namespace std;
         // do the dynamic programming
         for (size_t i = 0; i < comp_groups.size(); ++i) {
             
-            for (auto& edge : comp_group_edges[i]) {
+            auto& edges = comp_group_edges[i];
+            
+            for (size_t l = 0; l < edges.size(); ++l) {
                 
-                int32_t extended_score = score_dp[i] + get<1>(edge) + sections[get<0>(edge)].score();
+                auto& edge = edges[l];
                 
+                for (size_t j = copy_range[i], m = copy_range[i + 1]; j < m; ++j) {
+                    
+                    if (sections[j].path().mapping_size() == 0) {
+                        // this section failed to project
+                        continue;
+                    }
+                    
+                    for (size_t k = copy_range[get<0>(edge)], n = copy_range[get<0>(edge) + 1]; k < n; ++k) {
+                        
+                        if (sections[k].path().mapping_size() == 0) {
+                            // this section failed to project
+                            continue;
+                        }
+                        
+                        int32_t extended_score = score_dp[j] + get<1>(edge) + sections[k].score();
+                        
+                        int64_t dist = section_path_dist(j, k);
 #ifdef debug_spliced_surject
-                cerr << "extending from component " << i << " (DP score " << score_dp[i] << ") with score of " << extended_score << " to " << get<0>(edge) << " (DP score " << score_dp[get<0>(edge)] << ") dist " << section_path_dist(i, get<0>(edge)) << endl;
+                        cerr << "extending from component " << i << " section copy index " << j << " (DP score " << score_dp[i] << ") with score of " << extended_score << " to " << get<0>(edge) << " section copy index " << k << " (DP score " << score_dp[get<0>(edge)] << ") dist " << dist << endl;
 #endif
-                
-                if (extended_score > score_dp[get<0>(edge)]) {
-                    score_dp[get<0>(edge)] = extended_score;
-                    backpointer[get<0>(edge)] = i;
-                }
-                else if (extended_score == score_dp[get<0>(edge)]
-                         && sections[i].path().mapping_size() != 0
-                         && sections[get<0>(edge)].path().mapping_size() != 0
-                         && backpointer[get<0>(edge)] >= 0
-                         && section_path_dist(i, get<0>(edge)) < section_path_dist(backpointer[get<0>(edge)], get<0>(edge))) {
-                    // break ties in favor of the closer exon
-                    backpointer[get<0>(edge)] = i;
+                        if (dist < 0) {
+#ifdef debug_spliced_surject
+                            cerr << "the sections are not colinear along the path" << endl;
+#endif
+                            continue;
+                        }
+                        
+                        if (extended_score > score_dp[k]) {
+                            score_dp[k] = extended_score;
+                            backpointer[k].first = j;
+                            backpointer[k].second = l;
+                        }
+                        else if (extended_score == score_dp[k]
+                                 && sections[j].path().mapping_size() != 0
+                                 && sections[k].path().mapping_size() != 0
+                                 && backpointer[k].first >= 0
+                                 && dist < section_path_dist(backpointer[k].first, k)) {
+                            // break ties in favor of the closer exon
+                            backpointer[k].first = j;
+                            backpointer[k].second = l;
+                        }
+                        
+                    }
                 }
             }
         }
+        
+#ifdef debug_spliced_surject
+        cerr << "backpointers after DP:" << endl;
+        for (size_t i = 0; i < backpointer.size(); ++i) {
+            cerr << i << ": " << backpointer[i].first << " " << backpointer[i].second << endl;
+        }
+#endif
         
         // find the maximum, subject to full length requirements
         vector<size_t> traceback(1, -1);
         int32_t max_score = numeric_limits<int32_t>::min();
         for (size_t i = 0; i < score_dp.size(); ++i) {
             
-            if (score_dp[i] > max_score && (!allow_negative_scores || comp_group_edges[i].empty())) {
+            if (score_dp[i] > max_score && (!allow_negative_scores || comp_group_edges[original_copy[i]].empty())) {
                 max_score = score_dp[i];
                 traceback[0] = i;
             }
             else if (score_dp[i] == max_score
-                     && backpointer[i] != -1
+                     && backpointer[i].first != -1
                      && traceback[0] != -1
-                     && backpointer[traceback[0]] != -1
-                     && (!allow_negative_scores || comp_group_edges[i].empty())
-                     && section_path_dist(backpointer[i], i) < section_path_dist(backpointer[traceback[0]], traceback[0])) {
+                     && backpointer[traceback[0]].first != -1
+                     && (!allow_negative_scores || comp_group_edges[original_copy[i]].empty())
+                     && section_path_dist(backpointer[i].first, i) < section_path_dist(backpointer[traceback[0]].first, traceback[0])) {
                 // break ties in favor exon with closer connection
                 traceback[0] = i;
             }
         }
         
-        // follow the back pointers
-        while (backpointer[traceback.back()] != -1) {
-            traceback.push_back(backpointer[traceback.back()]);
-        }
-        
-        
+        if (traceback.front() != -1) {
+            
+            // follow the back pointers
+            while (backpointer[traceback.back()].first != -1) {
+                traceback.push_back(backpointer[traceback.back()].first);
+            }
+            
 #ifdef debug_spliced_surject
-        cerr << "combining " << traceback.size() << " sections into surjected alignment" << endl;
-        for (int64_t i = traceback.size() - 1; i >= 0; --i) {
-            cerr << "\t" << traceback[i] << endl;
-        }
+            cerr << "combining " << traceback.size() << " sections into surjected alignment" << endl;
+            for (int64_t i = traceback.size() - 1; i >= 0; --i) {
+                cerr << "\t" << traceback[i] << endl;
+            }
 #endif
-        
-        if (traceback.empty()) {
-            // sentinel for unmapped
-            path_range_out.first = path_range_out.second = graph->path_end(path_handle);
-        }
-        else {
             path_range_out.first = section_path_ranges[traceback.back()].first;
             path_range_out.second = section_path_ranges[traceback.front()].second;
+        }
+        else {
+#ifdef debug_spliced_surject
+            cerr << "traceback is empty" << endl;
+#endif
+            
+            // sentinel for unmapped
+            path_range_out.first = path_range_out.second = graph->path_end(path_handle);
+            traceback.clear();
         }
         
         // make an alignment to build out the path in
@@ -1953,23 +2849,20 @@ using namespace std;
             
             if (i != traceback.size() - 1) {
                 // make an edge back to the previous section
+                
+                // get the edge between these sections that the DP used
                 size_t prev_idx = traceback[i + 1];
-                // find the edge between these sections that the DP used
-                for (auto& edge : comp_group_edges[prev_idx]) {
-                    if (get<0>(edge) == section_idx &&
-                        get<1>(edge) + score_dp[prev_idx] + sections[section_idx].score() == score_dp[section_idx]) {
-                        if (get<2>(edge)) {
-                            // this is from a connection
-                            auto connection = prev_subpath->add_connection();
-                            connection->set_next(surjected.subpath_size());
-                            connection->set_score(get<1>(edge));
-                        }
-                        else {
-                            // this is from a constriction or a preserved edge around a connection
-                            prev_subpath->add_next(surjected.subpath_size());
-                        }
-                        break;
-                    }
+                auto& edge = comp_group_edges[original_copy[prev_idx]][backpointer[section_idx].second];
+                
+                if (get<2>(edge)) {
+                    // this is from a connection
+                    auto connection = prev_subpath->add_connection();
+                    connection->set_next(surjected.subpath_size());
+                    connection->set_score(get<1>(edge));
+                }
+                else {
+                    // this is from a constriction or a preserved edge around a connection
+                    prev_subpath->add_next(surjected.subpath_size());
                 }
             }
             // TODO: merge adjacent mappings across subpaths
@@ -1996,8 +2889,10 @@ using namespace std;
 
     Alignment Surjector::realigning_surject(const PathPositionHandleGraph* path_position_graph, const Alignment& source,
                                             const path_handle_t& path_handle, bool rev_strand, const vector<path_chunk_t>& path_chunks,
+                                            const vector<pair<step_handle_t, step_handle_t>>& ref_chunks,
                                             pair<step_handle_t, step_handle_t>& path_range_out, bool allow_negative_scores,
-                                            bool preserve_N_alignments, bool preserve_tail_indel_anchors) const {
+                                            bool preserve_N_alignments, bool sinks_are_anchors, bool sources_are_anchors,
+                                            vector<pair<step_handle_t, step_handle_t>>* all_path_ranges_out) const {
         
 #ifdef debug_anchored_surject
         cerr << "using overlap chunks on path " << graph->get_path_name(path_handle) << " strand " << rev_strand << ", performing realigning surjection" << endl;
@@ -2011,8 +2906,10 @@ using namespace std;
         Alignment surjected;
         
         // find the end-inclusive interval of the ref path we need to consider
-        pair<size_t, size_t> ref_path_interval = compute_path_interval(path_position_graph, source, path_handle,
-                                                                       rev_strand, path_chunks);
+        pair<size_t, size_t> ref_path_interval = compute_path_interval(path_position_graph, source,
+                                                                       path_handle, rev_strand,
+                                                                       path_chunks, ref_chunks,
+                                                                       sources_are_anchors, sinks_are_anchors);
         if (ref_path_interval.first <= ref_path_interval.second) {
             // We actually got a nonempty range, so expand it.
             
@@ -2063,7 +2960,7 @@ using namespace std;
                                                                                              ref_path_interval.first, ref_path_interval.second);
             
             // split it into a forward and reverse strand
-            // TODO: we only should need one strand of the graph, but it might be different strands on
+            // TODO: we usually should only need one strand of the graph, but it might be different strands on
             // different nodes...
             StrandSplitGraph split_path_graph(&path_graph);
             
@@ -2094,8 +2991,16 @@ using namespace std;
             }
             
             // compute the connectivity between the path chunks
+            // TODO: i'm not sure if we actually need to preserve all indel anchors in either case, but i don't
+            // want to change too much about the anchoring logic at once while i'm switching from blanket preservation
+            // to a more targeted method
+            bool preserve_tail_indel_anchors = (sinks_are_anchors || sources_are_anchors);
             MultipathAlignmentGraph mp_aln_graph(split_path_graph, path_chunks, source, node_trans, !preserve_N_alignments,
                                                  preserve_tail_indel_anchors);
+            
+#ifdef debug_anchored_surject
+            cerr << "constructed reachability graph" << endl;
+#endif
             
             // we don't overlap this reference path at all or we filtered out all of the path chunks, so just make a sentinel
             if (mp_aln_graph.empty()) {
@@ -2106,6 +3011,12 @@ using namespace std;
             vector<size_t> topological_order;
             mp_aln_graph.topological_sort(topological_order);
             mp_aln_graph.remove_transitive_edges(topological_order);
+            
+            if (allow_negative_scores && mp_aln_graph.max_shift() > min_shift_for_prune) {
+                // we have at least one or more large implied indels, we will try to prune them away
+                // while maintaining topological invariants to save compute on low-promise alignments
+                mp_aln_graph.prune_high_shift_edges(shift_prune_diff, sources_are_anchors, sinks_are_anchors);
+            }
             
             // align the intervening segments and store the result in a multipath alignment
             multipath_alignment_t mp_aln;
@@ -2123,6 +3034,7 @@ using namespace std;
                                nullptr,                                  // distance index
                                nullptr,                                  // projector
                                allow_negative_scores);
+            
             topologically_order_subpaths(mp_aln);
             
             if (preserve_tail_indel_anchors) {
@@ -2145,7 +3057,7 @@ using namespace std;
             
 #ifdef debug_validate_anchored_multipath_alignment
             if (!validate_multipath_alignment(mp_aln, *graph)) {
-                cerr << "WARNING: multipath alignment for surjection of " << source.name() << " failed to validate" << endl;
+                cerr << "WARNING: multipath alignment for surjection of " << source.name() << " with sequence " << " failed to validate" << endl;
             }
 #endif
             // concatenate the subpaths either locally or globally, depending on whether we're
@@ -2173,8 +3085,7 @@ using namespace std;
                                            : graph->get_next_step(graph->get_step_at_position(path_handle, ref_path_interval.second));
             
             // walk the identified interval
-            for (; step != end && mappings_matched != surj_path.mapping_size();
-                 step = rev_strand ? graph->get_previous_step(step) : graph->get_next_step(step)) {
+            for (; step != end; step = rev_strand ? graph->get_previous_step(step) : graph->get_next_step(step)) {
                 const auto& pos = surj_path.mapping(mappings_matched).position();
                 handle_t handle = graph->get_handle_of_step(step);
                 if (graph->get_id(handle) == pos.node_id() &&
@@ -2186,8 +3097,26 @@ using namespace std;
                     path_range_out.second = step;
                     ++mappings_matched;
 #ifdef debug_anchored_surject
-                    cerr << "\tmatch at " << graph->get_id(handle) << " " << graph->get_is_reverse(handle) << endl;
+                    cerr << "\tmatch at node " << graph->get_id(handle) << " " << graph->get_is_reverse(handle) << " at position " << graph->get_position_of_step(step) << endl;
 #endif
+                    if (mappings_matched == surj_path.mapping_size()) {
+#ifdef debug_anchored_surject
+                        cerr << "\t\tcompleted a match" << endl;
+#endif
+                        if (!all_path_ranges_out) {
+                            // we are satisfied with one path range
+                            break;
+                        }
+                        else {
+                            // record it and reset the search
+                            all_path_ranges_out->push_back(path_range_out);
+                            // return as if you hadn't matched at the start of this potential match
+                            mappings_matched = 0;
+                            // and go back to where we started on the path
+                            // TODO: this is potentially quadratic, there are faster algorithms
+                            step = path_range_out.first;
+                        }
+                    }
                 }
                 else {
                     // we mismatched the path
@@ -2199,13 +3128,20 @@ using namespace std;
                         step = path_range_out.first;
                     }
 #ifdef debug_anchored_surject
-                    cerr << "\tmismatch at " << graph->get_id(handle) << " " << graph->get_is_reverse(handle) << endl;
+                    cerr << "\tmismatch at node " << graph->get_id(handle) << " " << graph->get_is_reverse(handle) << " at position " << graph->get_position_of_step(step) << endl;
 #endif
                 }
             }
-            
-            if (mappings_matched != surj_path.mapping_size()) {
+            if (all_path_ranges_out) {
+                if (all_path_ranges_out->empty()) {
+                    cerr << "error: couldn't identify a path corresponding to surjected read " << source.name() << endl;
+                    exit(1);
+                }
+                path_range_out = all_path_ranges_out->front();
+            }
+            else if (mappings_matched != surj_path.mapping_size()) {
                 cerr << "error: couldn't identify a path corresponding to surjected read " << source.name() << endl;
+                exit(1);
             }
         }
         else {
@@ -2276,7 +3212,7 @@ using namespace std;
         // map from (path, strand, subpath idx) to indexes among path chunks that have outgoing connections
         unordered_map<tuple<path_handle_t, bool, size_t>, vector<size_t>> connection_sources;
                 
-        // the mappings (subpath, mapping) that have already been associated with a step
+        // the mappings (subpath, mapping, step) that have already been associated
         unordered_set<tuple<int64_t, int64_t, step_handle_t>> associated;
         for (int64_t i = 0; i < source.subpath_size(); ++i) {
             const auto& path = source.subpath(i).path();
@@ -2335,16 +3271,6 @@ using namespace std;
                                     // record that connections leave this patch chunk
                                     connection_sources[make_tuple(path_handle, path_strand.second, s_idx)].push_back(section_record.first.size());
                                 }
-                                if (j == 0) {
-                                    // translate connections into the indexes of their path chunks
-                                    // note: if these are on different strands, they'll be ignored
-                                    for (const auto& c : rev_connections[i]) {
-                                        for (auto source : connection_sources[make_tuple(path_handle, path_strand.second, c.first)]) {
-                                            connections_out[path_strand].emplace_back(source, section_record.first.size(),
-                                                                                      c.second);
-                                        }
-                                    }
-                                }
                                 
                                 // the interval of steps
                                 section_record.second.emplace_back(get<3>(stack.front()), get<3>(stack.back()));
@@ -2395,6 +3321,45 @@ using namespace std;
                                         to_proto_mapping(next_mapping, *path_chunk.add_mapping());
                                     }
                                 }
+                                
+                                if (j == 0) {
+                                    // translate connections into the indexes of their path chunks
+                                    // note: if these are on different strands, they'll be ignored
+                                    for (const auto& c : rev_connections[i]) {
+                                        for (auto source_idx : connection_sources[make_tuple(path_handle, path_strand.second, c.first)]) {
+                                            
+                                            // compute the distance along the path
+                                            pos_t pos1 = final_position(section_record.first[source_idx].second);
+                                            pos_t pos2 = initial_position(section_record.first.back().second);
+                                            step_handle_t step1 = section_record.second[source_idx].second;
+                                            step_handle_t step2 = section_record.second.back().first;
+                                            int64_t dist;
+                                            if (path_strand.second) {
+                                                // reverse strand of path
+                                                dist = (graph->get_position_of_step(step1)
+                                                        + graph->get_length(graph->get_handle_of_step(step1))
+                                                        - graph->get_position_of_step(step2)
+                                                        - graph->get_length(graph->get_handle_of_step(step2))
+                                                        + offset(pos2)
+                                                        - offset(pos1));
+                                            }
+                                            else {
+                                                // forward strand of path
+                                                dist = (graph->get_position_of_step(step2)
+                                                        - graph->get_position_of_step(step1)
+                                                        + offset(pos2)
+                                                        - offset(pos1));
+                                            }
+                                            
+                                            if (dist >= 0) {
+                                                connections_out[path_strand].emplace_back(source_idx, section_record.first.size() - 1,
+                                                                                          c.second);
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                
                                 // the read interval
                                 chunk.first.first = source.sequence().begin() + mapping_to_lengths[i][j];
                                 chunk.first.second = chunk.first.first + path_to_length(path_chunk);
@@ -2448,6 +3413,9 @@ using namespace std;
                                 }
                                 
                                 if (branches_along_path) {
+#ifdef debug_multipath_surject
+                                    cerr << "setting n to end to abort DFS to preserve a blunt end at a possible splice edge" << endl;
+#endif
                                     // we'll prematurely end the DFS at this mapping
                                     get<2>(stack.back()) = subpath_here.next_size();
                                     continue;
@@ -2491,10 +3459,23 @@ using namespace std;
                                 if (graph->get_id(next_handle) == next_pos.node_id() &&
                                     (graph->get_is_reverse(next_handle) != next_pos.is_reverse()) == strand_rev) {
                                     // the next mapping is along the path how we would expect
+#ifdef debug_multipath_surject
+                                    cerr << "the next mapping is adjacent in the path" << endl;
+#endif
                                     stack.emplace_back(next_s_idx, next_m_idx, 0, next_step);
                                     added_new_mappings = true;
                                 }
+#ifdef debug_multipath_surject
+                                else {
+                                    cerr << "the next mapping is not adjacent in the path" << endl;
+                                }
+#endif
                             }
+#ifdef debug_multipath_surject
+                            else {
+                                cerr << "we have hit the end of the path" << endl;
+                            }
+#endif
                         }
                     }
                 });
@@ -2625,7 +3606,7 @@ using namespace std;
         return to_return;
     }
 
-    void Surjector::filter_redundant_path_chunks(vector<path_chunk_t>& path_chunks,
+    void Surjector::filter_redundant_path_chunks(bool path_rev, vector<path_chunk_t>& path_chunks,
                                                  vector<pair<step_handle_t, step_handle_t>>& ref_chunks,
                                                  vector<tuple<size_t, size_t, int32_t>>& connections) const {
         
@@ -2721,6 +3702,7 @@ using namespace std;
             cerr << "looking for overlapping chunks for " << order[i] << endl;
             cerr << string(chunk_here.first.first, chunk_here.first.second) << " " << pb2json(chunk_here.second) << endl;
 #endif
+            
             // remove items from the heap if they are outside the window of this read interval
             while (!curr_chunks.empty() && path_chunks[curr_chunks.front()].first.second <= chunk_here.first.first) {
                 pop_heap(curr_chunks.begin(), curr_chunks.end(), cmp);
@@ -2732,6 +3714,19 @@ using namespace std;
                     path_chunks[j].first.second < chunk_here.first.second) {
                     // doesn't contain the right read interval
                     continue;
+                }
+                // check that the reference interval is contained
+                if (path_rev) {
+                    if (graph->get_position_of_step(ref_chunks[order[i]].first) > graph->get_position_of_step(ref_chunks[j].first)
+                        || graph->get_position_of_step(ref_chunks[order[i]].second) < graph->get_position_of_step(ref_chunks[j].second)) {
+                        continue;
+                    }
+                }
+                else {
+                    if (graph->get_position_of_step(ref_chunks[order[i]].first) < graph->get_position_of_step(ref_chunks[j].first)
+                        || graph->get_position_of_step(ref_chunks[order[i]].second) > graph->get_position_of_step(ref_chunks[j].second)) {
+                        continue;
+                    }
                 }
                 
                 auto& chunk_over = path_chunks[j];
@@ -2992,75 +3987,66 @@ using namespace std;
     }
     
     pair<size_t, size_t>
-    Surjector::compute_path_interval(const PathPositionHandleGraph* graph, const Alignment& source, path_handle_t path_handle,
-                                     bool rev_strand, const vector<path_chunk_t>& path_chunks) const {
+    Surjector::compute_path_interval(const PathPositionHandleGraph* graph, const Alignment& source,
+                                     path_handle_t path_handle, bool rev_strand,
+                                     const vector<path_chunk_t>& path_chunks,
+                                     const vector<pair<step_handle_t, step_handle_t>>& ref_chunks,
+                                     bool no_left_expansion, bool no_right_expansion) const {
         
         pair<size_t, size_t> interval(numeric_limits<size_t>::max(), numeric_limits<size_t>::min());
         
         size_t path_length = graph->get_path_length(path_handle);
         
-        for (const auto& path_chunk : path_chunks) {
+        for (size_t i = 0; i < path_chunks.size(); ++i) {
             
-            size_t left_overhang = (get_aligner()->longest_detectable_gap(source, path_chunk.first.first)
-                                    + (path_chunk.first.first - source.sequence().begin()));
+            const auto& path_chunk = path_chunks[i];
+            const auto& ref_chunk = ref_chunks[i];
             
-            size_t right_overhang = (get_aligner()->longest_detectable_gap(source, path_chunk.first.second)
-                                     + (source.sequence().end() - path_chunk.first.second));
+            size_t left_overhang = no_left_expansion ? 0 : (get_aligner()->longest_detectable_gap(source, path_chunk.first.first)
+                                                            + (path_chunk.first.first - source.sequence().begin()));
             
+            size_t right_overhang = no_right_expansion ? 0 : (get_aligner()->longest_detectable_gap(source, path_chunk.first.second)
+                                                              + (source.sequence().end() - path_chunk.first.second));
+                        
             const Position& first_pos = path_chunk.second.mapping(0).position();
-            handle_t first_handle = graph->get_handle(first_pos.node_id(), first_pos.is_reverse());
-            for (const step_handle_t& step : graph->steps_of_handle(first_handle)) {
+            if (rev_strand) {
+                size_t path_offset = (graph->get_position_of_step(ref_chunk.first)
+                                      + graph->get_length(graph->get_handle_of_step(ref_chunk.first))
+                                      - first_pos.offset());
                 
-                if (graph->get_path_handle_of_step(step) != path_handle ||
-                    (first_pos.is_reverse() != graph->get_is_reverse(graph->get_handle_of_step(step))) != rev_strand) {
-                    // this step isn't on the path strand we're considering
-                    continue;
-                }
-                
-                if (rev_strand) {
-                    size_t path_offset = graph->get_position_of_step(step) + graph->get_length(first_handle) - first_pos.offset();
-                    interval.second = max(interval.second, min(path_offset + left_overhang, path_length - 1));
+                interval.second = max(interval.second, min(path_offset + left_overhang, path_length - 1));
+            }
+            else {
+                size_t path_offset = graph->get_position_of_step(ref_chunk.first) + first_pos.offset();
+                if (left_overhang > path_offset) {
+                    // avoid underflow
+                    interval.first = 0;
                 }
                 else {
-                    size_t path_offset = graph->get_position_of_step(step) + first_pos.offset();
-                    if (left_overhang > path_offset) {
-                        // avoid underflow
-                        interval.first = 0;
-                    }
-                    else {
-                        interval.first = min(interval.first, path_offset - left_overhang);
-                    }
+                    interval.first = min(min(interval.first, path_offset - left_overhang), path_length - 1);
                 }
             }
             
             const Mapping& final_mapping = path_chunk.second.mapping(path_chunk.second.mapping_size() - 1);
             const Position& final_pos = final_mapping.position();
-            handle_t final_handle = graph->get_handle(final_pos.node_id(), final_pos.is_reverse());
-            for (const step_handle_t& step : graph->steps_of_handle(final_handle)) {
-                
-                if (graph->get_path_handle_of_step(step) != path_handle ||
-                    (final_pos.is_reverse() != graph->get_is_reverse(graph->get_handle_of_step(step))) != rev_strand) {
-                    // this step isn't on the path we're considering
-                    continue;
-                }
-                
-                if (rev_strand) {
-                    size_t path_offset = (graph->get_position_of_step(step)
-                                          + graph->get_length(final_handle)
-                                          - final_pos.offset()
-                                          - mapping_from_length(final_mapping));
-                    if (right_overhang > path_offset) {
-                        // avoid underflow
-                        interval.first = 0;
-                    }
-                    else {
-                        interval.first = min(interval.first, path_offset - right_overhang);
-                    }
+            if (rev_strand) {
+                size_t path_offset = (graph->get_position_of_step(ref_chunk.second)
+                                      + graph->get_length(graph->get_handle_of_step(ref_chunk.second))
+                                      - final_pos.offset()
+                                      - mapping_from_length(final_mapping));
+                if (right_overhang > path_offset) {
+                    // avoid underflow
+                    interval.first = 0;
                 }
                 else {
-                    size_t path_offset = graph->get_position_of_step(step) + first_pos.offset() + mapping_to_length(final_mapping);
-                    interval.second = max(interval.second, min(path_offset + right_overhang, path_length - 1));
+                    interval.first = min(min(interval.first, path_offset - right_overhang), path_length - 1);
                 }
+            }
+            else {
+                size_t path_offset = (graph->get_position_of_step(ref_chunk.second)
+                                      + final_pos.offset()
+                                      + mapping_from_length(final_mapping));
+                interval.second = max(interval.second, min(path_offset + right_overhang, path_length - 1));
             }
         }
         
@@ -3171,6 +4157,16 @@ using namespace std;
         null.set_sequence(src_sequence);
         null.set_quality(src_quality);
         return null;
+    }
+
+
+    template<>
+    int32_t Surjector::get_score(const Alignment& aln) {
+        return aln.score();
+    }
+    template<>
+    int32_t Surjector::get_score(const multipath_alignment_t& mp_aln) {
+        return optimal_alignment_score(mp_aln);
     }
 }
 

@@ -88,35 +88,35 @@ namespace vg {
         MultipathAlignmentGraph(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
                                 const Alignment& alignment, const function<pair<id_t, bool>(id_t)>& project,
                                 const unordered_multimap<id_t, pair<id_t, bool>>& injection_trans, bool realign_Ns = true,
-                                bool preserve_tail_anchors = false);
+                                bool preserve_tail_anchors = false, vector<size_t>* path_node_provenance = nullptr);
        
         /// Same as the previous constructor, but construct injection_trans implicitly and temporarily
         MultipathAlignmentGraph(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
                                 const Alignment& alignment, const unordered_map<id_t, pair<id_t, bool>>& projection_trans, bool realign_Ns = true,
-                                bool preserve_tail_anchors = false);
+                                bool preserve_tail_anchors = false, vector<size_t>* path_node_provenance = nullptr);
         
         /// Same as the previous constructor, but construct injection_trans implicitly and temporarily
         /// and using a lambda for a projector
         MultipathAlignmentGraph(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
                                 const Alignment& alignment, const function<pair<id_t, bool>(id_t)>& project, bool realign_Ns = true,
-                                bool preserve_tail_anchors = false);
+                                bool preserve_tail_anchors = false, vector<size_t>* path_node_provenance = nullptr);
         
         /// Make a multipath alignment graph using the path of a single-path alignment. Only
         /// one of snarl_manager and dist_index need be supplied.
         MultipathAlignmentGraph(const HandleGraph& graph, const Alignment& alignment, SnarlManager* snarl_manager,
-                                MinimumDistanceIndex* dist_index, size_t max_snarl_cut_size,
+                                SnarlDistanceIndex* dist_index, size_t max_snarl_cut_size,
                                 const function<pair<id_t, bool>(id_t)>& project,
                                 const unordered_multimap<id_t, pair<id_t, bool>>& injection_trans);
         
         /// Same as the previous constructor, but construct injection_trans implicitly and temporarily
         MultipathAlignmentGraph(const HandleGraph& graph, const Alignment& alignment, SnarlManager* snarl_manager,
-                                MinimumDistanceIndex* dist_index, size_t max_snarl_cut_size,
+                                SnarlDistanceIndex* dist_index, size_t max_snarl_cut_size,
                                 const unordered_map<id_t, pair<id_t, bool>>& projection_trans);
         
         /// Same as the previous constructor, but construct injection_trans implicitly and temporarily
         /// using a function instead of a map
         MultipathAlignmentGraph(const HandleGraph& graph, const Alignment& alignment, SnarlManager* snarl_manager,
-                                MinimumDistanceIndex* dist_index, size_t max_snarl_cut_size,
+                                SnarlDistanceIndex* dist_index, size_t max_snarl_cut_size,
                                 const function<pair<id_t, bool>(id_t)>& project);
         
         ~MultipathAlignmentGraph();
@@ -156,8 +156,8 @@ namespace vg {
         /// Cut the interior of snarls out of anchoring paths (and split
         /// alignment nodes accordingly) unless they are longer than the max
         /// cut size. Snarls can be stored either in a SnarlManager or a
-        /// MinimumDistanceIndex (only one need be supplied).
-        void resect_snarls_from_paths(SnarlManager* cutting_snarls, MinimumDistanceIndex* dist_index,
+        /// SnarlDistanceIndex (only one need be supplied).
+        void resect_snarls_from_paths(SnarlManager* cutting_snarls, SnarlDistanceIndex* dist_index,
                                       const function<pair<id_t, bool>(id_t)>& project, int64_t max_snarl_cut_size = 5);
         
         /// Do some exploratory alignments of the tails of the graph, outside
@@ -193,7 +193,7 @@ namespace vg {
         void align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* aligner, bool score_anchors_as_matches,
                    size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier, bool simplify_topologies,
                    size_t unmergeable_len, size_t band_padding, multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls = nullptr,
-                   MinimumDistanceIndex* dist_index = nullptr, const function<pair<id_t, bool>(id_t)>* project = nullptr,
+                   SnarlDistanceIndex* dist_index = nullptr, const function<pair<id_t, bool>(id_t)>* project = nullptr,
                    bool allow_negative_scores = false);
         
         /// Do intervening and tail alignments between the anchoring paths and
@@ -211,7 +211,7 @@ namespace vg {
         void align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* aligner, bool score_anchors_as_matches,
                    size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier, bool simplify_topologies,
                    size_t unmergeable_len, function<size_t(const Alignment&,const HandleGraph&)> band_padding_function,
-                   multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls = nullptr, MinimumDistanceIndex* dist_index = nullptr,
+                   multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls = nullptr, SnarlDistanceIndex* dist_index = nullptr,
                    const function<pair<id_t, bool>(id_t)>* project = nullptr, bool allow_negative_scores = false);
         
         /// Converts a MultipathAlignmentGraph to a GraphViz Dot representation, output to the given ostream.
@@ -225,6 +225,12 @@ namespace vg {
         bool empty() const;
         
         size_t size() const;
+        
+        /// For a graph with reachability edges, identifies the largest difference between read interval and
+        /// reference distance
+        size_t max_shift() const;
+        
+        void prune_high_shift_edges(size_t prune_diff, bool prohibit_new_sources, bool prohibit_new_sinks);
         
     protected:
         
@@ -253,7 +259,8 @@ namespace vg {
         /// Add the path chunks as nodes to the connectivity graph
         void create_path_chunk_nodes(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
                                      const Alignment& alignment, const function<pair<id_t, bool>(id_t)>& project,
-                                     const unordered_multimap<id_t, pair<id_t, bool>>& injection_trans);
+                                     const unordered_multimap<id_t, pair<id_t, bool>>& injection_trans,
+                                     vector<size_t>* path_node_provenance = nullptr);
         
         /// Walk out MEMs into match nodes and filter out redundant sub-MEMs
         void create_match_nodes(const HandleGraph& graph, MultipathMapper::memcluster_t& hits,
@@ -288,10 +295,10 @@ namespace vg {
         
         /// Returns true if we're pointing into a snarl that we want to cut out of paths
         bool into_cutting_snarl(id_t node_id, bool is_rev,
-                                SnarlManager* snarl_manager, MinimumDistanceIndex* dist_index) const;
+                                SnarlManager* snarl_manager, SnarlDistanceIndex* dist_index) const;
         
         /// Returns the intervals of the path that lie inside of snarls
-        vector<pair<size_t, size_t>> get_cut_segments(path_t& path, SnarlManager* cutting_snarls, MinimumDistanceIndex* dist_index,
+        vector<pair<size_t, size_t>> get_cut_segments(path_t& path, SnarlManager* cutting_snarls, SnarlDistanceIndex* dist_index,
                                                       const function<pair<id_t, bool>(id_t)>& project, int64_t max_snarl_cut_size) const;
         
         /// Generate alignments of the tails of the query sequence, beyond the
@@ -343,7 +350,7 @@ namespace vg {
                                             size_t attachment_idx, bool to_left, size_t unmergeable_len,
                                             const GSSWAligner* aligner,
                                             SnarlManager* cutting_snarls = nullptr,
-                                            MinimumDistanceIndex* dist_index = nullptr,
+                                            SnarlDistanceIndex* dist_index = nullptr,
                                             const function<pair<id_t, bool>(id_t)>* project = nullptr);
         
         /// Memo for the transcendental pessimistic tail gap function (thread local to maintain thread-safety)

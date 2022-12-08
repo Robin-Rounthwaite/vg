@@ -17,13 +17,12 @@
 
 #include "subcommand.hpp"
 
-#include "../seed_clusterer.hpp"
+#include "../snarl_seed_clusterer.hpp"
 #include "../mapper.hpp"
 #include "../annotation.hpp"
 #include <vg/io/vpkg.hpp>
 #include <vg/io/stream.hpp>
 #include "../hts_alignment_emitter.hpp"
-#include "../gapless_extender.hpp"
 #include "../minimizer_mapper.hpp"
 #include "../index_registry.hpp"
 #include <bdsg/overlays/overlay_helper.hpp>
@@ -350,12 +349,16 @@ void help_giraffe(char** argv) {
     << "  -s, --cluster-score INT       only extend clusters if they are within INT of the best score [50]" << endl
     << "  -S, --pad-cluster-score INT   also extend clusters within INT of above threshold to get a second-best cluster [0]" << endl
     << "  -u, --cluster-coverage FLOAT  only extend clusters if they are within FLOAT of the best read coverage [0.3]" << endl
+    << "  -U, --max-min INT             use at most INT minimizers [500]" << endl
+    << "  --num-bp-per-min INT          use maximum of number minimizers calculated by READ_LENGTH / INT and --max-min [1000]" << endl
     << "  -v, --extension-score INT     only align extensions if their score is within INT of the best score [1]" << endl
     << "  -w, --extension-set INT       only align extension sets if their score is within INT of the best score [20]" << endl
     << "  -O, --no-dp                   disable all gapped alignment" << endl
+    << "  --align-from-chains           chain up extensions to create alignments, instead of doing each separately" << endl
     << "  -r, --rescue-attempts         attempt up to INT rescues per read in a pair [15]" << endl
-    << "  -A, --rescue-algorithm NAME   use algorithm NAME for rescue (none / dozeu / gssw / haplotypes) [dozeu]" << endl
+    << "  -A, --rescue-algorithm NAME   use algorithm NAME for rescue (none / dozeu / gssw) [dozeu]" << endl
     << "  -L, --max-fragment-length INT assume that fragment lengths should be smaller than INT when estimating the fragment length distribution" << endl
+    << "  --exclude-overlapping-min     exclude overlapping minimizers" << endl
     << "  --fragment-mean FLOAT         force the fragment length distribution to have this mean (requires --fragment-stdev)" << endl
     << "  --fragment-stdev FLOAT        force the fragment length distribution to have this standard deviation (requires --fragment-mean)" << endl
     << "  --paired-distance-limit FLOAT cluster pairs of read using a distance limit FLOAT standard deviations greater than the mean [2.0]" << endl
@@ -387,7 +390,9 @@ int main_giraffe(int argc, char** argv) {
     #define OPT_REF_PATHS 1010
     #define OPT_SHOW_WORK 1011
     #define OPT_NAMED_COORDINATES 1012
-    
+    #define OPT_EXCLUDE_OVERLAPPING_MIN 1013
+    #define OPT_ALIGN_FROM_CHAINS 1014
+    #define OPT_NUM_BP_PER_MIN 1015
 
     // initialize parameters with their default options
     
@@ -399,9 +404,16 @@ int main_giraffe(int argc, char** argv) {
     Range<size_t> distance_limit = 200;
     Range<size_t> hit_cap = 10, hard_hit_cap = 500;
     Range<double> minimizer_score_fraction = 0.9;
+    Range<size_t> max_unique_min = 500;
+    // number minimizers calculated by READ_LENGTH / INT
+    size_t num_bp_per_min = 1000;
     bool show_progress = false;
-    // Should we try chaining or just give up if we can't find a full length gapless alignment?
+    // Should we exclude overlapping minimizers
+    bool exclude_overlapping_min = false;
+    // Should we try dynamic programming, or just give up if we can't find a full length gapless alignment?
     bool do_dp = true;
+    // Should we align from chains of gapless extensions, or from individual gapless extensions?
+    bool align_from_chains = false;
     // What GAM should we realign?
     string gam_filename;
     // What FASTQs should we align.
@@ -469,6 +481,7 @@ int main_giraffe(int argc, char** argv) {
         .chain(hard_hit_cap)
         .chain(minimizer_score_fraction)
         .chain(rescue_attempts)
+        .chain(max_unique_min)
         .chain(max_multimaps)
         .chain(max_extensions)
         .chain(max_alignments)
@@ -497,14 +510,13 @@ int main_giraffe(int argc, char** argv) {
         { "none", MinimizerMapper::rescue_none },
         { "dozeu", MinimizerMapper::rescue_dozeu },
         { "gssw", MinimizerMapper::rescue_gssw },
-        { "haplotypes", MinimizerMapper::rescue_haplotypes }
     };
     std::map<MinimizerMapper::RescueAlgorithm, std::string> algorithm_names =  {
         { MinimizerMapper::rescue_none, "none" },
         { MinimizerMapper::rescue_dozeu, "dozeu" },
         { MinimizerMapper::rescue_gssw, "gssw" },
-        { MinimizerMapper::rescue_haplotypes, "haplotypes" }
     };
+    //TODO: Right now there can be two versions of the distance index. This ensures that the correct minimizer type gets built
 
     int c;
     optind = 2; // force optind past command positional argument
@@ -541,10 +553,14 @@ int main_giraffe(int argc, char** argv) {
             {"cluster-score", required_argument, 0, 's'},
             {"pad-cluster-score", required_argument, 0, 'S'},
             {"cluster-coverage", required_argument, 0, 'u'},
+            {"max-min", required_argument, 0, 'U'},
+            {"num-bp-per-min", required_argument, 0, OPT_NUM_BP_PER_MIN},
+            {"exclude-overlapping-min", no_argument, 0, OPT_EXCLUDE_OVERLAPPING_MIN},
             {"extension-score", required_argument, 0, 'v'},
             {"extension-set", required_argument, 0, 'w'},
             {"score-fraction", required_argument, 0, 'F'},
             {"no-dp", no_argument, 0, 'O'},
+            {"align-from-chains", no_argument, 0, OPT_ALIGN_FROM_CHAINS},
             {"rescue-attempts", required_argument, 0, 'r'},
             {"rescue-algorithm", required_argument, 0, 'A'},
             {"paired-distance-limit", required_argument, 0, OPT_CLUSTER_STDEV },
@@ -561,7 +577,7 @@ int main_giraffe(int argc, char** argv) {
         };
 
         int option_index = 0;
-        c = getopt_long (argc, argv, "hZ:x:g:H:m:s:d:pG:f:iM:N:R:o:Pnb:c:C:D:F:e:a:S:u:v:w:Ot:r:A:L:",
+        c = getopt_long (argc, argv, "hZ:x:g:H:m:s:d:pG:f:iM:N:R:o:Pnb:c:C:D:F:e:a:S:u:U:v:w:Ot:r:A:L:",
                          long_options, &option_index);
 
 
@@ -856,6 +872,18 @@ int main_giraffe(int argc, char** argv) {
                     cluster_coverage = score;
                 }
                 break;
+
+            case 'U':
+                {
+                    auto maxmin = parse<Range<size_t>>(optarg);
+                    if (maxmin <= 0) {
+                        cerr << "error: [vg giraffe] Maximum unique minimizer (" << maxmin << ") must be a positive integer" << endl;
+                        exit(1);
+                    }
+                    max_unique_min = maxmin;
+                }
+                break;
+
             case 'v':
                 {
                     auto score = parse<Range<int>>(optarg);
@@ -879,6 +907,10 @@ int main_giraffe(int argc, char** argv) {
                 
             case 'O':
                 do_dp = false;
+                break;
+                
+            case OPT_ALIGN_FROM_CHAINS:
+                align_from_chains = true;
                 break;
                 
             case 'r':
@@ -907,6 +939,14 @@ int main_giraffe(int argc, char** argv) {
                 }
                 break;
 
+            case OPT_NUM_BP_PER_MIN:
+                num_bp_per_min = parse<size_t>(optarg);;
+                break;
+
+            case OPT_EXCLUDE_OVERLAPPING_MIN:
+                exclude_overlapping_min = true;
+                break;
+                
             case OPT_FRAGMENT_MEAN:
                 forced_mean = true;
                 fragment_mean = parse<double>(optarg);
@@ -1127,14 +1167,17 @@ int main_giraffe(int argc, char** argv) {
     auto gbz = vg::io::VPKG::load_one<gbwtgraph::GBZ>(registry.require("Giraffe GBZ").at(0));
 
     // Grab the distance index
-    auto distance_index = vg::io::VPKG::load_one<MinimumDistanceIndex>(registry.require("Giraffe Distance Index").at(0));
+    auto distance_index = vg::io::VPKG::load_one<SnarlDistanceIndex>(registry.require("Giraffe Distance Index").at(0));
+    if (show_progress) {
+        cerr << "Loading Distance Index v2" << endl;
+    }
     
     // If we are tracking correctness, we will fill this in with a graph for
     // getting offsets along ref paths.
     PathPositionHandleGraph* path_position_graph = nullptr;
     // If we need an overlay for position lookup, we might be pointing into
-    // this overlay
-    bdsg::PathPositionOverlayHelper overlay_helper;
+    // this overlay. We want one that's good for reference path queries.
+    bdsg::ReferencePathOverlayHelper overlay_helper;
     // And we might load an XG
     unique_ptr<PathHandleGraph> xg_graph;
     if (track_correctness || hts_output) {
@@ -1154,7 +1197,7 @@ int main_giraffe(int argc, char** argv) {
     if (show_progress) {
         cerr << "Initializing MinimizerMapper" << endl;
     }
-    MinimizerMapper minimizer_mapper(gbz->graph, *minimizer_index, *distance_index, path_position_graph);
+    MinimizerMapper minimizer_mapper(gbz->graph, *minimizer_index, &*distance_index, path_position_graph);
     if (forced_mean && forced_stdev) {
         minimizer_mapper.force_fragment_length_distr(fragment_mean, fragment_stdev);
     }
@@ -1204,6 +1247,7 @@ int main_giraffe(int argc, char** argv) {
             s << "-a" << max_alignments;
             s << "-s" << cluster_score;
             s << "-u" << cluster_coverage;
+            s << "-U" << max_unique_min;
             s << "-w" << extension_set;
             s << "-v" << extension_score;
             
@@ -1244,6 +1288,21 @@ int main_giraffe(int argc, char** argv) {
         minimizer_mapper.minimizer_score_fraction = minimizer_score_fraction;
 
         if (show_progress) {
+            cerr << "--max-min " << max_unique_min << endl;
+        }
+        minimizer_mapper.max_unique_min = max_unique_min;
+
+        if (show_progress) {
+            cerr << "--num-bp-per-min " << num_bp_per_min << endl;
+        }
+        minimizer_mapper.num_bp_per_min = num_bp_per_min;
+
+        if (show_progress) {
+            cerr << "--exclude-overlapping-min " << endl;
+        }
+        minimizer_mapper.exclude_overlapping_min = exclude_overlapping_min;
+
+        if (show_progress) {
             cerr << "--max-extensions " << max_extensions << endl;
         }
         minimizer_mapper.max_extensions = max_extensions;
@@ -1277,6 +1336,11 @@ int main_giraffe(int argc, char** argv) {
             cerr << "--extension-set " << extension_set << endl;
         }
         minimizer_mapper.extension_set_score_threshold = extension_set;
+
+        if (show_progress && align_from_chains) {
+            cerr << "--align-from-chains " << endl;
+        }
+        minimizer_mapper.align_from_chains = align_from_chains;
 
         if (show_progress && !do_dp) {
             cerr << "--no-dp " << endl;
@@ -1396,7 +1460,7 @@ int main_giraffe(int argc, char** argv) {
             if (hts_output) {
                 // For htslib we need a non-empty list of paths.
                 assert(path_position_graph != nullptr);
-                paths = get_sequence_dictionary(ref_paths_name, *path_position_graph);
+                paths = get_sequence_dictionary(ref_paths_name, {}, *path_position_graph);
             }
             
             // Set up output to an emitter that will handle serialization and surjection.

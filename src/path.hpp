@@ -46,21 +46,9 @@ public:
     // We used to use a regex but that's a very slow way to check a prefix.
     const static function<bool(const string&)> is_alt;
 
-    // look for suffix of form [offset] or [offset-end_offset] and parse it. ex:
-    // chr1 would return <false, "", 0, 0>
-    // chr1[10] would return <true, chr1, 10, 0>
-    // chr1[10-20] would return <true, chr1, 10, 20>
-    // note: the start/end are as in BED : 0-based open-ended
-    tuple<bool, string, size_t, size_t> static parse_subpath_name(const string& path_name);
-
-    // a lot of the time we just want a name
-    static inline string get_base_name(const string& path_name) {
-        auto sp = parse_subpath_name(path_name);
-        return get<0>(sp) ? get<1>(sp) : path_name;
-    }
-
-    // Create a subpath name
-    string static make_subpath_name(const string& path_name, size_t offset, size_t end_offset = 0);
+    // Use the path metadata api to strip a subrange from a path name.
+    // If desired, the subrange can be stored in start and end
+    static string strip_subrange(const string& path_name, subrange_t* subrange = nullptr);
 
     Paths(void);
 
@@ -268,6 +256,7 @@ Position first_path_position(const Path& path);
 Position last_path_position(const Path& path);
 int to_length(const Mapping& m);
 int from_length(const Mapping& m);
+bool mappings_equivalent(const Mapping& m1, const Mapping& m2);
 bool mapping_ends_in_deletion(const Mapping& m);
 bool mapping_starts_in_deletion(const Mapping& m);
 bool mapping_is_total_deletion(const Mapping& m);

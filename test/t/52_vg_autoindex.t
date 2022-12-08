@@ -5,7 +5,7 @@ BASH_TAP_ROOT=../deps/bash-tap
 
 PATH=../bin:$PATH # for vg
 
-plan tests 28
+plan tests 32
 
 rm auto.*
 
@@ -40,8 +40,8 @@ is $(echo $?) 0 "autoindexing successfully completes indexing for vg mpmap with 
 is $(ls auto.* | wc -l) 6 "autoindexing creates 6 files for mpmap/rpvg"
 vg sim -x auto.spliced.xg -n 20 -a -l 10 | vg mpmap -x auto.spliced.xg -g auto.spliced.gcsa -d auto.spliced.dist -B -t 1 -G - > /dev/null
 is $(echo $?) 0 "basic autoindexing results can be used by vg mpmap"
-is $(vg paths -g auto.haplotx.gbwt -L | wc -l) 4 "haplotype transcript GBWT made by autoindex is valid"
-is $(cat auto.txorigin.tsv | wc -l) 5 "transcript origin table has expected number of rows" 
+is $(vg paths -g auto.haplotx.gbwt -L | wc -l) 6 "haplotype transcript GBWT made by autoindex is valid"
+is $(cat auto.txorigin.tsv | wc -l) 7 "transcript origin table has expected number of rows" 
 
 rm auto.*
 
@@ -97,8 +97,13 @@ printf '@read\nGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGATTACACATTAGGGGGGGGGGGGGGG
 vg giraffe -Z auto.giraffe.gbz -m auto.min -d auto.dist -f read.fq --named-coordinates > read.gam
 is "$(vg view -aj read.gam | jq -r '.path.mapping[].position.name')" "Ishmael" "GFA segment names are available in output GAM when no walks exist"
 
+# reduce disk limit to 1MB to trigger it during k-mer generation
+is "$(vg autoindex -p auto -w map --gcsa-size-limit 1000000 -g graphs/linked_cycles.gfa 2>&1 | grep Rewind | wc -l)" 1 "Running out of room during k-mer enumeration triggers a rewind"
+is "$(echo $?)" 0 "Indexing is successful after rewinding from k-mer generation"
+
+# reduce disk limit to 2MB to trigger it during doubling steps
+is "$(vg autoindex -p auto -w map --gcsa-size-limit 2000000 -g graphs/linked_cycles.gfa 2>&1 | grep Rewind | wc -l)" 1 "Running out of room during GCSA2 indexing triggers a rewind"
+is "$(echo $?)" 0 "Indexing is successful after rewinding from GCSA2 indexing"
+
 rm auto.*
 rm read.fq read.gam
-
-
-
