@@ -119,7 +119,7 @@ class SnarlNormalizer {
     //////////////////////////////////////////////////////////////////////////////////////
     // creation of new graph:
     //////////////////////////////////////////////////////////////////////////////////////
-    VG poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num, const bool output_msa=false);
+    bool poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num, VG& output_subgraph, const bool output_msa=false);
 
     VG kalign_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 

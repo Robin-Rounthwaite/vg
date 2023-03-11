@@ -167,6 +167,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
      * Further error records:
      *      6) snarl is trivial (either one or two nodes only), so we skipped normalizing them.
      *      7) snarl has handles not represented in the gbwt, and so would be dropped if normalized.
+     *      8) snarl alignment includes sequences too long to suitably fit into sPOA. Need to implement abPOA.
     */ 
     int error_record_size = 8;
     vector<int> one_snarl_error_record(error_record_size, 0);
@@ -291,7 +292,8 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
             // one_snarl_error_record = normalize_snarl(region.second, region.first, false, snarl_num);
             if (!(one_snarl_error_record[0] || one_snarl_error_record[1] ||
                     one_snarl_error_record[2] || one_snarl_error_record[3] ||
-                    one_snarl_error_record[6] || one_snarl_error_record[7])) {
+                    one_snarl_error_record[6] || one_snarl_error_record[7] ||
+                    one_snarl_error_record[8])) {
                 // if there are no errors, then we've successfully normalized a snarl.
                 num_snarls_normalized += 1;
                 // track the change in size of the snarl.
@@ -1418,8 +1420,9 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
      *      5) number of bases in the snarl after normalization.
      *      6) snarl is trivial (either one or two nodes only), so we skipped normalizing them.
      *      7) snarl has handles not represented in the gbwt, and so would be dropped if normalized.
+     *      8) snarl alignment includes sequences too long to suitably fit into sPOA. Need to implement abPOA.
     */ 
-    vector<int> error_record(8, 0);
+    vector<int> error_record(9, 0);
     SubHandleGraph snarl = extract_subgraph(_graph, leftmost_id, rightmost_id);
 
     int snarl_size = 0;
@@ -1627,17 +1630,6 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         // Convert the haplotypes from vector<handle_t> format to string format.
         get<0>(haplotypes) = format_handle_haplotypes_to_strings(_graph, _gbwt_graph, get<0>(gbwt_haplotypes));
 
-        int max_spoa_length = 750; // somewhere between 500-1000 bases, sPOA starts to struggle. That's why I'll eventually want abPOA to take over.
-        for (string hap : get<0>(haplotypes))
-        {
-            if (hap.size() > max_spoa_length)
-            {
-                _skipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
-                _alignments_calling_for_abpoa.push_back(snarl_num);
-                return error_record;
-            }
-        }
-        
         //todo: possibly remove the duplicate storage of gbwt info in source_to_sink_gbwt_paths, by finding a way to only pass the gbwt info to the "log_gbwt_changes" function. (currently, get<0>haplotypes will also include any source-to-sink paths embedded in the graph.)
         //deep copy of gbwt_haplotypes.
         for (vector<handle_t> hap_handles : get<0>(gbwt_haplotypes))
@@ -1777,6 +1769,17 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
             }
         }
         
+        int max_spoa_length = 750; // somewhere between 500-1000 bases, sPOA starts to struggle. That's why I'll eventually want abPOA to take over.
+        for (string hap : get<0>(haplotypes))
+        {
+            if (hap.size() > max_spoa_length)
+            {
+                _skipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
+                _alignments_calling_for_abpoa.push_back(snarl_num);
+                return error_record;
+            }
+        }
+        
         // cerr << "haps in haplotypes: " << endl;
         // for (string hap : get<0>(haplotypes))
         // {
@@ -1790,7 +1793,14 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num);
+            bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num, new_snarl, false);
+            if (run_successful == false)
+            {
+                //note: this snippet probably never needs to run. It's also handled by the "if (hap.size() > max_spoa_length)" condition a few lines above.
+                _skipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
+                _alignments_calling_for_abpoa.push_back(snarl_num);
+                return error_record;
+            }
             // if (leftmost_id == 996838)
             // {
             //     new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num, true);
@@ -2779,7 +2789,8 @@ void SnarlNormalizer::output_msa(const id_t leftmost_id, const id_t rightmost_id
     unordered_set<string> haplotypes = format_handle_haplotypes_to_strings(_graph, _gbwt_graph, get<0>(gbwt_haplotypes));
 
     //true, because I want to print the msa to cout.
-    poa_source_to_sink_haplotypes(haplotypes, 0, true);
+    VG output_subgraph;
+    poa_source_to_sink_haplotypes(haplotypes, 0, output_subgraph, true);
 }
 
 }

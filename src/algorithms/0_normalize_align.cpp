@@ -10,9 +10,16 @@ namespace algorithms{
 
 
 //Note: you probably don't want to set output_msa to true while sending other things to cout. Because the msa is outputted to cout as well.
-VG SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num, const bool output_msa) {
+bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num, VG& output_subgraph, const bool output_msa/*=false*/) {
+    bool run_successful = true;
     // uint8_t ***msa_seq = NULL;
-
+    // cerr << "size of source_to_sink_haplotypes " << source_to_sink_haplotypes.size() << endl;
+    // cerr << "size of each hap in source_to_sink_haplotypes: " << endl;
+    // for (auto hap : source_to_sink_haplotypes)
+    // {
+    //     cerr << hap.size() << endl;
+    //     // cerr << hap << endl;
+    // }
     
     // replace the source and sink chars with X, to force match at source and sink.
     //todo: if copying out the set takes significant time, try using unordered_set::extract() here. (https://stackoverflow.com/questions/42519867/efficiently-moving-contents-of-stdunordered-set-to-stdvector)
@@ -21,6 +28,8 @@ VG SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& s
         (const std::string& first, const std::string& second){
             return first.size() > second.size();
         });
+
+    // cerr << "edited_source_to_sink_haplotypes.size()" << edited_source_to_sink_haplotypes.size() << endl;
         
     char first_char = edited_source_to_sink_haplotypes.back().front();
     char last_char = edited_source_to_sink_haplotypes.back().back();
@@ -61,11 +70,11 @@ VG SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& s
 
                 MSAConverter myMSAConverter = MSAConverter();
                 myMSAConverter.load_alignments_from_vector(msa_output);
-                VG snarl = myMSAConverter.make_graph();
+                output_subgraph = myMSAConverter.make_graph();
                 
-                snarl.clear_paths();
+                output_subgraph.clear_paths();
 
-                return snarl;
+                return true;
             }
             else
             {
@@ -77,6 +86,8 @@ VG SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& s
             }
         }
     }
+    // cerr << "edited_source_to_sink_haplotypes.size()" << edited_source_to_sink_haplotypes.size() << endl;
+
     // cerr << "deleting first and last characters:" << endl;
     for (auto it = edited_source_to_sink_haplotypes.begin(); it != edited_source_to_sink_haplotypes.end(); it++)
     {
@@ -85,10 +96,13 @@ VG SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& s
         it->erase(it->size() - 1, 1);
         // cerr << "after delete: " << *it << endl;
     }
+    // cerr << "edited_source_to_sink_haplotypes.size()" << edited_source_to_sink_haplotypes.size() << endl;
 
     //todo: make sPOA and abPOA sections separate functions?
     // if the alignment is for <=750 bases, use sPOA. 
     vector<string> msa_output;
+    // cerr << "this is the bool: " << (edited_source_to_sink_haplotypes.front().size() <= 750) << endl;
+    // cerr << "here is the edited_source_to_sink_haplotypes front size: " << edited_source_to_sink_haplotypes.front().size() << endl;
     if (edited_source_to_sink_haplotypes.front().size() <= 750)
     { 
         // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 5, -3, -3, -1); // original inputs. m n g e, probably means "match, mismatch, gap, extend"?
@@ -96,8 +110,10 @@ VG SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& s
         auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 5, -10, -10, -1); // modified inputs, with increased gap-open cost.
         spoa::Graph spoa_graph{};
 
+        // cerr << "about to add sequences" << endl;
         for (string sequence : edited_source_to_sink_haplotypes)
         {
+            // cerr << "adding seq of size " << sequence.size() << endl;
             auto alignment = alignment_engine->Align(sequence, spoa_graph);
             spoa_graph.AddAlignment(alignment, sequence);
         }
@@ -127,6 +143,11 @@ VG SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& s
             //otherwise, just directly generate the MSA output.
             msa_output = spoa_graph.GenerateMultipleSequenceAlignment();
         }
+    }
+    else
+    {
+        //todo: add abPOA for these snarls.
+        return false;
     }
                                             //for alignments of sequences > 750 bases, use abPOA
                                             // else
@@ -350,24 +371,25 @@ VG SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& s
         msa_output.push_back(two_char_hap);
     }
 
+    // cerr << "about to about to hap" << endl;
+    // cerr << msa_output.size() << endl;
     if (output_msa)
     {
         //then print the msa straight to cout.
         for (auto hap : msa_output)
         {
-            // cout << hap << endl;
             cerr << hap << endl;
         }
     }
 
     MSAConverter myMSAConverter = MSAConverter();
     myMSAConverter.load_alignments_from_vector(msa_output);
-    VG snarl = myMSAConverter.make_graph();
+    output_subgraph = myMSAConverter.make_graph();
     
-    snarl.clear_paths();
+    output_subgraph.clear_paths();
     // cerr << "Hi! Testing." << endl;
 
-    return snarl;
+    return true;
 
 }
 
