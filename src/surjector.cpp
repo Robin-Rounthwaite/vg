@@ -346,7 +346,6 @@ using namespace std;
                     aln_surjections[surj_record.first] = make_pair(Alignment(), path_range);
                     auto& surjected_aln = aln_surjections[surj_record.first].first;
                     optimal_alignment(surjection, surjected_aln, allow_negative_scores);
-                    transfer_read_metadata(*source_aln, surjected_aln);
                 }
             }
             else {
@@ -3134,13 +3133,17 @@ using namespace std;
             }
             if (all_path_ranges_out) {
                 if (all_path_ranges_out->empty()) {
-                    cerr << "error: couldn't identify a path corresponding to surjected read " << source.name() << endl;
+                    cerr << "error: couldn't identify a path range corresponding to surjected read " << source.name()
+                         << " because there are no path ranges on path " << graph->get_path_name(path_handle) << endl;
+                    cerr << "Surjected read dump: " << pb2json(surjected) << endl;
                     exit(1);
                 }
                 path_range_out = all_path_ranges_out->front();
             }
             else if (mappings_matched != surj_path.mapping_size()) {
-                cerr << "error: couldn't identify a path corresponding to surjected read " << source.name() << endl;
+                cerr << "error: couldn't identify a path range corresponding to surjected read " << source.name()
+                     << " because " << mappings_matched << "/" << surj_path.mapping_size() << " mappings were matched on path " << graph->get_path_name(path_handle) << endl;
+                cerr << "Surjected read dump: " << pb2json(surjected) << endl;
                 exit(1);
             }
         }

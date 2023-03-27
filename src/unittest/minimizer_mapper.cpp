@@ -28,6 +28,8 @@ public:
     using MinimizerMapper::Minimizer;
     using MinimizerMapper::fragment_length_distr;
     using MinimizerMapper::faster_cap;
+    using MinimizerMapper::with_dagified_local_graph;
+    using MinimizerMapper::align_sequence_between;
 };
 
 TEST_CASE("Fragment length distribution gets reasonable value", "[giraffe][mapping]") {
@@ -160,7 +162,147 @@ TEST_CASE("Mapping quality cap cannot be confused by excessive Gs", "[giraffe][m
     REQUIRE(!isinf(cap));
 }
 
+TEST_CASE("MinimizerMapper can map against subgraphs between points", "[giraffe][mapping]") {
 
+        Aligner aligner;
+        HashGraph graph;
+        
+        // We have a real path with a mismatch
+        auto h1 = graph.create_handle("AAAAGAT");
+        auto h2 = graph.create_handle("TG");
+        graph.create_edge(h1, h2);
+        // This node is backward
+        auto h3 = graph.create_handle("AAAAAAAAATG");
+        graph.create_edge(h2, graph.flip(h3));
+        // And we have a dangling tip that is a better matchn
+        auto h4 = graph.create_handle("TA");
+        graph.create_edge(h2, h4);
+        auto h5 = graph.create_handle("CA");
+        graph.create_edge(h4, h5);
+        
+        
+        Alignment aln;
+        aln.set_sequence("GATTACA");
+        
+        // Left anchor should be on start
+        pos_t left_anchor {graph.get_id(h1), false, 4};
+        // Right anchor should be past end
+        pos_t right_anchor {graph.get_id(h3), true, 2};
+        
+        TestMinimizerMapper::align_sequence_between(left_anchor, right_anchor, 100, &graph, &aligner, aln);
+        
+        // Make sure we get the right alignment
+        REQUIRE(aln.path().mapping_size() == 3);
+        REQUIRE(aln.path().mapping(0).position().node_id() == graph.get_id(h1));
+        REQUIRE(aln.path().mapping(0).position().is_reverse() == graph.get_is_reverse(h1));
+        REQUIRE(aln.path().mapping(0).position().offset() == offset(left_anchor));
+        REQUIRE(aln.path().mapping(1).position().node_id() == graph.get_id(h2));
+        REQUIRE(aln.path().mapping(1).position().is_reverse() == graph.get_is_reverse(h2));
+        REQUIRE(aln.path().mapping(1).position().offset() == 0);
+        REQUIRE(aln.path().mapping(2).position().node_id() == graph.get_id(h3));
+        REQUIRE(aln.path().mapping(2).position().is_reverse() == !graph.get_is_reverse(h3));
+        REQUIRE(aln.path().mapping(2).position().offset() == 0);
+}
+
+TEST_CASE("MinimizerMapper can map an empty string between odd points", "[giraffe][mapping]") {
+
+        Aligner aligner;
+        
+        string graph_json = R"({
+            "edge": [
+                {"from": "55511923", "to": "55511925"},
+                {"from": "55511923", "to": "55511924"},
+                {"from": "55511921", "to": "55511924"},
+                {"from": "55511921", "to": "55511922"},
+                {"from": "55511922", "to": "55511923"},
+                {"from": "55511922", "to": "55511924"},
+                {"from": "55511924", "to": "55511925"}
+            ],
+            "node": [
+                {"id": "55511923", "sequence": "T"},
+                {"id": "55511921", "sequence": "TTCCTT"},
+                {"id": "55511922", "sequence": "CC"},
+                {"id": "55511924", "sequence": "TC"},
+                {"id": "55511925", "sequence": "CTTCCTTCC"}
+            ]
+        })";
+        
+        // TODO: Write a json_to_handle_graph
+        vg::Graph proto_graph;
+        json2pb(proto_graph, graph_json.c_str(), graph_json.size());
+        auto graph = vg::VG(proto_graph);
+        
+        Alignment aln;
+        aln.set_sequence("");
+        
+        pos_t left_anchor {55511921, false, 5}; // This is on the final base of the node
+        pos_t right_anchor {55511925, false, 6};
+        
+        TestMinimizerMapper::align_sequence_between(left_anchor, right_anchor, 100, &graph, &aligner, aln);
+        
+        // Make sure we get the right alignment. We should see the last base of '21 and go '21 to '24 to '25 and delete everything
+        REQUIRE(aln.path().mapping_size() == 3);
+        REQUIRE(aln.path().mapping(0).position().node_id() == 55511921);
+        REQUIRE(aln.path().mapping(0).position().is_reverse() == false);
+        REQUIRE(aln.path().mapping(0).position().offset() == 5);
+        REQUIRE(aln.path().mapping(1).position().node_id() == 55511924);
+        REQUIRE(aln.path().mapping(1).position().is_reverse() == false);
+        REQUIRE(aln.path().mapping(1).position().offset() == 0);
+        REQUIRE(aln.path().mapping(2).position().node_id() == 55511925);
+        REQUIRE(aln.path().mapping(2).position().is_reverse() == false);
+        REQUIRE(aln.path().mapping(2).position().offset() == 0);
+}
+
+TEST_CASE("MinimizerMapper can extract a strand-split dagified local graph without extraneous tips", "[giraffe][mapping]") {
+    // Make the graph that was causing trouble (it's just a stick)
+    std::string graph_json = R"(
+        {
+            "edge": [{"from": "60245280", "to": "60245281"},
+                     {"from": "60245283", "to": "60245284"},
+                     {"from": "60245282", "to": "60245283"},
+                     {"from": "60245277", "to": "60245278"},
+                     {"from": "60245279", "to": "60245280"},
+                     {"from": "60245284", "to": "60245285"},
+                     {"from": "60245281", "to": "60245282"},
+                     {"from": "60245278", "to": "60245279"}],
+            "node": [{"id": "60245280", "sequence": "GATTACAGATTACA"},
+                     {"id": "60245283", "sequence": "GATTACAGATTACA"},
+                     {"id": "60245282", "sequence": "GATTACAGATTACA"},
+                     {"id": "60245277", "sequence": "GATTACAGATTACA"},
+                     {"id": "60245285", "sequence": "GATTACAGATTACA"},
+                     {"id": "60245279", "sequence": "GATTACAGATTACA"},
+                     {"id": "60245284", "sequence": "GATTACAGATTACA"},
+                     {"id": "60245281", "sequence": "GATTACAGATTACA"},
+                     {"id": "60245278", "sequence": "GATTACAGATTACA"}]
+        }
+    )";
+    vg::Graph graph_chunk;
+    json2pb(graph_chunk, graph_json.c_str(), graph_json.size());
+    vg::VG graph(graph_chunk);
+    
+    TestMinimizerMapper::with_dagified_local_graph(make_pos_t(60245283, false, 10), empty_pos_t(), 50, graph, [&](DeletableHandleGraph& dagified_graph, const std::function<std::pair<nid_t, bool>(const handle_t&)>& dagified_handle_to_base) {
+        // The graph started as a stick
+        // We strand-split it to two disconnected sticks, and then dagify from the one start node in the one orientation, so it should go back to being one stick, with 2 tips.
+        auto tip_handles = handlegraph::algorithms::find_tips(&dagified_graph);
+#ifdef debug
+        for (auto& h : tip_handles) {
+            // Dump all the tips for debugging
+            auto original = dagified_handle_to_base(h);
+            std::cerr << "Found tip handle " << dagified_graph.get_id(h) << (dagified_graph.get_is_reverse(h) ? "-" : "+") << " representing " << original.first << (original.second ? "-" : "+") << std::endl;
+        }
+#endif
+        for (auto& h : tip_handles) {
+            auto original = dagified_handle_to_base(h);
+            if (!dagified_graph.get_is_reverse(h)) {
+                // Any head must correspond to the anchoring node
+                REQUIRE(original.first == 60245283);
+                REQUIRE(original.second == false);
+            }
+        }
+        // There should be that head and also some tail where we ran out of search bases.
+        REQUIRE(tip_handles.size() == 2);
+    });
+}
 
 
 

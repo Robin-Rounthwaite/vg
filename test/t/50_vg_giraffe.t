@@ -5,7 +5,7 @@ BASH_TAP_ROOT=../deps/bash-tap
 
 PATH=../bin:$PATH # for vg
 
-plan tests 43
+plan tests 45
 
 vg construct -a -r small/x.fa -v small/x.vcf.gz >x.vg
 vg index -x x.xg x.vg
@@ -42,6 +42,10 @@ vg minimizer -k 29 -b -s 18 -g x.gbwt -o x.sync x.xg
 
 vg giraffe -x x.xg -H x.gbwt -m x.sync -d x.dist -f reads/small.middle.ref.fq > mapped.sync.gam
 is "${?}" "0" "a read can be mapped with syncmer indexes without crashing"
+
+chmod 400 x.dist
+vg giraffe -x x.xg -H x.gbwt -m x.min -d x.dist -f reads/small.middle.ref.fq >/dev/null 
+is "${?}" "0" "a read can be mapped when the distance index is not writable"
 
 rm -f x.vg x.xg x.gbwt x.snarls x.min x.sync x.dist x.gg
 rm -f x.giraffe.gbz
@@ -188,6 +192,7 @@ vg autoindex -p 1mb1kgp -w giraffe -P "VG w/ Variant Paths:1mb1kgp.vg" -P "Giraf
 vg giraffe -Z 1mb1kgp.giraffe.gbz -f reads/1mb1kgp_longread.fq >longread.gam -U 300 --progress --track-provenance --align-from-chains
 # This is an 8001 bp read with 1 insert and 1 substitution
 is "$(vg view -aj longread.gam | jq -r '.score')" "7989" "A long read can be correctly aligned"
+is "$(vg view -aj longread.gam | jq -c '.path.mapping[].edit[] | select(.sequence)' | wc -l)" "2" "A long read hasd the correct edits found"
 is "$(vg view -aj longread.gam | jq -c '. | select(.annotation["filter_3_cluster-coverage_cluster_passed_size_total"] <= 300)' | wc -l)" "1" "Long read minimizer set is correctly restricted"
 
 rm -f longread.gam 1mb1kgp.dist 1mb1kgp.giraffe.gbz 1mb1kgp.min log.txt

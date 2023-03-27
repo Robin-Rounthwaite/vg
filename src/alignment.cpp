@@ -184,7 +184,7 @@ bool get_next_alignment_pair_from_fastqs(gzFile fp1, gzFile fp2, char* buffer, s
     return get_next_alignment_from_fastq(fp1, buffer, len, mate1) && get_next_alignment_from_fastq(fp2, buffer, len, mate2);
 }
 
-size_t fastq_unpaired_for_each_parallel(const string& filename, function<void(Alignment&)> lambda) {
+size_t fastq_unpaired_for_each_parallel(const string& filename, function<void(Alignment&)> lambda, uint64_t batch_size) {
     
     gzFile fp = (filename != "-") ? gzopen(filename.c_str(), "r") : gzdopen(fileno(stdin), "r");
     if (!fp) {
@@ -199,7 +199,7 @@ size_t fastq_unpaired_for_each_parallel(const string& filename, function<void(Al
     };
     
     
-    size_t nLines = unpaired_for_each_parallel(get_read, lambda);
+    size_t nLines = unpaired_for_each_parallel(get_read, lambda, batch_size);
     
     delete[] buf;
     gzclose(fp);
@@ -207,17 +207,18 @@ size_t fastq_unpaired_for_each_parallel(const string& filename, function<void(Al
     
 }
 
-size_t fastq_paired_interleaved_for_each_parallel(const string& filename, function<void(Alignment&, Alignment&)> lambda) {
-    return fastq_paired_interleaved_for_each_parallel_after_wait(filename, lambda, [](void) {return true;});
+size_t fastq_paired_interleaved_for_each_parallel(const string& filename, function<void(Alignment&, Alignment&)> lambda, uint64_t batch_size) {
+    return fastq_paired_interleaved_for_each_parallel_after_wait(filename, lambda, [](void) {return true;}, batch_size);
 }
     
-size_t fastq_paired_two_files_for_each_parallel(const string& file1, const string& file2, function<void(Alignment&, Alignment&)> lambda) {
-    return fastq_paired_two_files_for_each_parallel_after_wait(file1, file2, lambda, [](void) {return true;});
+size_t fastq_paired_two_files_for_each_parallel(const string& file1, const string& file2, function<void(Alignment&, Alignment&)> lambda, uint64_t batch_size) {
+    return fastq_paired_two_files_for_each_parallel_after_wait(file1, file2, lambda, [](void) {return true;}, batch_size);
 }
     
 size_t fastq_paired_interleaved_for_each_parallel_after_wait(const string& filename,
                                                              function<void(Alignment&, Alignment&)> lambda,
-                                                             function<bool(void)> single_threaded_until_true) {
+                                                             function<bool(void)> single_threaded_until_true,
+                                                             uint64_t batch_size) {
     
     gzFile fp = (filename != "-") ? gzopen(filename.c_str(), "r") : gzdopen(fileno(stdin), "r");
     if (!fp) {
@@ -231,7 +232,7 @@ size_t fastq_paired_interleaved_for_each_parallel_after_wait(const string& filen
         return get_next_interleaved_alignment_pair_from_fastq(fp, buf, len, mate1, mate2);
     };
     
-    size_t nLines = paired_for_each_parallel_after_wait(get_pair, lambda, single_threaded_until_true);
+    size_t nLines = paired_for_each_parallel_after_wait(get_pair, lambda, single_threaded_until_true, batch_size);
     
     delete[] buf;
     gzclose(fp);
@@ -240,7 +241,8 @@ size_t fastq_paired_interleaved_for_each_parallel_after_wait(const string& filen
     
 size_t fastq_paired_two_files_for_each_parallel_after_wait(const string& file1, const string& file2,
                                                            function<void(Alignment&, Alignment&)> lambda,
-                                                           function<bool(void)> single_threaded_until_true) {
+                                                           function<bool(void)> single_threaded_until_true,
+                                                           uint64_t batch_size) {
     
     gzFile fp1 = (file1 != "-") ? gzopen(file1.c_str(), "r") : gzdopen(fileno(stdin), "r");
     if (!fp1) {
@@ -258,7 +260,7 @@ size_t fastq_paired_two_files_for_each_parallel_after_wait(const string& file1, 
         return get_next_alignment_pair_from_fastqs(fp1, fp2, buf, len, mate1, mate2);
     };
     
-    size_t nLines = paired_for_each_parallel_after_wait(get_pair, lambda, single_threaded_until_true);
+    size_t nLines = paired_for_each_parallel_after_wait(get_pair, lambda, single_threaded_until_true, batch_size);
     
     delete[] buf;
     gzclose(fp1);
@@ -395,8 +397,26 @@ void parse_tid_path_handle_map(const bam_hdr_t* hts_header, const PathHandleGrap
         // Pre-look-up all the paths mentioned in the header
         string target_name(hts_header->target_name[i]);
         if (graph->has_path(target_name)) {
-            // Store the handles for the paths we find, under their HTSlib target numbers.
-            tid_path_handle.emplace(i, graph->get_path_handle(target_name));
+            path_handle_t target = graph->get_path_handle(target_name);
+            if (graph->get_sense(target) != PathSense::HAPLOTYPE) {
+                // Non-haplotype paths are allowed in the mapping because they
+                // are always path-position indexed.
+                
+                // Store the handles for the paths we find, under their HTSlib target numbers.
+                tid_path_handle.emplace(i, target);
+            } else {
+                // TODO: Decide we need to positional-index this path? Make
+                // PackedReferencePathOverlay take a collection of paths to
+                // index and use this one?
+                #pragma omp critical (cerr)
+                std::cerr << "error[vg::parse_tid_path_handle_map] Path " << target_name
+                          << " referenced in header exists in graph, but as a haplotype."
+                          << " It is probably not indexed for positional lookup. Make the"
+                          << " path a reference path"
+                          << " <https://github.com/vgteam/vg/wiki/Changing-References>"
+                          << " and try again." << std::endl;
+                exit(1);
+            }
         }
     }
 }
@@ -2014,12 +2034,12 @@ map<string ,vector<pair<size_t, bool> > > alignment_refpos_to_path_offsets(const
     return offsets;
 }
 
-void alignment_set_distance_to_correct(Alignment& aln, const Alignment& base) {
+void alignment_set_distance_to_correct(Alignment& aln, const Alignment& base, const unordered_map<string, string>* translation) {
     auto base_offsets = alignment_refpos_to_path_offsets(base);
-    return alignment_set_distance_to_correct(aln, base_offsets);
+    return alignment_set_distance_to_correct(aln, base_offsets, translation);
 }
 
-void alignment_set_distance_to_correct(Alignment& aln, const map<string ,vector<pair<size_t, bool> > >& base_offsets) {
+void alignment_set_distance_to_correct(Alignment& aln, const map<string ,vector<pair<size_t, bool> > >& base_offsets, const unordered_map<string, string>* translation) {
     auto aln_offsets = alignment_refpos_to_path_offsets(aln);
     // bail out if we can't compare
     if (!(aln_offsets.size() && base_offsets.size())) return;
@@ -2027,7 +2047,15 @@ void alignment_set_distance_to_correct(Alignment& aln, const map<string ,vector<
     Position result;
     size_t min_distance = std::numeric_limits<size_t>::max();
     for (auto& path : aln_offsets) {
-        auto& name = path.first;
+        auto name = path.first;
+        if (translation) {
+            // See if we need to translate the name of the path
+            auto found = translation->find(name);
+            if (found != translation->end()) {
+                // We have a replacement so apply it.
+                name = found->second;
+            }
+        }
         auto& aln_positions = path.second;
         auto f = base_offsets.find(name);
         if (f == base_offsets.end()) continue;
@@ -2053,29 +2081,40 @@ void alignment_set_distance_to_correct(Alignment& aln, const map<string ,vector<
     }
 }
 
-bool alignment_is_valid(Alignment& aln, const HandleGraph* hgraph) {
+AlignmentValidity alignment_is_valid(const Alignment& aln, const HandleGraph* hgraph) {
     for (size_t i = 0; i < aln.path().mapping_size(); ++i) {
         const Mapping& mapping = aln.path().mapping(i);
         if (!hgraph->has_node(mapping.position().node_id())) {
-            cerr << "Invalid Alignment:\n" << pb2json(aln) <<"\nNode " << mapping.position().node_id()
-                 << " not found in graph" << endl;
-            return false;
+            std::stringstream ss;
+            ss << "Node " << mapping.position().node_id() << " not found in graph";
+            return {
+                AlignmentValidity::NODE_MISSING,
+                i,
+                ss.str()
+            };
         }
         size_t node_len = hgraph->get_length(hgraph->get_handle(mapping.position().node_id()));
         if (mapping_from_length(mapping) + mapping.position().offset() > node_len) {
-            cerr << "Invalid Alignment:\n" << pb2json(aln) << "\nLength of node "
-                 << mapping.position().node_id() << " (" << node_len << ") exceeded by Mapping with offset "
-                 << mapping.position().offset() << " and from-length " << mapping_from_length(mapping) << ":\n"
-                 << pb2json(mapping) << endl;
-            return false;
+            std::stringstream ss;
+            ss << "Length of node "
+               << mapping.position().node_id() << " (" << node_len << ") exceeded by Mapping with offset "
+               << mapping.position().offset() << " and from-length " << mapping_from_length(mapping);
+            return {
+                AlignmentValidity::NODE_TOO_SHORT,
+                i,
+                ss.str()
+            };
         }
     }
-    return true;
+    return {AlignmentValidity::OK};
 }
 
 Alignment target_alignment(const PathPositionHandleGraph* graph, const path_handle_t& path, size_t pos1, size_t pos2,
                            const string& feature, bool is_reverse, Mapping& cigar_mapping) {
     Alignment aln;
+    
+    // How long is the path?
+    auto path_len = graph->get_path_length(path);
     
     if (pos2 < pos1) {
         // Looks like we want to span the origin of a circular path
@@ -2085,9 +2124,6 @@ Alignment target_alignment(const PathPositionHandleGraph* graph, const path_hand
                                 " to " + to_string(pos2) + " across the junction of non-circular path " +
                                 graph->get_path_name(path));
         }
-        
-        // How long is the path?
-        auto path_len = graph->get_path_length(path);
         
         if (pos1 >= path_len) {
             // We want to start off the end of the path, which is no good.
@@ -2123,6 +2159,16 @@ Alignment target_alignment(const PathPositionHandleGraph* graph, const path_hand
     
     // Otherwise, the base case is that we don't go over the circular path junction
     
+    if (pos1 >= path_len) {
+        throw runtime_error("Cannot extract Alignment starting at " + to_string(pos1) +
+                            " which is past end " + to_string(path_len) + " of path " +
+                            graph->get_path_name(path));
+    }
+    if (pos2 > path_len) {
+        throw runtime_error("Cannot extract Alignment ending at " + to_string(pos2) +
+                            " which is past end " + to_string(path_len) + " of path " +
+                            graph->get_path_name(path));
+    }
     
     step_handle_t step = graph->get_step_at_position(path, pos1);
     size_t step_start = graph->get_position_of_step(step);
