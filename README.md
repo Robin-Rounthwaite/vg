@@ -428,3 +428,4 @@ A variety of commands are available:
 
 MIT
 
+# snarl-normalizer-scripts
