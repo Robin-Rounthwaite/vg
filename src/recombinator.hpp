@@ -223,6 +223,9 @@ public:
     /// An encoded kmer.
     typedef Haplotypes::Subchain::kmer_type kmer_type;
 
+    /// Minimizer index without payloads.
+    typedef gbwtgraph::MinimizerIndex<gbwtgraph::Key64, gbwtgraph::Position> minimizer_index_type;
+
     /**
      * A subchain is a substring of a top-level chain defined by at most two
      * boundary nodes.
@@ -258,7 +261,7 @@ public:
     HaplotypePartitioner(const gbwtgraph::GBZ& gbz,
         const gbwt::FastLocate& r_index,
         const SnarlDistanceIndex& distance_index,
-        const gbwtgraph::DefaultMinimizerIndex& minimizer_index,
+        const minimizer_index_type& minimizer_index,
         Verbosity verbosity);
 
     /// Parameters for `partition_haplotypes()`.
@@ -286,13 +289,16 @@ public:
      *
      * Haplotypes crossing each subchain are represented using minimizers with a
      * single occurrence in the graph.
+     *
+     * Throws `std::runtime_error` on error in single-threaded parts and exits
+     * with `std::exit(EXIT_FAILURE)` in multi-threaded parts.
      */
     Haplotypes partition_haplotypes(const Parameters& parameters) const;
 
     const gbwtgraph::GBZ& gbz;
     const gbwt::FastLocate& r_index;
     const SnarlDistanceIndex& distance_index;
-    const gbwtgraph::DefaultMinimizerIndex& minimizer_index;
+    const minimizer_index_type& minimizer_index;
 
     Verbosity verbosity;
 
@@ -340,21 +346,26 @@ private:
 class Recombinator {
 public:
     /// Number of haplotypes to be generated.
-    constexpr static size_t NUM_HAPLOTYPES = 8;
+    constexpr static size_t NUM_HAPLOTYPES = 4;
 
-    /// Expected read coverage.
-    constexpr static size_t COVERAGE = 30;
+    /// Expected kmer coverage. Use 0 to estimate from kmer counts.
+    constexpr static size_t COVERAGE = 0;
 
     /// Block size (in kmers) for reading KFF files.
     constexpr static size_t KFF_BLOCK_SIZE = 1000000;
 
     /// Multiplier to the score of a present kmer every time a haplotype with that
     /// kmer is selected.
-    constexpr static double PRESENT_DISCOUNT = 0.7;
+    constexpr static double PRESENT_DISCOUNT = 0.9;
 
     /// Adjustment to the score of a heterozygous kmer every time a haplotype with
     /// (-) or without (+) that kmer is selected.
-    constexpr static double HET_ADJUSTMENT = 0.2;
+    constexpr static double HET_ADJUSTMENT = 0.05;
+
+    /// Score for getting an absent kmer right/wrong. This should be less than 1, if
+    /// we assume that having the right variants in the graph is more important than
+    /// keeping wrong variants out.
+    constexpr static double ABSENT_SCORE = 0.8;
 
     /// A GBWT sequence as (sequence identifier, offset in a node).
     typedef Haplotypes::sequence_type sequence_type;
@@ -482,7 +493,7 @@ public:
         /// Number of haplotypes to be generated.
         size_t num_haplotypes = NUM_HAPLOTYPES;
 
-        /// Read coverage.
+        /// Kmer coverage. Use 0 to estimate from kmer counts.
         size_t coverage = COVERAGE;
 
         /// Buffer size (in nodes) for GBWT construction.
@@ -496,6 +507,11 @@ public:
         /// each haplotype to encourage even sampling of haplotypes with and without
         /// that kmer.
         double het_adjustment = HET_ADJUSTMENT;
+
+        /// Score for absent kmers. This should be less than 1 if we assume that
+        /// having the right variants in the graph is more important than keeping
+        /// the wrong variants out.
+        double absent_score = ABSENT_SCORE;
 
         /// Sample randomly instead of by score.
         bool random_sampling = false;
@@ -517,6 +533,9 @@ public:
      * the middle of a chain create fragment breaks. If the chain starts without
      * a prefix (ends without a suffix), the haplotype chosen for the first (last)
      * subchain is used from the start (continued until the end).
+     *
+     * Throws `std::runtime_error` on error in single-threaded parts and exits
+     * with `std::exit(EXIT_FAILURE)` in multi-threaded parts.
      */
     gbwt::GBWT generate_haplotypes(const Haplotypes& haplotypes, const std::string& kff_file, const Parameters& parameters) const;
 
@@ -528,7 +547,7 @@ private:
     Statistics generate_haplotypes(const Haplotypes::TopLevelChain& chain,
         const hash_map<Haplotypes::Subchain::kmer_type, size_t>& kmer_counts,
         gbwt::GBWTBuilder& builder,
-        const Parameters& parameters) const;
+        const Parameters& parameters, double coverage) const;
 };
 
 //------------------------------------------------------------------------------
