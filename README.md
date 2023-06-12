@@ -427,5 +427,3 @@ A variety of commands are available:
 ## License
 
 MIT
-
-# snarl-normalizer-scripts
