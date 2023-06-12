@@ -5,7 +5,10 @@
  
 #include "constructor.hpp"
 #include "utility.hpp"
+#include "crash.hpp"
 #include "io/load_proto_to_graph.hpp"
+
+#include <IntervalTree.h>
 
 #include <cstdlib>
 #include <set>
@@ -200,61 +203,135 @@ namespace vg {
 
         return make_pair(variable_start, variable_stop);
     }
-
-    ConstructedChunk Constructor::construct_chunk(string reference_sequence, string reference_path_name,
-        vector<vcflib::Variant> variants, size_t chunk_offset) const {
-            
-        #ifdef debug
-        cerr << "constructing chunk " << reference_path_name << ":" << chunk_offset << " length " << reference_sequence.size() << endl;
-        #endif
+    
+    bool Constructor::sanitize_sequence_in_place(string& sequence, const string* sequence_name, size_t sequence_start_offset, const vcflib::Variant* variant) const {
+        
+        bool made_change = false;
         
         // Make sure the input sequence is upper-case
-        string uppercase_sequence = toUppercase(reference_sequence);
-        
-        if (uppercase_sequence != reference_sequence && warn_on_lowercase) {
-            #pragma omp critical (cerr)
-            {
-                // Note that the pragma also protects this mutable map that we update
-                if (!lowercase_warned_sequences.count(reference_path_name)) {
-                    // We haven't warned about this sequence yet
-                    cerr << "warning:[vg::Constructor] Lowercase characters found in "
-                        << reference_path_name << "; coercing to uppercase." << endl;
-                    lowercase_warned_sequences.insert(reference_path_name);
-                }    
+        string uppercase_sequence = toUppercase(sequence);
+        if (uppercase_sequence != sequence) {
+            // We had to make a change
+            if (warn_on_lowercase) {
+                if (variant) {
+                    // We are warning about a variant (alt)
+                    if (!lowercase_warned_alt) {
+                        #pragma omp critical (cerr)
+                        {
+                            cerr << "warning:[vg::Constructor] Lowercase characters found in "
+                                 << "variant; coercing to uppercase:\n" << *const_cast<vcflib::Variant*>(variant) << endl;
+                            lowercase_warned_alt = true;
+                        }
+                    }
+                } else {
+                    // What sequence are we complaining about?
+                    string name_to_warn = sequence_name ? *sequence_name : "DNA sequence";
+                    #pragma omp critical (cerr)
+                    {
+                        // Note that the pragma also protects this mutable map that we update
+                        if (!lowercase_warned_sequences.count(name_to_warn)) {
+                            // We haven't warned about this sequence yet
+                            cerr << "warning:[vg::Constructor] Lowercase characters found in "
+                                << name_to_warn << "; coercing to uppercase." << endl;
+                            lowercase_warned_sequences.insert(name_to_warn);
+                        }    
+                    }
+                }
             }
+            // Replace the original
+            sequence = std::move(uppercase_sequence);
+            made_change = true;
         }
-        reference_sequence = std::move(uppercase_sequence);
         
         // Make sure all IUPAC codes are Ns
-        string n_sequence = allAmbiguousToN(reference_sequence);
-        
-        if (n_sequence != reference_sequence && warn_on_ambiguous) {
-            #pragma omp critical (cerr)
-            {
-                // Note that the pragma also protects this mutable map that we update
-                if (!ambiguous_warned_sequences.count(reference_path_name)) {
-                    // We haven't warned about this sequence yet
-                    cerr << "warning:[vg::Constructor] Unsupported IUPAC ambiguity codes found in "
-                        << reference_path_name << "; coercing to N." << endl;
-                    ambiguous_warned_sequences.insert(reference_path_name);
-                }    
+        string n_sequence = allAmbiguousToN(sequence);
+        if (n_sequence != sequence) {
+            // We had to make a change
+            if (warn_on_ambiguous) {
+                if (variant) {
+                    // We are warning about a variant (alt).
+                    // TODO: We used to always bail for IUPAC codes in a
+                    // variant allele; do we really want to not?
+                    #pragma omp critical (cerr)
+                    {
+                        cerr << "warning:[vg::Constructor] Unsupported IUPAC ambiguity codes found in "
+                             << "variant; coercing to N:\n" << *const_cast<vcflib::Variant*>(variant) << endl;
+                    }
+                } else {
+                    // What sequence are we complaining about?
+                    string name_to_warn = sequence_name ? *sequence_name : "DNA sequence";
+                    #pragma omp critical (cerr)
+                    {
+                        // Note that the pragma also protects this mutable map that we update
+                        if (!ambiguous_warned_sequences.count(name_to_warn)) {
+                            // We haven't warned about this sequence yet
+                            cerr << "warning:[vg::Constructor] Unsupported IUPAC ambiguity codes found in "
+                                << name_to_warn << "; coercing to N." << endl;
+                            ambiguous_warned_sequences.insert(name_to_warn);
+                        }    
+                    }
+                }
             }
+            // Replace the original
+            sequence = std::move(n_sequence);
+            made_change = true;
         }
-        reference_sequence = std::move(n_sequence);
-
+        
         // TODO: this is like the forth scan of the whole string we do; can we
         // condense this all into one pass?
-        if (!allATGCN(reference_sequence)) {
+        if (!allATGCN(sequence)) {
             // We don't know what to do with gaps, and we want to catch
             // complete garbage.
+            
+            // We would like an example.
+            auto it = sequence.begin();
+            while (it != sequence.end() && (*it == 'A' || *it == 'T' || *it == 'G' || *it == 'C' || *it == 'N')) {
+                ++it;
+            }
+            
             #pragma omp critical (cerr)
             {
-                cerr << "error:[vg::Constructor] unacceptable characters found in " 
-                    << reference_path_name << "." << endl;
+                cerr << "error:[vg::Constructor] unacceptable character ";
+                if (it != sequence.end()) {
+                    cerr << "\"" << *it << "\" ";
+                }
+                cerr << "found in ";
+                if (sequence_name) {
+                    cerr << *sequence_name;
+                } else {
+                    cerr << "DNA sequence";
+                }
+                if (it != sequence.end()) {
+                    cerr << " at index " << (it - sequence.begin() + sequence_start_offset);
+                }
+                if (variant) {
+                    cerr << " in variant:\n" << *const_cast<vcflib::Variant*>(variant);
+                } else {
+                    cerr << ".";
+                }
+                cerr << endl;
                 exit(1);
             }
         }
+        
+        return made_change;
+    }
 
+    ConstructedChunk Constructor::construct_chunk(string reference_sequence, string reference_path_name,
+        vector<vcflib::Variant> variants, size_t chunk_offset) const {
+        
+        std::stringstream status_stream;
+        status_stream << "constructing chunk " << reference_path_name << ":" << chunk_offset << " length " << reference_sequence.size();
+
+        set_crash_context(status_stream.str());
+
+        #ifdef debug
+        cerr << status_stream.str() << endl;
+        #endif
+
+        // Make sure the input sequence is upper-case and all IUPAC codes are Ns
+        sanitize_sequence_in_place(reference_sequence, &reference_path_name);
+        
         // Construct a chunk for this sequence with these variants.
         ConstructedChunk to_return;
 
@@ -282,6 +359,8 @@ namespace vg {
         // need to visit every node in a run, we don't just care about the
         // bounding IDs. So we store entire copies of the runs. But since the
         // inversions always go backward, we only need them by their end.
+        // These are also on-the-end and not past-the-end positions, matching
+        // nodes_ending_at.
         map<size_t, vector<Node*>> ref_runs_by_end;
         
         // We don't want to wire inserts to each other, so we have a set of all
@@ -304,6 +383,8 @@ namespace vg {
 
         // We also need to track all points at which deletions start, so we can
         // search for the next one when deciding where to break the reference.
+        // We store the last NON-deleted base; the deletion arc attaches to the
+        // right side of this base! This base is *not* deleted.
         set<int64_t> deletion_starts;
 
         // We use this to get the next variant
@@ -411,8 +492,20 @@ namespace vg {
             #endif
 
             // Don't get out of the chunk
-            assert(target_position <= reference_sequence.size());
-            assert(reference_cursor <= reference_sequence.size());
+            if (target_position > reference_sequence.size()) {
+                #pragma omp critical (cerr)
+                cerr << "error:[vg::Constructor] On " << reference_path_name
+                     << ", attempted to add reference nodes until position " << target_position
+                     << " but reference is only " << reference_sequence.size() << " long" << endl;
+                exit(1);
+            }
+            if (reference_cursor > reference_sequence.size()) {
+                #pragma omp critical (cerr)
+                cerr << "error:[vg::Constructor] On " << reference_path_name
+                     << ", reference cursor is at " << reference_cursor
+                     << " but reference is only " << reference_sequence.size() << " long" << endl;
+                exit(1);
+            }
             
             if (target_position < reference_cursor) {
                 // TODO: should this ever happen? Should we be asked to go backward?
@@ -448,6 +541,9 @@ namespace vg {
                 nodes_ending_at[reference_cursor + seen_bases - 1].insert(new_nodes.back()->id());
                 
                 // Save the whole run for inversion tracing
+                #ifdef debug
+                cerr << "Create ref run ending at " << reference_cursor + seen_bases - 1 << endl;
+                #endif
                 ref_runs_by_end[reference_cursor + seen_bases - 1] = std::move(new_nodes);
 
             }
@@ -459,8 +555,13 @@ namespace vg {
             cerr << "Advanced reference cursor for next unmade base to " << reference_cursor << "/" << reference_sequence.size() << endl;
             #endif
             
-            assert(reference_cursor <= reference_sequence.size());
-            
+            if (reference_cursor > reference_sequence.size()) {
+                #pragma omp critical (cerr)
+                cerr << "error:[vg::Constructor] On " << reference_path_name
+                     << ", after adding reference nodes, reference cursor is at " << reference_cursor
+                     << " but reference is only " << reference_sequence.size() << " long" << endl;
+                exit(1);
+            }
         };
 
         while (next_variant != variants.end() || !clump.empty()) {
@@ -502,9 +603,8 @@ namespace vg {
                 // This holds the min and max values for the starts and ends of
                 // edits in each variant that are actual change-making edits. These
                 // are in chunk coordinates. They are only populated if a variant
-                // has a variable region. They can enclose a 0-length variable
-                // region by having the end before the beginning.
-                map<vcflib::Variant*, pair<int64_t, int64_t>> variable_bounds;
+                // has a variable region. Equal start and end indicate a 1-base region.
+                vector<IntervalTree<int64_t, vcflib::Variant*>::interval> variable_intervals;
 
                 // This holds the min and max values for starts and ends of edits
                 // not removed from the clump. These are in chunk coordinates.
@@ -523,30 +623,14 @@ namespace vg {
                     cerr << "Handling clump variant " << var_num << "/" << clump.size() << " @ " << variant->zeroBasedPosition() << endl;
 #endif
                 
-                    // No variants should still be symbolic at this point.
-                    // Either we canonicalized them into base-level sequence, or we rejected them whn making the clump.
-                    assert(!variant->isSymbolicSV());
-                    // If variants have SVTYPE set, though, we will still use that info instead of the base-level sequence.
-
-                    // Since we make the fasta reference uppercase, we do the VCF too (otherwise vcflib get mad)
+                    // Since we make the fasta reference uppercase, we do the VCF too (otherwise vcflib gets mad).
                     // We set this if we modify the variant and vcflib needs to reindex it.
                     bool reindex = false;
                     // We set this if we skipped the variant
                     bool skip_variant = false;
-                    for (auto& alt : variant->alt) {
-                        string upper_case_alt = toUppercase(alt);
-                        if (alt != upper_case_alt) {
-                            if (!lowercase_warned_alt && warn_on_lowercase) {
-                                #pragma omp critical (cerr)
-                                {
-                                    cerr << "warning:[vg::Constructor] Lowercase characters found in "
-                                         << "variant, coercing to uppercase:\n" << *variant << endl;
-                                    lowercase_warned_alt = true;
-                                }
-                            }
-                            swap(alt, upper_case_alt);
-                            reindex = true;
-                        }
+                    for (size_t i = 0; i < variant->alt.size(); i++) {
+                        auto& alt = variant->alt[i];
+                        // Process all the alts and not the ref
                         if (alt == "*") {
                             // This is a newer VCF feature we don't support,
                             // but not a broken file.
@@ -559,30 +643,28 @@ namespace vg {
                             skip_variant = true;
                             break;
                         }
-                        if (!allATGCN(alt)) {
-                            // We don't know what to do with gaps or IUPAC ambiguity codes, and
-                            // we want to catch complete garbage.
-                            #pragma omp critical (cerr)
-                            {
-                                cerr << "error:[vg::Constructor] non-ATGCN characters found in " 
-                                    << "variant:\n" << *variant << endl;
-                                exit(1);
-                            }
+                        // Sanitize the alt of Ns and lower case characters,
+                        // and ensure what remains is something we can use, not
+                        // a symbolic SV.
+                        bool modified = sanitize_sequence_in_place(alt, nullptr, 0, variant);
+                        if (modified) {
+                            // Also update the copy in alleles
+                            variant->alleles[i + 1] = alt;
                         }
+                        reindex |= modified;
                     }
                     if (skip_variant) {
                         // Move to the next variant
                         continue;
                     }
-                    for (auto& allele : variant->alleles) {
-                        allele = toUppercase(allele);
-                    }
-                    string upper_case_var_ref = toUppercase(variant->ref);
-                    if (upper_case_var_ref != variant->ref) {
-                        swap(variant->ref, upper_case_var_ref);
+                    // Also process the reference, but blame problems on the reference
+                    if (sanitize_sequence_in_place(variant->ref, &reference_path_name, variant->zeroBasedPosition())) {
+                        // Also update the copy in alleles
+                        variant->alleles[0] = variant->ref;
                         reindex = true;
                     }
                     if (reindex) {
+                        // Redo the indexing
                         variant->updateAlleleIndexes();
                     }
 
@@ -597,6 +679,20 @@ namespace vg {
                             cerr << "zero ind: " << variant->zeroBasedPosition() << " 1-indexed: " << variant->position << endl;
                         exit(1);
                     }
+                    
+                    // No variants should still be symbolic at this point.
+                    // Either we canonicalized them into base-level sequence, or we rejected them when making the clump.
+                    // If they had IUPAC codes in them we should have fixed that already too.
+                    if (variant->isSymbolicSV()) {
+                        #pragma omp critical (cerr)
+                        {
+                            cerr << "error:[vg::Constructor] On " << reference_path_name << " @ " << variant->zeroBasedPosition()
+                                 << ", variant appears to be a symbolic SV, but all variants should have already been converted to explicit sequence edits." << endl;
+                            cerr << "error:[vg::Constructor] Offending variant: " << *variant << endl;
+                        }
+                        exit(1);
+                    }
+                    // If variants have SVTYPE set, though, we will still use that info instead of the base-level sequence.
 
                     // Name the variant and place it in the order that we'll
                     // actually construct nodes in (see utility.hpp)
@@ -749,9 +845,19 @@ namespace vg {
                         // There's a (possibly 0-length) variable region
                         bounds.first -= chunk_offset;
                         bounds.second -= chunk_offset;
-                        // Save the bounds for making reference node path visits
-                        // inside the ref allele of the variable region.
-                        variable_bounds[variant] = bounds;
+                        
+                        if (alt_paths && bounds.second >= bounds.first) {
+                            // The variant covers a nonempty part of the
+                            // reference, and we will need to find it for alt
+                            // path generation.
+
+                            // Save the bounds for making reference node path visits
+                            // inside the ref allele of the variable region.
+                            #ifdef debug
+                            cerr << "Record ref interval of " << bounds.first << " to " << bounds.second << " for " << *variant << endl;
+                            #endif
+                            variable_intervals.push_back(IntervalTree<int64_t, vcflib::Variant*>::interval(bounds.first, bounds.second, variant));
+                        }
 
                         #ifdef debug
                         if (bounds.first < first_edit_start) {
@@ -801,6 +907,9 @@ namespace vg {
                 cerr << "edits run between " << first_edit_start << " and " << last_edit_end << endl;
                 #endif
 
+                // Index the variants in the clump by the reference region they overlap
+                IntervalTree<int64_t, vcflib::Variant*> variable_interval_tree(std::move(variable_intervals));
+
                 // Create ref nodes from the end of the last clump (where the cursor
                 // is) to the start of this clump's interior non-ref content.
                 add_reference_nodes_until(first_edit_start);
@@ -816,7 +925,7 @@ namespace vg {
                 // This holds on to variant ref paths, which we can't actually fill
                 // in until all the variants in the clump have had their non-ref
                 // paths done.
-                map<vcflib::Variant*, Path*> variant_ref_paths;
+                unordered_map<vcflib::Variant*, Path*> variant_ref_paths;
                 
                 // This holds alt Path pointers and the inversions (start, end)
                 // that they need to trace through in their inverted
@@ -1007,6 +1116,16 @@ namespace vg {
                                         nodes_starting_at[edit_start].insert(node_run.front()->id());
                                         nodes_ending_at[edit_end].insert(node_run.back()->id());
 
+                                        if (edit.ref == edit.alt) {
+                                            // This edit is a no-op and so the node we just created is a reference run.
+                                            // These can be necessary if insertions and deletions are part of the same record.
+                                            // Remember the whole node run for inversion tracing
+                                            #ifdef debug
+                                            cerr << "Create ref run ending at " << edit_end << endl;
+                                            #endif
+                                            ref_runs_by_end[edit_end] = node_run;
+                                        }
+
                                         // Save it in case any other alts also have this edit.
                                         created_nodes[key] = node_run;
 
@@ -1077,12 +1196,26 @@ namespace vg {
                 // come in or out.
 
                 // We need a function to work that out
-                auto next_breakpoint_after = [&](size_t position) -> size_t {
-                    // This returns the position of the base to the left of the next
-                    // required breakpoint within this clump, after the given
-                    // position, given created nodes and deletions that already
-                    // exist.
 
+                /**
+                 * Find the next breakpoint.
+                 *
+                 * Takes in the search position, like the position of the next
+                 * un-made reference base. So searches from the left edge of
+                 * the passed inclusive position.
+                 *
+                 * Finds the next required breakpoint within this clump, after
+                 * the given position, given created nodes and deletions that
+                 * already exist.
+                 *
+                 * Returns the inclusive position of the base to the left of
+                 * this breakpoint, so the breakpoint is immediately to the
+                 * right of the base at the returned position. This means that
+                 * sometimes, such as if the next piece of the reference would
+                 * be 1 bp long, this function will return the same value it
+                 * was passed.
+                 */
+                auto next_breakpoint_after = [&](size_t position) -> size_t {
                     // If nothing else, we're going to break at the end of the last
                     // edit in the clump.
                     size_t to_return = last_edit_end;
@@ -1094,7 +1227,7 @@ namespace vg {
                     // See if any nodes are registered as starting after our
                     // position. They'll all start before the end of the clump, and
                     // we don't care if they start at our position since that
-                    // breakpoint already happened.
+                    // breakpoint would be to the left and already happened.
                     auto next_start_iter = nodes_starting_at.upper_bound(position);
 
                     if(next_start_iter != nodes_starting_at.end()) {
@@ -1108,7 +1241,8 @@ namespace vg {
 
                     // See if any nodes are registered as ending at or after our
                     // position. We do care if they end at our position, since that
-                    // means we need to break right here.
+                    // means we need to break right here because that
+                    // breakpoint would be to the right.
                     auto next_end_iter = nodes_ending_at.lower_bound(position);
 
                     if(next_end_iter != nodes_ending_at.end()) {
@@ -1120,7 +1254,10 @@ namespace vg {
                         #endif
                     }
 
-                    // See if any deletions are registered as ending at or after here.
+                    // See if any deletions are registered as ending at or
+                    // after here. If the deletion ends here, this is the last
+                    // base deleted, and that creates a breeakpoint to our
+                    // right.
                     auto deletion_end_iter = deletions_ending_at.lower_bound(position);
 
                     if(deletion_end_iter != deletions_ending_at.end()) {
@@ -1135,7 +1272,9 @@ namespace vg {
                     
                     // See if any deletions are known to start at or after this
                     // base. We care about exact hits now, because deletions break
-                    // after the base they start at.
+                    // to the right of the base they start at, since we are
+                    // storing the base that the deletion arc attaches to the
+                    // right side of.
                     auto deletion_start_iter = deletion_starts.lower_bound(position);
                     // We don't need to worry about -1s here. They won't be found
                     // with lower_bound on a size_t.
@@ -1150,16 +1289,21 @@ namespace vg {
                         #endif
                     }
 
-                    // Check to see if any inversions' last inverted bases are past this point
+                    // Check to see if any inversions' last (largest
+                    // coordinate) inverted bases are at or after this point
                     // Inversions break the reference twice, much like deletions.
-                    auto inv_end_iter = inversions_ending.upper_bound(position);
+                    // Since we store the final base that is inverted, and the
+                    // inversion creates a breakpoint on the right side of that
+                    // base, we care about exact hits.
+                    auto inv_end_iter = inversions_ending.lower_bound(position);
                     if (inv_end_iter != inversions_ending.end()){
                         to_return = min(to_return, (size_t) inv_end_iter->first);
                         #ifdef debug
-                        cerr << "Next inversion ends by inverting " << inv_end_iter->first << endl;
+                        cerr << "Next inversion ends after inverting " << inv_end_iter->first << endl;
                         #endif
                     }
 
+                    // Also look at inversions' first (smallest coordinate) bases.
                     // Inversions break just after the anchor the base they start at,
                     // so we care about exact hits and use lower_bound.
                     auto inv_start_iter = inversions_starting.lower_bound(position);
@@ -1195,8 +1339,20 @@ namespace vg {
                         << next_end << "/" << reference_sequence.size() << endl;
                     #endif
                     
-                    assert(reference_cursor <= reference_sequence.size());
-                    assert(next_end <= reference_sequence.size());
+                    if (reference_cursor > reference_sequence.size()) {
+                        #pragma omp critical (cerr)
+                        cerr << "error:[vg::Constructor] On " << reference_path_name
+                             << ", adding reference to last edit end, reference cursor is at " << reference_cursor
+                             << " but reference is only " << reference_sequence.size() << " long" << endl;
+                        exit(1);
+                    }
+                    if (next_end > reference_sequence.size()) {
+                        #pragma omp critical (cerr)
+                        cerr << "error:[vg::Constructor] On " << reference_path_name
+                             << ", adding reference to last edit end, next end is at " << next_end
+                             << " but reference is only " << reference_sequence.size() << " long" << endl;
+                        exit(1);
+                    }
 
                     // We need to have a reference node/run of nodes (which may have
                     // already been created by a reference match) between where the
@@ -1206,8 +1362,8 @@ namespace vg {
 
                     // We need a key to see if a node (run) has been made for this sequece already
                     auto key = make_tuple(reference_cursor, run_sequence, run_sequence);
-
-                    if (created_nodes.count(key) == 0) {
+                    auto representative_nodes = created_nodes.find(key);
+                    if (representative_nodes == created_nodes.end()) {
                         // We don't have a run of ref nodes up to the next break, so make one
                         vector<Node*> node_run = create_nodes(run_sequence);
 
@@ -1216,6 +1372,9 @@ namespace vg {
                         nodes_ending_at[next_end].insert(node_run.back()->id());
                         
                         // Remember the whole node run for inversion tracing
+                        #ifdef debug
+                        cerr << "Create ref run ending at " << next_end << endl;
+                        #endif
                         ref_runs_by_end[next_end] = node_run;
                         
 
@@ -1224,34 +1383,43 @@ namespace vg {
 #endif
 
                         // Save it in case any other alts also have this edit.
-                        created_nodes[key] = node_run;
+                        representative_nodes = created_nodes.insert(representative_nodes, {key, node_run});
+                    } else {
+#ifdef debug
+                        cerr << "Reference nodes at  " << reference_cursor << " for constant " << run_sequence.size() << " bp sequence " << run_sequence << " already exist" << endl;
+#endif
                     }
 
-                    for (Node* node : created_nodes[key]) {
+                    for (Node* node : representative_nodes->second) {
                         // Add a reference visit to each node we created/found
                         add_match(ref_path, node);
+                    }
 
-                        if (alt_paths) {
-                            for (vcflib::Variant* variant : clump) {
+                    if (!representative_nodes->second.empty() && alt_paths) {
+                        // Ref paths from other variants may need to visit these new nodes.
+                        auto overlapping_intervals = variable_interval_tree.findOverlapping(reference_cursor, reference_cursor);
+                        #ifdef debug
+                        cerr << "Found " << overlapping_intervals.size() << " potential overlapping variants in clump at " << reference_cursor << endl;
+                        #endif
+                        for (auto& interval : overlapping_intervals) {
+                            if (interval.start <= reference_cursor && interval.stop >= reference_cursor && !skipped.count(interval.value)) {
                                 // For each variant we might also be part of the ref allele of
-                                if (!skipped.count(variant) &&
-                                        variable_bounds.count(variant) &&
-                                        reference_cursor >= variable_bounds[variant].first &&
-                                        reference_cursor <= variable_bounds[variant].second) {
-                                    // For unique variants that actually differ from reference,
-                                    // if this run of nodes starts within the variant's variable region...
-                                    // (We know if it starts in the variable region it has to
-                                    // end in the variant, because the variable region ends with
-                                    // a node break)
 
-                                    if (variant_ref_paths.count(variant) == 0) {
-                                        // All unique variants ought to have a ref path created
-                                        cerr << "error:[vg::Constructor] no ref path for " << *variant << endl;
-                                        exit(1);
-                                    }
+                                // For unique variants that actually differ from reference,
+                                // if this run of nodes starts within the variant's variable region...
+                                // (We know if it starts in the variable region it has to
+                                // end in the variant, because the variable region ends with
+                                // a node break)
 
+                                if (variant_ref_paths.count(interval.value) == 0) {
+                                    // All unique variants ought to have a ref path created
+                                    cerr << "error:[vg::Constructor] no ref path for " << *interval.value << endl;
+                                    exit(1);
+                                }
+                                
+                                for (Node* node : representative_nodes->second) {
                                     // Add a match along the variant's ref allele path
-                                    add_match(variant_ref_paths[variant], node);
+                                    add_match(variant_ref_paths[interval.value], node);
                                 }
                             }
                         }
@@ -1260,8 +1428,14 @@ namespace vg {
                     // Advance the reference cursor to after this run of reference nodes
                     reference_cursor = next_end + 1;
                     
-                    assert(reference_cursor <= reference_sequence.size());
-
+                    if (reference_cursor > reference_sequence.size()) {
+                        #pragma omp critical (cerr)
+                        cerr << "error:[vg::Constructor] On " << reference_path_name
+                             << ", after adding reference to last edit end, reference cursor is at " << reference_cursor
+                             << " but reference is only " << reference_sequence.size() << " long" << endl;
+                        exit(1);
+                    }
+                    
                     // Keep going until we have created reference nodes through to
                     // the end of the clump's interior edits.
                 }
@@ -1311,8 +1485,13 @@ namespace vg {
                         << inv_end_cursor << endl;
                     #endif
                     
-                    // Make sure we did it right
-                    assert(inv_end_cursor == inv_start);
+                    if (inv_end_cursor != inv_start) {
+                        // Make sure we did it right
+                        #pragma omp critical (cerr)
+                        cerr << "error:[vg::Constructor] On " << reference_path_name << " near " << reference_cursor
+                             << ", inversion end cursor " << inv_end_cursor << " did not reach inversion start " << inv_start << endl;
+                        exit(1);
+                    }
                 
                 }
 
@@ -1575,7 +1754,8 @@ namespace vg {
                 nonempty_paths++;
             }
         }
-
+        
+        clear_crash_context();
         return to_return;
     }
 
@@ -1643,17 +1823,24 @@ namespace vg {
         // max rank used?
         size_t max_ref_rank = 0;
 
-        // Whenever a chunk ends with a single node, we separate it out and buffer
-        // it here, because we may need to glue it together with subsequent leading
-        // nodes that were broken by a chunk boundary.
+        // Whenever a chunk ends with a single node, with no edges to the end
+        // or non-reference paths, we separate it out and buffer it here,
+        // because we may need to glue it together with subsequent leading
+        // nodes with no edges to the start or non-reference paths, to
+        // eliminate spurious node breaks at chunk boundaries. 
         Node last_node_buffer;
 
         // Sometimes we need to emit single node reference chunks gluing things
         // together
         auto emit_reference_node = [&](Node& node) {
 
-            // Don't emit nonexistent nodes
-            assert(node.id() != 0);
+            if (node.id() == 0) {
+                // Don't emit nonexistent nodes
+                #pragma omp critical (cerr)
+                cerr << "error:[vg::Constructor] On " << vcf_contig << " near " << chunk_start
+                     << ", tried to produce a reference node without an ID" << endl;
+                exit(1);
+            }
 
             // Make a single node chunk for the node
             Graph chunk;
@@ -1682,9 +1869,86 @@ namespace vg {
         auto wire_and_emit = [&](ConstructedChunk& chunk) {
             // When each chunk comes back:
             
-            if (chunk.left_ends.size() == 1 && last_node_buffer.id() != 0) {
+            // If we have a single head or tail with no outer edges or
+            // non-reference paths, we will fill in the ID here.
+            nid_t head_id = 0;
+            nid_t tail_id = 0;
+
+            if (last_node_buffer.id() != 0 && chunk.left_ends.size() == 1) {
+                // We have a single dangling node buffered that we can rewrite.
+                // So we also want to know if we have a head to combine it with.
+                // And it looks like we might.
+                head_id = *chunk.left_ends.begin();
+                #ifdef debug
+                cerr << "Node " << head_id << " might be mergable with buffered node " << last_node_buffer.id() << endl;
+                #endif
+            }
+
+            if (chunk.right_ends.size() == 1) {
+                // We always need to know if we can buffer the tail.
+                // Name this node a candidate tail.
+                tail_id = *chunk.right_ends.begin();
+                #ifdef debug
+                cerr << "Node " << tail_id << " might be a tail we can buffer" << endl;
+                #endif
+            }
+
+            for (auto& edge : chunk.graph.edge()) {            
+                // Go through all edges and kick out head and tail candidates if they have any on the outside.
+                if (head_id && ((edge.from() == head_id && edge.from_start()) || (edge.to() == head_id && !edge.to_end()))) {
+                    // Edge connects to the start of the head candidate, so it fails.
+                    #ifdef debug
+                    cerr << "Node " << head_id << " has an edge to its left and so can't merge" << endl;
+                    #endif
+                    head_id = 0;
+                }
+                if (tail_id && ((edge.from() == tail_id && !edge.from_start()) || (edge.to() == tail_id && edge.to_end()))) {
+                    // Edge connects to the end of the tail candidate, so it fails.
+                    #ifdef debug
+                    cerr << "Node " << tail_id << " has an edge to its right and so can't merge" << endl;
+                    #endif
+                    tail_id = 0;
+                }
+            }
+
+            for (size_t i = 1; (head_id != 0 || tail_id != 0) && i < chunk.graph.path_size(); i++) {
+                // Go through all paths other than the reference (which is 0)
+                auto& path = chunk.graph.path(i);
+                
+                // Check the first and last steps on the path to see if they
+                // touch our head/tail nodes. Other steps can't touch them
+                // because of the edge restrictions we already checked.
+                auto check_mapping = [&](size_t mapping_index) {
+                    nid_t touched_node = path.mapping(mapping_index).position().node_id();
+                    if (touched_node == head_id) {
+                        #ifdef debug
+                        cerr << "Node " << head_id << " is visited by path " << path.name() << " and so can't merge" << endl;
+                        #endif
+                        head_id = 0;
+                    }
+                    if (touched_node == tail_id) {
+                        #ifdef debug
+                        cerr << "Node " << tail_id << " is visited by path " << path.name() << " and so can't merge" << endl;
+                        #endif
+                        tail_id = 0;
+                    }
+                };
+
+                // Sometimes the first and last step are the same step!
+                if (path.mapping_size() > 0) {
+                    // We have a first step
+                    check_mapping(0);
+                    if (path.mapping_size() > 1) {
+                        // We have a distinct last step
+                        check_mapping(path.mapping_size() - 1);
+                    }
+                }
+            }
+
+
+            if (last_node_buffer.id() != 0 && head_id != 0) {
                 // We have a last node from the last chunk that we want to glom onto
-                // this chunk.
+                // this chunk, and we have a node to do it with.
 
                 // We want to merge it with the single source node for this
                 // chunk. But depending on the variant structure it may not be
@@ -1697,23 +1961,25 @@ namespace vg {
                 // graph size anyway, and we never have to scan through more
                 // than a variant's worth of nodes.
                 
-                // This is the node we want
-                auto wanted_id = *chunk.left_ends.begin();
-                
                 // We will fill this in
                 Node* mutable_first_node = nullptr;
                 for (size_t i = 0; i < chunk.graph.node_size(); i++) {
                     // Look at each node in turn
                     mutable_first_node = chunk.graph.mutable_node(i);
                     
-                    if (mutable_first_node->id() == wanted_id) {
+                    if (mutable_first_node->id() == head_id) {
                         // We found the left end we want
                         break;
                     }
                 }
                 
-                // Make sure we found it
-                assert(mutable_first_node != nullptr && mutable_first_node->id() == wanted_id);
+                if (mutable_first_node == nullptr || mutable_first_node->id() != head_id) {
+                    // Make sure we found it
+                    #pragma omp critical (cerr)
+                    cerr << "error:[vg::Constructor] On " << reference_contig
+                         << ", could not find node " << head_id << endl;
+                    exit(1);
+                }
 
                 // Combine the sequences for the two nodes
                 string combined_sequence = last_node_buffer.sequence() + mutable_first_node->sequence();
@@ -1751,19 +2017,37 @@ namespace vg {
                 // Update the mapping lengths on the mutable first node.
                 // First we find the primary path
                 Path* path = chunk.graph.mutable_path(0);
-                assert(path->name() == reference_contig);
+                if (path->name() != reference_contig) {
+                    #pragma omp critical (cerr)
+                    cerr << "error:[vg::Constructor] Expected path " << reference_contig
+                         << " but found path " << path->name() << endl;
+                    exit(1);
+                }
                 // Then the first mapping
                 Mapping* mapping = path->mutable_mapping(0);
-                assert(mapping->position().node_id() == mutable_first_node->id());
-                assert(mapping->edit_size() == 1);
+                if (mapping->position().node_id() != mutable_first_node->id()) {
+                    #pragma omp critical (cerr)
+                    cerr << "error:[vg::Constructor] On " << reference_contig
+                         << ", expected node " << mutable_first_node->id()
+                         << " but found node " << mapping->position().node_id() << endl;
+                    exit(1);
+                }
+                if (mapping->edit_size() != 1) {
+                    #pragma omp critical (cerr)
+                    cerr << "error:[vg::Constructor] On " << reference_contig
+                         << " at node " << mapping->position().node_id()
+                         << ", expected 1 edit but found " << mapping->edit_size() << endl;
+                    exit(1);
+                }
                 // Then the only edit
                 Edit* edit = mapping->mutable_edit(0);
                 // Correct its length
                 edit->set_from_length(mutable_first_node->sequence().size());
                 edit->set_to_length(mutable_first_node->sequence().size());
             } else if (last_node_buffer.id() != 0) {
-                // There's no single leading node on this next chunk, but we still
-                // have a single trailing node to emit.
+                // There's no single leading node on this next chunk that we
+                // are free to rewrite, but we still have a single trailing
+                // node to emit.
 
                 // Emit it
                 emit_reference_node(last_node_buffer);
@@ -1771,24 +2055,45 @@ namespace vg {
                 last_node_buffer = Node();
             }
 
-            if (chunk.right_ends.size() == 1) {
+            if (tail_id != 0) {
                 // We need to pull out the last node in the chunk. Note that it may
                 // also be the first node in the chunk...
 
                 // We know it's the last node in the graph
                 last_node_buffer = chunk.graph.node(chunk.graph.node_size() - 1);
                 
-                assert(chunk.right_ends.count(last_node_buffer.id()));
+                if (last_node_buffer.id() != tail_id) {
+                    #pragma omp critical (cerr)
+                    cerr << "error:[vg::Constructor] On " << reference_contig
+                         << ", could not find right end for node " << last_node_buffer.id() << endl;
+                    exit(1);
+                }
 
                 // Remove it
                 chunk.graph.mutable_node()->RemoveLast();
 
                 // Find the primary path
                 Path* path = chunk.graph.mutable_path(0);
-                assert(path->name() == reference_contig);
+                if (path->name() != reference_contig) {
+                    #pragma omp critical (cerr)
+                    cerr << "error:[vg::Constructor] Expected path " << reference_contig
+                         << " but found path " << path->name() << endl;
+                    exit(1);
+                }
                 // Then drop last mapping, which has to be to this node
-                assert(path->mapping_size() > 0);
-                assert(path->mapping(path->mapping_size() - 1).position().node_id() == last_node_buffer.id());
+                if (path->mapping_size() == 0) {
+                    #pragma omp critical (cerr)
+                    cerr << "error:[vg::Constructor] On " << reference_contig
+                         << ", found empty path" << endl;
+                    exit(1);
+                }
+                if (path->mapping(path->mapping_size() - 1).position().node_id() != last_node_buffer.id()) {
+                    #pragma omp critical (cerr)
+                    cerr << "error:[vg::Constructor] On " << reference_contig
+                         << ", expected last node" << last_node_buffer.id()
+                         << " but found " << path->mapping(path->mapping_size() - 1).position().node_id() << endl;
+                    exit(1);
+                }
                 path->mutable_mapping()->RemoveLast();
 
                 // Update its ID separately, since it's no longer in the graph.
@@ -1905,6 +2210,9 @@ namespace vg {
             // While we have variants we want to include
             auto vvar = variant_source.get();
 
+            // Fix the variant's canonical flag being uninitialized.
+            vvar->canonical = false;
+
             // We need to decide if we want to use this variant. By default we will use all variants.
             bool variant_acceptable = true;
             
@@ -1932,24 +2240,38 @@ namespace vg {
                 if (vvar->isSymbolicSV()) {
                     // We have a symbolic not-all-filled-in alt.
                     // We need to be processed as a symbolic SV
+                    // It also might just have IUPAC codes in it and an SVTYPE and thus look symbolic.
                 
                     if (this->do_svs) {
                         // We are actually going to try to handle this SV.
                         
-                        // Canonicalize the variant and see if that disqualifies it.
-                        // This also takes care of setting the variant's alt sequences.
-                        variant_acceptable = vvar->canonicalizable() && vvar->canonicalize(reference, insertions, true);
-         
+                        if (vvar->alt.size() > 1) {
+                            // vcflib will refuse to canonicalize multi-alt SVs.
+                            #pragma omp critical (cerr)
+                            {
+                                if (!multiallelic_sv_warned) {
+                                    cerr << "warning:[vg::Constructor] Multiallelic SVs cannot be canonicalized by vcflib; skipping variants like: " << *vvar << endl;
+                                    multiallelic_sv_warned = true;
+                                }
+                            }
+                            variant_acceptable = false;
+                        }
+                        
                         if (variant_acceptable) {
-                            // Worth checking for multiple alts.
-                            if (vvar->alt.size() > 1) {
-                                // We can't handle multiallelic SVs yet.
+                            // Canonicalize the variant and see if that disqualifies it.
+                            // This also takes care of setting the variant's alt sequences.
+                            variant_acceptable = vvar->canonicalizable() && vvar->canonicalize(reference, insertions, true);
+                            if (!variant_acceptable) {
                                 #pragma omp critical (cerr)
-                                cerr << "warning:[vg::Constructor] Unsupported multiallelic SV being skipped: " << *vvar << endl;
-                                variant_acceptable = false;
+                                {
+                                    if (!uncanonicalizable_sv_warned) {
+                                        cerr << "warning:[vg::Constructor] vcflib could not canonicalize some SVs to base-level sequence; skipping variants like: " << *vvar << endl;
+                                        uncanonicalizable_sv_warned = true;
+                                    }
+                                }
                             }
                         }
-                            
+         
                         if (variant_acceptable) {
                             // Worth checking for bounds problems.
                             // We have seen VCFs where the variant positions are on GRCh38 but the END INFO tags are on GRCh37.
@@ -1968,13 +2290,13 @@ namespace vg {
                         variant_acceptable = false;
                         
                         // Figure out exactly what to complain about.
-                        
                         for (string& alt : vvar->alt) {
                             // Validate each alt of the variant
 
                             if(!allATGCN(alt)) {
                                 // This is our problem alt here.
                                 // Either it's a symbolic alt or it is somehow lower case or something.
+                                // It could be an IUPAC code, which we can't handle usually.
                                 #pragma omp critical (cerr)
                                 {
                                     bool warn = true;
@@ -1987,7 +2309,7 @@ namespace vg {
                                     }
                                     if (warn) {
                                         cerr << "warning:[vg::Constructor] Unsupported variant allele \""
-                                            << alt << "\"; Skipping variant(s) " << *vvar <<" !" << endl;
+                                            << alt << "\"; skipping variants like: " << *vvar <<" !" << endl;
                                     }
                                 }
                                 break;
@@ -2116,7 +2438,11 @@ namespace vg {
         for (size_t i = 0; i < references.size(); i++) {
             // For every FASTA reference, make sure it has an index
             auto* reference = references[i];
-            assert(reference->index);
+            if (!reference->index) {
+                #pragma omp critical (cerr)
+                cerr << "error:[vg::Constructor] Reference #" << i << " is missing its index" << endl;
+                exit(1);
+            }
             for (auto& kv : *(reference->index)) {
                 // For every sequence name and index entry, point to this reference
                 reference_for[kv.first] = reference;
@@ -2243,7 +2569,10 @@ namespace vg {
 
                     // Decide what FASTA contig that is and make sure we have it
                     string fasta_contig = vcf_to_fasta(vcf_contig);
-                    assert(reference_for.count(fasta_contig));
+                    if (!reference_for.count(fasta_contig)) {
+                        cerr << "[vg::Constructor] Error: Reference contig \"" << vcf_contig << "\" in VCF not found in FASTA." << endl;
+                        exit(1);
+                    }
                     auto* reference = reference_for[fasta_contig];
 
                     // Construct on it with the appropriate FastaReference for that contig
@@ -2289,7 +2618,7 @@ namespace vg {
         }
 
     }
-    
+
     void Constructor::construct_graph(const vector<string>& reference_filenames, const vector<string>& variant_filenames,
         const vector<string>& insertion_filenames, const function<void(Graph&)>& callback) {
         

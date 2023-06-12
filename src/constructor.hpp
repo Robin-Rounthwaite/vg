@@ -33,7 +33,7 @@ namespace vg {
 using namespace std;
 
 /**
- * Represents a constructed region of the graph alogn a single linear sequence.
+ * Represents a constructed region of the graph along a single linear sequence.
  * Contains the protobuf Graph holding all the created components (which may be
  * too large to serialize), a set of node IDs whose left sides need to be
  * connected to when you connect to the start of the chunk, and a set of node
@@ -156,6 +156,9 @@ public:
      * they can abut its edges.
      *
      * Variants in the vector may not use symbolic alleles.
+     *
+     * All variants must have has their canonical field set, either manually to
+     * false or by canonicalize() to true.
      *
      * chunk_offset gives the global 0-based position at which this chunk starts
      * in the reference contig it is part of, which is used to correctly place
@@ -299,11 +302,37 @@ private:
      * bound before their start, because the anchoring base isn't included.
      */
     static pair<int64_t, int64_t> get_symbolic_bounds(vcflib::Variant var);
+    
+    /**
+     * Given a sequence, get rid of all the lowercase characters and all the
+     * ambiguity codes. Warn if configured, and the sequence has a name
+     * assigned, and no warning has yet been issued for that name, or if a
+     * variant is specified.
+     *
+     * Will error if this results in a string with anything other than A, C, G,
+     * T, and N.
+     *
+     * sequence_start_offset can be set to produce useful messages if the
+     * sequence we are looking at is an excerpt from a longer sequence.
+     *
+     * Santitizing may move the stored string data in memory.
+     *
+     * Returns true if the string was modified.
+     *
+     * We need this as a function because vcflib reaches back and reads the
+     * FASTA files directly, so we can't *just* preprocess the reference and we
+     * need to constantly clean up the variants.
+     */
+    bool sanitize_sequence_in_place(string& sequence, const string* sequence_name = nullptr, size_t sequence_start_offset = 0, const vcflib::Variant* variant = nullptr) const;
+    
     /// What sequences have we warned about containing lowercase characters?
     mutable unordered_set<string> lowercase_warned_sequences;
     /// Have we given a warning yet about lowercase alt alleles?
     mutable bool lowercase_warned_alt = false;
-    
+    /// Have we given a warning yet about multiallelic SVs?
+    mutable bool multiallelic_sv_warned = false;
+    /// Have we given a warning yet about uncanonicalizable SVs?
+    mutable bool uncanonicalizable_sv_warned = false;
     /// What sequences have we warned about containing unsupported ambiguity codes?
     mutable unordered_set<string> ambiguous_warned_sequences;
     

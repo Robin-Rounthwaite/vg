@@ -29,6 +29,7 @@
 #include "xg.hpp"
 #include "bdsg/packed_graph.hpp"
 #include "bdsg/hash_graph.hpp"
+#include <bdsg/overlays/overlay_helper.hpp>
 #include "../io/converted_hash_graph.hpp"
 #include "../io/save_handle_graph.hpp"
 #include "../gbzgraph.hpp"
@@ -139,7 +140,7 @@ int main_stats(int argc, char** argv) {
         };
 
         int option_index = 0;
-        c = getopt_long (argc, argv, "hzlLsHTecdtn:NEa:vAro:ORFDb:",
+        c = getopt_long (argc, argv, "hzlLsHTecdtn:NEa:vAro:ORFDb:p:",
                 long_options, &option_index);
 
         // Detect the end of the options.
@@ -264,19 +265,27 @@ int main_stats(int argc, char** argv) {
         }
     }
 
-    unique_ptr<PathHandleGraph> graph;
+    bdsg::ReferencePathOverlayHelper overlay_helper;
+    unique_ptr<PathHandleGraph> path_handle_graph;
+    PathHandleGraph* graph = nullptr; 
     string graph_file_name;
     if (have_input_file(optind, argc, argv)) {
         // We have an (optional, because we can just process alignments) graph input file.
         // TODO: we can load any PathHandleGraph, but some operations still require a VG
         // In those cases, we convert back to vg::VG
         graph_file_name = get_input_file_name(optind, argc, argv);
-        graph = vg::io::VPKG::load_one<PathHandleGraph>(graph_file_name);
+        path_handle_graph = vg::io::VPKG::load_one<PathHandleGraph>(graph_file_name);
+        if (dynamic_cast<GBZGraph*>(path_handle_graph.get()) != nullptr && !alignments_filename.empty()) {
+            // GBZ paths on handle lookups too slow without the overlay
+            graph = overlay_helper.apply(path_handle_graph.get());
+        } else {
+            graph = path_handle_graph.get();
+        }
     }
     
     // We have function to make sure the graph was passed and complain if not
     auto require_graph = [&graph]() {
-        if (graph.get() == nullptr) {
+        if (graph == nullptr) {
             cerr << "error[vg stats]: The selected operation requires passing a graph file to work on" << endl;
             exit(1);
         }
@@ -317,7 +326,7 @@ int main_stats(int argc, char** argv) {
 
     if (stats_heads) {
         require_graph();
-        vector<handle_t> heads = handlealgs::head_nodes(graph.get());
+        vector<handle_t> heads = handlealgs::head_nodes(graph);
         cout << "heads" << "\t";
         for (auto& h : heads) {
             cout << graph->get_id(h) << " ";
@@ -327,7 +336,7 @@ int main_stats(int argc, char** argv) {
 
     if (stats_tails) {
         require_graph();
-        vector<handle_t> tails = handlealgs::tail_nodes(graph.get());
+        vector<handle_t> tails = handlealgs::tail_nodes(graph);
         cout << "tails" << "\t";
         for (auto& t : tails) {
             cout << graph->get_id(t) << " ";
@@ -364,7 +373,7 @@ int main_stats(int argc, char** argv) {
         // but this isn't really explained.
         
         vector<pair<unordered_set<nid_t>, vector<handle_t>>> subgraphs_with_tips =
-            handlealgs::weakly_connected_components_with_tips(graph.get());
+            handlealgs::weakly_connected_components_with_tips(graph);
         
         for (auto& subgraph_and_tips : subgraphs_with_tips) {
             // For each subgraph set and its inward tip handles
@@ -406,7 +415,7 @@ int main_stats(int argc, char** argv) {
 
     if (show_components) {
         require_graph();
-        for (auto& c : handlealgs::strongly_connected_components(graph.get())) {
+        for (auto& c : handlealgs::strongly_connected_components(graph)) {
             for (auto& id : c) {
                 cout << id << ", ";
             }
@@ -416,7 +425,7 @@ int main_stats(int argc, char** argv) {
 
     if (is_acyclic) {
         require_graph();
-        if (handlealgs::is_acyclic(graph.get())) {
+        if (handlealgs::is_acyclic(graph)) {
             cout << "acyclic" << endl;
         } else {
             cout << "cyclic" << endl;
@@ -428,7 +437,7 @@ int main_stats(int argc, char** argv) {
         for (auto id : ids) {
             auto n = graph->get_handle(id, false);
             cout << id << " to head:\t"
-                 << distance_to_head(n, 1000, graph.get()) << endl;
+                 << distance_to_head(n, 1000, graph) << endl;
         }
     }
 
@@ -437,26 +446,26 @@ int main_stats(int argc, char** argv) {
         for (auto id : ids) {
             auto n = graph->get_handle(id, false);
             cout << id << " to tail:\t"
-                << distance_to_tail(n, 1000, graph.get()) << endl;
+                << distance_to_tail(n, 1000, graph) << endl;
         }
     }
 
     if (format) {
         require_graph();
         string format_string;
-        if (dynamic_cast<xg::XG*>(graph.get()) != nullptr) {
+        if (dynamic_cast<xg::XG*>(graph) != nullptr) {
             format_string = "XG";
-        } else if (dynamic_cast<GFAHandleGraph*>(graph.get()) != nullptr) {
+        } else if (dynamic_cast<GFAHandleGraph*>(graph) != nullptr) {
             // important this check comes before PackedGraph
             format_string = "GFA";
-        } else if (dynamic_cast<bdsg::PackedGraph*>(graph.get()) != nullptr) {
+        } else if (dynamic_cast<bdsg::PackedGraph*>(graph) != nullptr) {
             format_string = "PackedGraph";
-        } else if (dynamic_cast<vg::io::ConvertedHashGraph*>(graph.get()) != nullptr) {
+        } else if (dynamic_cast<vg::io::ConvertedHashGraph*>(graph) != nullptr) {
             // Was Protobuf but we're using a HashGraph internally
             format_string = "VG-Protobuf";
-        } else if (dynamic_cast<bdsg::HashGraph*>(graph.get()) != nullptr) {
+        } else if (dynamic_cast<bdsg::HashGraph*>(graph) != nullptr) {
             format_string = "HashGraph";
-        } else if (dynamic_cast<GBZGraph*>(graph.get()) != nullptr) {
+        } else if (dynamic_cast<GBZGraph*>(graph) != nullptr) {
             format_string = "GBZ";
         } else {
             format_string = "Unknown";
@@ -491,13 +500,14 @@ int main_stats(int argc, char** argv) {
     if (!paths_to_overlap.empty() || overlap_all_paths) {
         require_graph();
         
-        VG* vg_graph = dynamic_cast<VG*>(graph.get());
+        VG* vg_graph = dynamic_cast<VG*>(graph);
         if (vg_graph == nullptr) {
             // TODO: This path overlap code can be handle-ified, and should be.
             vg_graph = new vg::VG();
-            handlealgs::copy_path_handle_graph(graph.get(), vg_graph);
+            handlealgs::copy_path_handle_graph(graph, vg_graph);
             // Give the unique_ptr ownership and delete the graph we loaded.
-            graph.reset(vg_graph);
+            path_handle_graph.reset(vg_graph);
+            graph = path_handle_graph.get();
             // Make sure the paths are all synced up
             vg_graph->paths.to_graph(vg_graph->graph);
         }
@@ -618,6 +628,10 @@ int main_stats(int argc, char** argv) {
             size_t total_paired = 0;
             size_t total_proper_paired = 0;
 
+            // Alignment and mapping quality score distributions.
+            std::map<std::int64_t, size_t> alignment_scores;
+            std::map<std::int64_t, size_t> mapping_qualities;
+
             // In verbose mode we want to report details of insertions, deletions,
             // and substitutions, and soft clips.
             vector<pair<vg::id_t, Edit>> insertions;
@@ -630,6 +644,8 @@ int main_stats(int argc, char** argv) {
             // ("0"). A read only counts if it visits a node that's on one allele
             // and not any others in that site.
             map<string, map<string, size_t>> reads_on_allele;
+            
+            double total_time_seconds = 0.0;
         
             inline ReadStats& operator+=(const ReadStats& other) {
                 total_alignments += other.total_alignments;
@@ -653,7 +669,14 @@ int main_stats(int argc, char** argv) {
                 total_softclipped_bases += other.total_softclipped_bases;
                 total_paired += other.total_paired;
                 total_proper_paired += other.total_proper_paired;
-                
+
+                for (auto iter = other.alignment_scores.begin(); iter != other.alignment_scores.end(); ++iter) {
+                    this->alignment_scores[iter->first] += iter->second;
+                }
+                for (auto iter = other.mapping_qualities.begin(); iter != other.mapping_qualities.end(); ++iter) {
+                    this->mapping_qualities[iter->first] += iter->second;
+                }
+
                 std::copy(other.insertions.begin(), other.insertions.end(), std::back_inserter(insertions));
                 std::copy(other.deletions.begin(), other.deletions.end(), std::back_inserter(deletions));
                 std::copy(other.substitutions.begin(), other.substitutions.end(), std::back_inserter(substitutions));
@@ -665,6 +688,8 @@ int main_stats(int argc, char** argv) {
                         dest[kv2.first] += kv2.second;
                     }
                 }
+                
+                total_time_seconds += other.total_time_seconds;
                 
                 return *this;
             }
@@ -680,7 +705,7 @@ int main_stats(int argc, char** argv) {
         // sites actually have 2 alleles and which only have 1 in the graph.
         ReadStats combined;
 
-        if (graph.get() != nullptr) {
+        if (graph != nullptr) {
             // We have a graph to work on
 
             // For each pair of allele paths in the graph, we need to find out
@@ -754,7 +779,7 @@ int main_stats(int argc, char** argv) {
 
             // Now do all the non-mapping stats
             stats.total_alignments++;
-            if(aln.is_secondary()) {
+            if(aln.is_secondary() || (has_annotation(aln, "secondary") && get_annotation<bool>(aln, "secondary"))) {
                 stats.total_secondary++;
             } else {
                 stats.total_primary++;
@@ -764,6 +789,8 @@ int main_stats(int argc, char** argv) {
                     // the primary can't be unaligned if the secondary is
                     // aligned.
                     stats.total_aligned++;
+                    stats.alignment_scores[aln.score()]++;
+                    stats.mapping_qualities[aln.mapping_quality()]++;
                 }
                 
                 if (aln.has_fragment_next() || aln.has_fragment_prev() || has_annotation(aln, "proper_pair")) {
@@ -772,6 +799,9 @@ int main_stats(int argc, char** argv) {
                         stats.total_proper_paired++;
                     }
                 }
+                
+                // Record the number of thread-seconds used. Time is only counted on the primaries.
+                stats.total_time_seconds += aln.time_used(); 
 
                 // Which sites and alleles does this read support. TODO: if we hit
                 // unique nodes from multiple alleles of the same site, we should...
@@ -868,7 +898,6 @@ int main_stats(int argc, char** argv) {
                 
                 // If there's no non-softclip indel edits, the alignment is gapless
                 stats.total_gapless += !has_non_softclip_indel_edits && has_alignment;
-            
             }
 
         };
@@ -904,7 +933,7 @@ int main_stats(int argc, char** argv) {
         size_t total_hets = 0;
         size_t significantly_biased_hets = 0;
 
-        if (graph.get() != nullptr) {
+        if (graph != nullptr) {
 
             // Calculate stats about the reads per allele data
             for(auto& site_and_alleles : combined.reads_on_allele) {
@@ -987,6 +1016,17 @@ int main_stats(int argc, char** argv) {
         cout << "Total paired: " << combined.total_paired << endl;
         cout << "Total properly paired: " << combined.total_proper_paired << endl;
 
+        SummaryStatistics score_stats = summary_statistics(combined.alignment_scores);
+        cout << "Alignment score: mean " << score_stats.mean
+             << ", median " << score_stats.median
+             << ", stdev " << score_stats.stdev
+             << ", max " << score_stats.max_value << " (" << score_stats.count_of_max << " reads)" << endl;
+        SummaryStatistics mapq_stats = summary_statistics(combined.mapping_qualities);
+        cout << "Mapping quality: mean " << mapq_stats.mean
+             << ", median " << mapq_stats.median
+             << ", stdev " << mapq_stats.stdev
+             << ", max " << mapq_stats.max_value << " (" << mapq_stats.count_of_max << " reads)" << endl;
+
         cout << "Insertions: " << combined.total_inserted_bases << " bp in " << combined.total_insertions << " read events" << endl;
         if(verbose) {
             for(auto& id_and_edit : combined.insertions) {
@@ -1016,7 +1056,13 @@ int main_stats(int argc, char** argv) {
             }
         }
         
-        if (graph.get() != nullptr) {
+        if (combined.total_time_seconds > 0.0) {
+            // Time was recorded
+            cout << "Total time: " << combined.total_time_seconds << " seconds" << endl;
+            cout << "Speed: " << (combined.total_primary / combined.total_time_seconds) << " reads/second" << endl;
+        }
+        
+        if (graph != nullptr) {
             cout << "Unvisited nodes: " << unvisited_nodes << "/" << graph->get_node_count()
                 << " (" << unvisited_node_bases << " bp)" << endl;
             if(verbose) {
@@ -1118,7 +1164,7 @@ int main_stats(int argc, char** argv) {
             
             // Net graph info
             // Internal connectivity not important, we just want the size.
-            auto netGraph = manager.net_graph_of(snarl, graph.get(), false);
+            auto netGraph = manager.net_graph_of(snarl, graph, false);
             cout << netGraph.get_node_count() << endl;
         });
         

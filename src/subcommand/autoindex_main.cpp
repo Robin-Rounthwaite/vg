@@ -44,8 +44,12 @@ int64_t parse_memory_usage(const string& mem_arg) {
         base = 1024 * 1024 * 1024;
         mem.pop_back();
     }
-    else {
+    else if (isdigit(mem.back())) {
         base = 1;
+    }
+    else {
+        cerr << "error:[vg autoindex] unrecognized unit for target memory usage: " << mem.back() << endl;
+        exit(1);
     }
     return parse<int64_t>(mem) * base;
 }
@@ -99,13 +103,14 @@ void help_autoindex(char** argv) {
     << "  output:" << endl
     << "    -p, --prefix PREFIX    prefix to use for all output (default: index)" << endl
     << "    -w, --workflow NAME    workflow to produce indexes for, can be provided multiple" << endl
-    << "                           times. options: map, mpmap, giraffe (default: map)" << endl
+    << "                           times. options: map, mpmap, rpvg, giraffe (default: map)" << endl
     << "  input data:" << endl
     << "    -r, --ref-fasta FILE   FASTA file containing the reference sequence (may repeat)" << endl
     << "    -v, --vcf FILE         VCF file with sequence names matching -r (may repeat)" << endl
     << "    -i, --ins-fasta FILE   FASTA file with sequences of INS variants from -v" << endl
     << "    -g, --gfa FILE         GFA file to make a graph from" << endl
     << "    -x, --tx-gff FILE      GTF/GFF file with transcript annotations (may repeat)" << endl
+    << "    -H, --hap-tx-gff FILE  GTF/GFF file with transcript annotations of a named haplotype (may repeat)" << endl
     << "  configuration:" << endl
     << "    -f, --gff-feature STR  GTF/GFF feature type (col. 3) to add to graph (default: " << IndexingParameters::gff_feature_name << ")" << endl
     << "    -a, --gff-tx-tag STR   GTF/GFF tag (in col. 9) for transcript ID (default: " << IndexingParameters::gff_transcript_tag << ")" << endl
@@ -159,6 +164,7 @@ int main_autoindex(int argc, char** argv) {
             {"ins-fasta", required_argument, 0, 'i'},
             {"gfa", required_argument, 0, 'g'},
             {"tx-gff", required_argument, 0, 'x'},
+            {"hap-tx-gff", required_argument, 0, 'H'},
             {"gff-feature", required_argument, 0, 'f'},
             {"gff-tx-tag", required_argument, 0, 'a'},
             {"provide", required_argument, 0, 'P'},
@@ -178,7 +184,7 @@ int main_autoindex(int argc, char** argv) {
         };
 
         int option_index = 0;
-        c = getopt_long (argc, argv, "p:w:r:v:i:g:x:a:P:R:f:M:T:t:dV:h",
+        c = getopt_long (argc, argv, "p:w:r:v:i:g:x:H:a:P:R:f:M:T:t:dV:h",
                          long_options, &option_index);
 
         // Detect the end of the options.
@@ -206,6 +212,11 @@ int main_autoindex(int argc, char** argv) {
                         targets.emplace_back(move(target));
                     }
                 }
+                else if (optarg == string("rpvg")) {
+                    for (auto& target : VGIndexes::get_default_rpvg_indexes()) {
+                        targets.emplace_back(move(target));
+                    }
+                }
                 else {
                     cerr << "error: Unrecognized workflow (-w): " << optarg << endl;
                     return 1;
@@ -225,6 +236,9 @@ int main_autoindex(int argc, char** argv) {
                 break;
             case 'x':
                 registry.provide("GTF/GFF", optarg);
+                break;
+            case 'H':
+                registry.provide("Haplotype GTF/GFF", optarg);
                 break;
             case 'f':
                 IndexingParameters::gff_feature_name = optarg;

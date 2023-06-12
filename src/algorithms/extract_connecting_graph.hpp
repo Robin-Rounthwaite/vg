@@ -20,7 +20,7 @@ namespace algorithms {
     /// Fills a DeletableHandleGraph with the subgraph of a HandleGraph that connects two positions. The nodes
     /// that contain the two positions will be 'cut' at the position and will be tips in the returned graph. The
     /// algorithm guarantees that 'into' contains all walks between pos_1 and pos_2 under the maximum length
-    /// except walks that include a cycle involving either position If no walk between the two positions under
+    /// except walks that include a cycle involving either position. If no walk between the two positions under
     /// the maximum length exists, 'into' will be left empty. An error is thrown if 'into' is not empty when
     /// passed to function.
     ///
@@ -31,7 +31,9 @@ namespace algorithms {
     ///  pos_1                      start position, subgraph walks begin from here in same orientation
     ///  pos_2                      end position, subgraph walks end here in the same orientation
     ///  strict_max_len             only extract nodes and edges if they fall on some walk between pos_1 and pos_2
-    ///                             that is under the maximum length
+    ///                             that is under the maximum length (implies only_walks = true)
+    ///
+    /// Returns: a map from node ids in the extracted graph to the node ids in the original graph
     unordered_map<id_t, id_t> extract_connecting_graph(const HandleGraph* source,
                                                        DeletableHandleGraph* into,
                                                        int64_t max_len,

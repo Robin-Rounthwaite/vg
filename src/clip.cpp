@@ -27,6 +27,13 @@ static tuple<const Region*, step_handle_t, step_handle_t, int64_t, int64_t, bool
     // every path through the snarl
     pair<vector<SnarlTraversal>, vector<pair<step_handle_t, step_handle_t> > > travs = trav_finder.find_path_traversals(*snarl);
 
+    // we sort by (region-size, interval-size) to choose the biggest interval from the biggest contig
+    // intuition: pggb graph with tons of unplaced contigs and one reference contig -- we want the reference contig
+    // then in all the possible traversals of that reference contig, we take the biggest (which should fit better
+    // with the other heuristics)
+    multimap<pair<int64_t, int64_t>,
+             tuple<const Region*, step_handle_t, step_handle_t, int64_t, int64_t, bool>> ranked_intervals;
+    
     // check each one against the interval tree
     for (size_t i = 0; i < travs.first.size(); ++i) {
         auto& step_pair = travs.second[i];
@@ -74,12 +81,20 @@ static tuple<const Region*, step_handle_t, step_handle_t, int64_t, int64_t, bool
             }
             int64_t last_path_pos = length_from_start == 0 ? first_path_pos : first_path_pos + length_from_start - 1;
             auto overlapping_intervals = interval_tree.findOverlapping(first_path_pos, last_path_pos);
+            int64_t traversal_interval_length = last_path_pos - first_path_pos + 1;            
             for (auto& interval : overlapping_intervals) {
                 if (interval.start <= first_path_pos && interval.stop >= last_path_pos) {
-                    return make_tuple(interval.value, start_step, end_step, first_path_pos, last_path_pos, !use_start);
+                    int64_t region_interval_length = interval.stop - interval.start + 1;
+                    ranked_intervals.insert(make_pair(make_pair(region_interval_length, traversal_interval_length),
+                                            make_tuple(interval.value, start_step, end_step, first_path_pos, last_path_pos, !use_start)));
                 }
             }
         }
+    }
+
+    
+    if (!ranked_intervals.empty()) {
+        return ranked_intervals.rbegin()->second;
     }
     return make_tuple(nullptr, step_handle_t(), step_handle_t(), -1, -1, false);
 }
@@ -302,7 +317,7 @@ static bool snarl_is_complex(PathPositionHandleGraph* graph, const Snarl* snarl,
     return !filter_on || (complex_nodes && complex_edges && complex_nodes_shallow && complex_edges_shallow && complex_degree);
 }
 
-void clip_contained_snarls(MutablePathMutableHandleGraph* graph, PathPositionHandleGraph* pp_graph, const vector<Region>& regions,
+void clip_contained_snarls(MutablePathMutableHandleGraph* graph, PathPositionHandleGraph* pp_graph, const vector<Region>& regions, 
                            SnarlManager& snarl_manager, bool include_endpoints, int64_t min_fragment_len,
                            size_t max_nodes, size_t max_edges, size_t max_nodes_shallow, size_t max_edges_shallow,
                            double max_avg_degree, double max_reflen_prop, size_t max_reflen,
@@ -316,6 +331,12 @@ void clip_contained_snarls(MutablePathMutableHandleGraph* graph, PathPositionHan
 
     // just for logging
     unordered_map<string, size_t> clip_counts;
+
+    // for making the whitelist
+    unordered_set<string> ref_prefixes;
+    for (const Region& region : regions) {
+        ref_prefixes.insert(region.seq);
+    }
     
     visit_contained_snarls(pp_graph, regions, snarl_manager, include_endpoints, [&](const Snarl* snarl, step_handle_t start_step, step_handle_t end_step,
                                                                                     int64_t start_pos, int64_t end_pos,
@@ -340,7 +361,35 @@ void clip_contained_snarls(MutablePathMutableHandleGraph* graph, PathPositionHan
                     whitelist.insert(pp_graph->get_id(pp_graph->get_handle_of_step(step)));
                 }
             }
-            bool deletion_on_whitellist = whitelist.size() <= 2;
+
+            edge_t deletion_edge = graph->edge_handle(graph->get_handle(snarl->start().node_id(), snarl->start().backward()),
+                                                      graph->get_handle(snarl->end().node_id(), snarl->end().backward()));
+            bool deletion_on_whitelist = false;
+            // check if the snarl-spanning deletion edge is on a reference path.  if it is, we whitelist it, otherwise it
+            // goes.  this gets treated separately as it would not otherwise get deleted by erasing every node in the snarl contents
+            if (graph->has_edge(deletion_edge)) {
+                graph->for_each_step_on_handle(graph->get_handle(snarl->start().node_id(), snarl->start().backward()), [&](step_handle_t step_handle) {
+                    string path_name = graph->get_path_name(graph->get_path_handle_of_step(step_handle));
+                    for (const string& ref_prefix : ref_prefixes) {
+                        if (path_name.compare(0, ref_prefix.length(), ref_prefix) == 0) {
+                            step_handle_t next_step = graph->get_next_step(step_handle);
+                            if (next_step != graph->path_end(graph->get_path_handle_of_step(step_handle)) &&
+                                graph->edge_handle(graph->get_handle_of_step(step_handle), graph->get_handle_of_step(next_step)) == deletion_edge) {
+                                deletion_on_whitelist = true;
+                                return false;
+                            }
+                            step_handle_t prev_step = graph->get_previous_step(step_handle);
+                            if (prev_step != graph->path_front_end(graph->get_path_handle_of_step(step_handle)) &&
+                                graph->edge_handle(graph->get_handle_of_step(prev_step), graph->get_handle_of_step(step_handle)) == deletion_edge) {
+                                deletion_on_whitelist = true;
+                                return false;
+                            }
+                        }
+                    }
+                    return true;
+                });
+            }
+            
             size_t ref_interval_length = 0;
             for (nid_t node_id : whitelist) {
                 // don't count snarl ends here. todo: should this be an option?
@@ -351,6 +400,24 @@ void clip_contained_snarls(MutablePathMutableHandleGraph* graph, PathPositionHan
             path_handle_t path_handle = pp_graph->get_path_handle_of_step(start_step);
             pair<unordered_set<id_t>, unordered_set<edge_t> > contents = snarl_manager.deep_contents(snarl, *pp_graph, false);
             pair<unordered_set<id_t>, unordered_set<edge_t> > contents_shallow = snarl_manager.shallow_contents(snarl, *pp_graph, false);
+            // add other reference paths to the whitelist to make sure they don't get cut
+            if (!ref_prefixes.empty()) {
+                for (const id_t& node_id : contents.first) {
+                    if (!whitelist.count(node_id)) {
+                        graph->for_each_step_on_handle(graph->get_handle(node_id), [&](step_handle_t step_handle) {
+                            string path_name = graph->get_path_name(graph->get_path_handle_of_step(step_handle));
+                            for (const string& ref_prefix : ref_prefixes) {
+                                if (path_name.compare(0, ref_prefix.length(), ref_prefix) == 0) {
+                                    whitelist.insert(node_id);
+                                    return false;
+                                }
+                            }
+                            return true;
+                        });
+                    }
+                }
+            }
+            
             double avg_degree = -1;
             if (snarl_is_complex(pp_graph, snarl, contents, contents_shallow, ref_interval_length, *containing_region, path_handle, max_nodes, max_edges,
                                  max_nodes_shallow, max_edges_shallow, max_avg_degree, max_reflen_prop, max_reflen, avg_degree)) {
@@ -369,12 +436,8 @@ void clip_contained_snarls(MutablePathMutableHandleGraph* graph, PathPositionHan
                         }
                     }
                     // since we're deleting all alt alleles, the only edge that could be left is a snarl-spanning deletion
-                    if (!deletion_on_whitellist) {
-                        edge_t deletion_edge = graph->edge_handle(graph->get_handle(snarl->start().node_id(), snarl->start().backward()),
-                                                                  graph->get_handle(snarl->end().node_id(), snarl->end().backward()));
-                        if (graph->has_edge(deletion_edge)) {
-                            edges_to_delete.insert(deletion_edge);
-                        }
+                    if (!deletion_on_whitelist && graph->has_edge(deletion_edge)) {
+                        edges_to_delete.insert(deletion_edge);
                     }
                 }
             }
@@ -475,7 +538,7 @@ void clip_low_depth_nodes_and_edges_generic(MutablePathMutableHandleGraph* graph
     boomphf::mphf<edge_t, BBEdgeHash> edge_hash(edge_count, edges, get_thread_count(), 2.0, false, false);
     edges.clear();
     bdsg::PackedVector<> edge_depths;
-    edge_depths.resize(edge_count);
+    edge_depths.resize(edge_count + 1);
     
     graph->for_each_path_handle([&](path_handle_t path_handle) {
             bool is_ref_path = check_prefixes(graph->get_path_name(path_handle));
@@ -929,5 +992,171 @@ void clip_deletion_edges(MutablePathMutableHandleGraph* graph, int64_t max_delet
         clip_counts.clear();
     }
 }
+
+void clip_stubs_generic(MutablePathMutableHandleGraph* graph,
+                        function<void(function<void(handle_t, const Region*)>)> iterate_handles,
+                        function<bool(handle_t)> handle_in_range,
+                        const vector<string>& ref_prefixes,
+                        int64_t min_fragment_len,
+                        bool verbose) {
+    
+    unordered_set<nid_t> to_delete;
+
+    // just for logging
+    unordered_map<string, size_t> clip_counts;
+
+    // frontier for recursing on stub neighbours
+    unordered_map<handle_t, const Region*> stub_neighbours_1;
+
+    // test if a node is "reference" using a name check
+    function<bool(const string&)> check_prefixes = [&ref_prefixes] (const string& path_name) {
+        for (const string& ref_prefix : ref_prefixes) {
+            if (path_name.compare(0, ref_prefix.length(), ref_prefix) == 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // test if a node is a stub.
+    // we consider a node a stub if either (or both) sides have degree 0.
+    function<bool(const handle_t& handle)> is_stub = [&to_delete, &graph] (const handle_t& handle) {
+        size_t left_degree = 0;
+        graph->follow_edges(handle, true, [&](handle_t left) {
+            if (!to_delete.count(graph->get_id(left))) {
+                ++left_degree;
+                return false;
+            }
+            return true;
+        });
+        size_t right_degree = 1;
+        if (left_degree > 0) {
+            right_degree = 0;
+            graph->follow_edges(handle, false, [&](handle_t right) {
+                if (!to_delete.count(graph->get_id(right))) {
+                    ++right_degree;
+                    return false;
+                }
+                return true;
+            });
+        }
+        return left_degree == 0 || right_degree == 0;
+    };
+    
+    function<void(handle_t, const Region*)> visit_handle = [&](handle_t handle, const Region* region) {
+
+        if (!to_delete.count(graph->get_id(handle)) && is_stub(handle)) {
+            bool on_ref = false;
+            graph->for_each_step_on_handle(handle, [&](step_handle_t step_handle) {
+                if (!ref_prefixes.empty() || region) {
+                    // if we have a region, do exact comparison to it.
+                    // otherwise, do a prefix check against ref_prefix
+                    string path_name = graph->get_path_name(graph->get_path_handle_of_step(step_handle));
+                    if ((region && region->seq == path_name) || (!region && check_prefixes(path_name))) {
+                        on_ref = true;
+                        return false;
+                    }
+                }
+                return true;
+            });
+            if (!on_ref) {
+                to_delete.insert(graph->get_id(handle));
+
+                // remember the neighbours -- they can be new stubs!
+                graph->follow_edges(handle, true, [&](handle_t prev) {
+                    if (handle_in_range(prev) && !to_delete.count(graph->get_id(prev)) && graph->get_id(handle) != graph->get_id(prev)) {
+                        stub_neighbours_1[prev] = region;
+                    }
+                });
+                graph->follow_edges(handle, false, [&](handle_t next) {
+                    if (handle_in_range(next) && !to_delete.count(graph->get_id(next)) && graph->get_id(handle) != graph->get_id(next)) {
+                        stub_neighbours_1[next] = region;
+                    }
+                });
+            }
+        }
+    };
+       
+    // first pass: find all the stubs in iterate_handles
+    // and populate stub_neighbours_1
+    iterate_handles(visit_handle);
+
+    // keep doing the same thing on the neighbours until none left, using
+    // handle_in_range to make sure we don't step out of bounds (in the case we're doing BED regions)           
+    unordered_map<handle_t, const Region*> stub_neighbours_2;
+    while (!stub_neighbours_1.empty()) {
+        stub_neighbours_2.clear();
+        swap(stub_neighbours_1, stub_neighbours_2);
+        for (const auto&  neighbour_pair : stub_neighbours_2) {
+            visit_handle(neighbour_pair.first, neighbour_pair.second);
+        }
+        stub_neighbours_2.clear();
+    }
+        
+    if (verbose) {
+        cerr << "[vg-clip]: Removing " << to_delete.size() << " nodes from (non-reference) stubs." << endl;
+    }
+
+    // cut out the nodes and chop up paths
+    delete_nodes_and_chop_paths(graph, to_delete, {}, min_fragment_len, verbose ? &clip_counts : nullptr);
+        
+    if (verbose) {
+        for (const auto& kv : clip_counts) {
+            cerr << "[vg-clip]: Creating " << kv.second << " fragments from path" << kv.first << endl;
+        }
+        clip_counts.clear();
+    }
+
+}
+
+void clip_stubs(MutablePathMutableHandleGraph* graph, const vector<string>& ref_prefixes, int64_t min_fragment_len, bool verbose) {
+    
+    function<void(function<void(handle_t, const Region*)>)> iterate_handles = [&] (function<void(handle_t, const Region*)> visit_handle) {
+        graph->for_each_handle([&](handle_t handle) {
+                visit_handle(handle, nullptr);
+            });        
+    };
+
+    function<bool(handle_t)> handle_in_range = [](handle_t) {
+        return true;
+    };
+
+    clip_stubs_generic(graph, iterate_handles, handle_in_range, ref_prefixes, min_fragment_len, verbose);
+}
+
+void clip_contained_stubs(MutablePathMutableHandleGraph* graph, PathPositionHandleGraph* pp_graph, const vector<Region>& regions,
+                          SnarlManager& snarl_manager, bool include_endpoints, int64_t min_fragment_len, bool verbose) {
+
+    unordered_set<handle_t> all_handles;
+    function<bool(handle_t)> handle_in_range = [&all_handles](handle_t handle) {
+        return all_handles.count(handle);
+    };
+    
+    function<void(function<void(handle_t, const Region*)>)> iterate_handles = [&] (function<void(handle_t, const Region*)> visit_handle) {
+        
+        visit_contained_snarls(pp_graph, regions, snarl_manager, include_endpoints, [&](const Snarl* snarl, step_handle_t start_step, step_handle_t end_step,
+                                                                                        int64_t start_pos, int64_t end_pos,
+                                                                                        bool steps_reversed, const Region* containing_region) {
+                                   
+            pair<unordered_set<id_t>, unordered_set<edge_t> > contents = snarl_manager.deep_contents(snarl, *pp_graph, false);
+            for (id_t node_id : contents.first) {
+                visit_handle(graph->get_handle(node_id), containing_region);
+                all_handles.insert(graph->get_handle(node_id));
+            }                                   
+        });
+    };
+
+    // the edge depths are computed globally, without looking at regions.  as such, they need some notion of reference paths
+    // so we shimmy a set in from the regions
+    set<string> ref_path_set;
+    for (const Region& region : regions) {
+        ref_path_set.insert(region.seq);
+    }
+    vector<string> ref_paths_from_regions(ref_path_set.begin(), ref_path_set.end());
+
+    clip_stubs_generic(graph, iterate_handles, handle_in_range, ref_paths_from_regions, min_fragment_len, verbose);
+    
+}
+
 
 }

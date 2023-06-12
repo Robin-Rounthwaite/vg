@@ -38,21 +38,26 @@ size_t fastq_paired_interleaved_for_each(const string& filename, function<void(A
 size_t fastq_paired_two_files_for_each(const string& file1, const string& file2, function<void(Alignment&, Alignment&)> lambda);
 // parallel versions of above
 size_t fastq_unpaired_for_each_parallel(const string& filename,
-                                        function<void(Alignment&)> lambda);
+                                        function<void(Alignment&)> lambda,
+                                        uint64_t batch_size = vg::io::DEFAULT_PARALLEL_BATCHSIZE);
     
 size_t fastq_paired_interleaved_for_each_parallel(const string& filename,
-                                                  function<void(Alignment&, Alignment&)> lambda);
+                                                  function<void(Alignment&, Alignment&)> lambda,
+                                                  uint64_t batch_size = vg::io::DEFAULT_PARALLEL_BATCHSIZE);
     
 size_t fastq_paired_interleaved_for_each_parallel_after_wait(const string& filename,
                                                              function<void(Alignment&, Alignment&)> lambda,
-                                                             function<bool(void)> single_threaded_until_true);
+                                                             function<bool(void)> single_threaded_until_true,
+                                                             uint64_t batch_size = vg::io::DEFAULT_PARALLEL_BATCHSIZE);
     
 size_t fastq_paired_two_files_for_each_parallel(const string& file1, const string& file2,
-                                                function<void(Alignment&, Alignment&)> lambda);
+                                                function<void(Alignment&, Alignment&)> lambda,
+                                                uint64_t batch_size = vg::io::DEFAULT_PARALLEL_BATCHSIZE);
     
 size_t fastq_paired_two_files_for_each_parallel_after_wait(const string& file1, const string& file2,
                                                            function<void(Alignment&, Alignment&)> lambda,
-                                                           function<bool(void)> single_threaded_until_true);
+                                                           function<bool(void)> single_threaded_until_true,
+                                                           uint64_t batch_size = vg::io::DEFAULT_PARALLEL_BATCHSIZE);
 
 bam_hdr_t* hts_file_header(string& filename, string& header);
 bam_hdr_t* hts_string_header(string& header,
@@ -198,7 +203,7 @@ vector<pair<int, char>> cigar_against_path(const Alignment& alignment, bool on_r
 
 /// Merge runs of successive I/D operations into a single I and D, remove 0-length
 /// operations, and merge adjacent operations of the same type
-void simiplify_cigar(vector<pair<int, char>>& cigar);
+void simplify_cigar(vector<pair<int, char>>& cigar);
 
 
 /// Translate the CIGAR in the given BAM record into mappings in the given
@@ -299,12 +304,40 @@ Position alignment_end(const Alignment& aln);Position alignment_start(const Alig
 
 /// return the path offsets as cached in the alignment
 map<string ,vector<pair<size_t, bool> > > alignment_refpos_to_path_offsets(const Alignment& aln);
-/// annotate the first alignment with its minimum distance to the second in their annotated paths
-void alignment_set_distance_to_correct(Alignment& aln, const Alignment& base);
-void alignment_set_distance_to_correct(Alignment& aln, const map<string ,vector<pair<size_t, bool> > >& base_offsets);
+/// Annotate the first alignment with its minimum distance to the second in
+/// their annotated paths. If translation is set, replace path names in aln
+/// using that mapping, if they are found in it.
+void alignment_set_distance_to_correct(Alignment& aln, const Alignment& base, const unordered_map<string, string>* translation = nullptr);
+void alignment_set_distance_to_correct(Alignment& aln, const map<string, vector<pair<size_t, bool>>>& base_offsets, const unordered_map<string, string>* translation = nullptr);
 
-/// check to make sure edits on the alignment's path don't assume incorrect node lengths or ids
-bool alignment_is_valid(Alignment& aln, const HandleGraph* hgraph);
+/**
+ * Represents a report on whether an alignment makes sense in the context of a graph.
+ */
+struct AlignmentValidity {
+    /// The different kinds of possible problems with alignments
+    enum Problem {
+        OK,
+        NODE_MISSING,
+        NODE_TOO_SHORT
+    };
+    
+    /// The kind of problem with the alignment.
+    Problem problem = OK;
+    /// The mapping in the alignment's path at which the problem was encountered.
+    size_t bad_mapping_index = 0;
+    /// An explanation for the problem.
+    std::string message = "";
+    
+    /// We are truthy if the alignment has no problem, and falsey otherwise.
+    inline operator bool() const {
+        return problem == OK;
+    }
+};
+
+/// Check to make sure edits on the alignment's path don't assume incorrect
+/// node lengths or ids. Result can be used like a bool or inspected for
+/// further details. Does not log anything itself about bad alignments.
+AlignmentValidity alignment_is_valid(const Alignment& aln, const HandleGraph* hgraph);
     
 /// Make an Alignment corresponding to a subregion of a stored path.
 /// Positions are 0-based, and pos2 is excluded.
