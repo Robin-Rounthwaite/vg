@@ -71,6 +71,8 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
 
     vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
 
+    vector<pair<id_t, id_t>> split_sources_and_sinks(normalize_regions);
+
     int num_snarls_normalized = 0;
     int total_num_snarls_skipped = 0;
     
@@ -135,6 +137,13 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     print_statistics(normalize_regions, num_snarls_normalized, total_num_snarls_skipped, full_error_record);
     tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = make_tuple(_gbwt_graph, _gbwt_changelog, _gbwt);
     return gbwt_update_items;
+}
+
+vector<pair<id_t, id_t>> SnarlNormalizer::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions){
+    for (auto region : normalize_regions){
+        pair<handle_t, handle_t> region_handles = make_pair(_graph.get_handle(region.first), _graph.get_handle(region.second));
+        if 
+    }
 }
 
 void SnarlNormalizer::print_statistics(vector<pair<id_t, id_t>> normalize_regions, int num_snarls_normalized, int total_num_snarls_skipped, vector<int> full_error_record){

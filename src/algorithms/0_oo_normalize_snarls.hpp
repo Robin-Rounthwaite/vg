@@ -115,9 +115,13 @@ class SnarlNormalizer {
 
     vector<pair<id_t, id_t>> convert_snarl_clusters_to_regions(const vector<vector<const Snarl *> >& clusters);
 
+    //////////////////////////////////////////////////////////////////////////////////////
+    // preparing for creation of normalized graph:
+    //////////////////////////////////////////////////////////////////////////////////////
+    vector<pair<id_t, id_t>> split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions);
 
     //////////////////////////////////////////////////////////////////////////////////////
-    // creation of new graph:
+    // creation of noramlized graph:
     //////////////////////////////////////////////////////////////////////////////////////
     bool poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num, VG& output_subgraph, const bool output_msa=false);
 
