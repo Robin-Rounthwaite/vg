@@ -156,8 +156,8 @@ class SnarlNormalizer {
 
     RebuildParameters set_parameters();
     
-
-
+    //printing statistics:
+    void print_statistics(vector<pair<id_t, id_t>> normalize_regions, int num_snarls_normalized, int total_num_snarls_skipped, vector<int> full_error_record);
 
 
 

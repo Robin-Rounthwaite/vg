@@ -8,7 +8,7 @@
 #include <seqan/graph_align.h>
 #include <seqan/graph_msa.h>
 
-#include <abpoa/abpoa.h>
+// #include <abpoa/abpoa.h>
 
 
 #include <gbwtgraph/gbwtgraph.h>
@@ -24,11 +24,6 @@
 #include "extract_containing_graph.hpp"
 
 #include "multipath_mapper.hpp"
-
-// #define USE_CALLGRIND
-// #ifdef USE_CALLGRIND
-// #include <valgrind/callgrind.h>
-// #endif
 
 /*
 TODO: allow for snarls that have haplotypes that begin or end in the middle of the snarl
@@ -68,88 +63,13 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
       _max_handle_size(max_handle_size), _max_region_size(max_region_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder), _gbwt_graph(gbwt_graph),
        _alignment_algorithm(alignment_algorithm), _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
 
-// // we want the sizes here to be in bases, not in handles/number of snarls.
-// int _max_region_size = 1000;
-// int _max_snarl_spacing = 1000;
-/*
- *Goal of snarl stats: give a sense of how big the average snarl is, as well as whatever else I'd like to know about snarls. Used to figure out the recommended clustering gap, cap on alignment size, etc.
-*/
-// void SnarlNormalizer::snarl_stats(const vector<const Snarl *> &snarl_roots) {    
-//     //first, I just want to know what the distribution of snarl sizes are.
-//     vector<int> snarl_sizes;
-//     int sum_size = 0;
-//     int avg_size = 0;
-//     int size_more_than_thousand = 0;
-//     int size_more_than_three_thousand = 0;
-//     for (auto snarl : snarl_roots)
-//     {
-//         SubHandleGraph snarl_graph = SnarlNormalizer::extract_subgraph(_graph, region.first, region.second);
-//         int total_size = 0;
-//         snarl_graph.for_each_handle([&](const handle_t handle){
-//             total_size += _graph.get_sequence(handle).size();
-//         });
-//         sum_size += total_size;
-//         if (total_size > 1000)
-//         {
-//             size_more_than_thousand += 1;
-//         }
-//         if (total_size > 3000)
-//         {
-//             size_more_than_three_thousand += 1;
-//         }
-//         snarl_sizes.push_back(total_size);
-
-//     }
-//     avg_size = sum_size/snarl_sizes.size(); 
-
-//     cerr << "sum_size " << sum_size << endl;
-//     cerr << "avg_size " << avg_size << endl;
-//     cerr << "size_more_than_thousand " << size_more_than_thousand << endl;
-//     cerr << "size_more_than_three_thousand " << size_more_than_three_thousand << endl;
-    
-    
-// }
-
-
 /**
  * Iterates over all top-level snarls in _graph, and normalizes them.
  * @param snarl_stream file stream from .snarl.pb output of vg snarls
 */
 tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_roots) {
-    // snarl_stats(snarl_roots);
-    //Extend each of the normalize_regions to encompass multiple snarls from snarl_roots, if max_region_size > 1.
-    //normalize_regions is a pair indicating: leftmost_id, rightmost_id. Note this is equivalent to a snarl of source_id=leftmost_id, sink_id=rightmost_id, backward=false.
-    // select a subset of snarls for debugging purposes.
-    // cerr << "snarl_roots.size()" << snarl_roots.size() << endl;
-    // auto first = snarl_roots.begin() + 475064;
-    // auto last = snarl_roots.begin() + 475078;
-    // vector<const Snarl *> small_test(first, last);
-    // cerr << "snarls in the sample: " << endl;
-    // for (auto root : small_test) 
-    // {
-    //     cerr << root->start().node_id() << " " << root->end().node_id() << endl;
-    // }
-    // vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(small_test);
 
-    // cerr << "before making normalize_regions" << endl;
     vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
-    // cerr << "after making normalize_regions" << endl;
-    // vector<pair<id_t, id_t>> debug_normalize_regions;
-    
-    // int target_node = 803849;
-    // cerr << "normalize regions containing: " << target_node << endl;
-    // for (int i = 0 ; i != normalize_regions.size() ; i++)
-    // {
-    //     if (normalize_regions[i].first <= target_node && target_node <= normalize_regions[i].second)
-    //     {
-    //         debug_normalize_regions.push_back(normalize_regions[i]);
-    //         cerr << "iter " << i << ": " << normalize_regions[i].first << " " << normalize_regions[i].second << endl;
-    //     }
-    // }
-    // normalize_regions = debug_normalize_regions;
-    // cerr << "size of normalize_regions: " << normalize_regions.size() << endl;
-    // cerr << "debug exit" << endl;
-    // exit(0);
 
     int num_snarls_normalized = 0;
     int total_num_snarls_skipped = 0;
@@ -173,80 +93,10 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     vector<int> one_snarl_error_record(error_record_size, 0);
     vector<int> full_error_record(error_record_size, 0);
 
-    // pair<int, int> snarl_sequence_change;
-
-
-    // todo: debug_code
-    // int stop_size = 10000;
-    // int num_snarls_touched = 0;
-
-    // int skip_first_few = 1;
-    // int skipped = 0;
-
-    // get_all_gbwt_sequences(1, 15, false);
-    // cerr << "has node before? " << _gbwt_graph.has_node(gbwt::Node::encode(7405162, false)) << endl;
-
     int snarl_num = 0;
-    // for (auto roots : snarl_roots) 
     for (auto region : normalize_regions) 
     {
-        // if (region.first != 996838)
-        // {
-        //     continue;
-        // }
         snarl_num++;
-        // if (snarl_num > start_snarl_num)
-        // {
-        //     cerr << "in for loop" << endl;
-        // }
-
-        // if (start_snarl_num != 0 || end_snarl_num != 0)
-        // {
-        //     if (start_snarl_num > end_snarl_num)
-        //     {
-        //         cerr << "ERROR: start_snarl_num >= end_snarl_num" << endl;
-        //         exit(1);
-        //     }
-        //     if (snarl_num < start_snarl_num)
-        //     {
-        //         continue;
-        //     }
-        //     if (snarl_num > end_snarl_num)
-        //     {
-        //         cerr << "reached limit of snarl_num" << endl;
-        //         break;
-        //     }
-        // }
-        
-
-        // if (snarl_num==1 || snarl_num==2 || snarl_num==3)
-        // {
-        //     continue;
-        //     cerr << "not running" << endl;
-        // }
-        
-        // if (skipped < skip_first_few){
-        //     skipped++;
-        //     continue;
-        // }
-        
-        // if (num_snarls_touched == stop_size){
-        //     cerr << "breakpoint here" << endl;
-        //     break;
-        // } else {
-        //     num_snarls_touched++;
-        // }
-
-        // //todo: debug_print:
-        // // if (roots->start().node_id()!=3775521)
-        // if (snarl_num!=22530 && snarl_num!=22529)
-        // {
-        //     continue;
-        // }
-        // else
-        // {
-        //     cerr << "normalizing snarl number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
-        // }200: " << region.first << " and sink at: " << region.second << endl;
         if (_debug_print)
         {
             // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
@@ -257,39 +107,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
             // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
             cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
         }
-
-        // if (!roots->start().backward())
-        // {
-        //     cerr << "not backward" << endl;
-        //     // make_one_edit(1, 15);
-        //     // get_all_gbwt_sequences(roots->start().node_id(), roots->end().node_id(), roots->start().backward());
-        //     make_one_edit(roots->start().node_id(), roots->end().node_id());
-        // }
-        // else
-        // {
-        //     cerr << "backward" << endl;
-        //     make_one_edit(roots->end().node_id(), roots->start().node_id());
-        // }  
-
-        // }
-        // cerr << "normalizing snarl number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
-        // cerr << "seq from snarl number " << snarl_num << " with source at: " << _graph.get_sequence(_graph.get_handle(roots->start().node_id())) << " and sink at: " << _graph.get_sequence(_graph.get_handle(roots->end().node_id())) << endl;
-        // cerr << "graph range of original graph " << _gbwt_graph.min_node_id() << " " <<  _gbwt_graph.max_node_id() <<endl ;
-        // // cerr << "gbwt graph investigation: " << _gbwt_graph.has_node(test) << endl;
-        // cerr << _gbwt_graph.get_length(_gbwt_graph.get_handle(roots->start().node_id())) << endl;
-        // cerr << "seq from snarl number (using gbwt) " << snarl_num << " with source at: " << _gbwt_graph.get_sequence(_gbwt_graph.get_handle(roots->start().node_id())) << " and sink at: " << _gbwt_graph.get_sequence(_gbwt_graph.get_handle(roots->end().node_id())) << endl;
-
-        // cerr << "backwards value? " << roots->start().backward() << endl;
-        // if (roots->start().node_id() == 3881494) {
-            // cerr << "root backwards?" << roots->start().backward() << endl;
-            // cerr << "disambiguating snarl #"
-            //         << (num_snarls_normalized + total_num_snarls_skipped)
-            //         << " source: " << roots->start().node_id()
-            //         << " sink: " << roots->end().node_id() << endl;
-
-            // one_snarl_error_record = normalize_snarl(roots->start().node_id(), roots->end().node_id(), roots->start().backward(), snarl_num);
             one_snarl_error_record = normalize_snarl(region.first, region.second, false, snarl_num);
-            // one_snarl_error_record = normalize_snarl(region.second, region.first, false, snarl_num);
             if (!(one_snarl_error_record[0] || one_snarl_error_record[1] ||
                     one_snarl_error_record[2] || one_snarl_error_record[3] ||
                     one_snarl_error_record[6] || one_snarl_error_record[7] ||
@@ -297,9 +115,6 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
                 // if there are no errors, then we've successfully normalized a snarl.
                 num_snarls_normalized += 1;
                 // track the change in size of the snarl.
-                // snarl_sequence_change.first += one_snarl_error_record[4];
-                // snarl_sequence_change.second += one_snarl_error_record[5];
-                // cerr << "normalized snarl starting at: " << roots->start().node_id() << endl;
             } else {
                 // else, there was an error. Track which errors caused the snarl to not
                 // normalize.
@@ -313,19 +128,16 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
                 }
                 total_num_snarls_skipped += 1;
             }
-            
-            // //todo: debug_statement for extracting snarl of interest.
-            // VG outGraph;
-            // pos_t source_pos = make_pos_t(roots->start().node_id(), false, 0);
-            // vector<pos_t> pos_vec;
-            // pos_vec.push_back(source_pos);
-            // algorithms::extract_containing_graph(&_graph, &outGraph, pos_vec, roots->end().node_id() - roots->start().node_id() + 2);
-            // outGraph.serialize_to_ostream(cout);
-            // break;
-        // }
+        
 
     }
     
+    print_statistics(normalize_regions, num_snarls_normalized, total_num_snarls_skipped, full_error_record);
+    tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = make_tuple(_gbwt_graph, _gbwt_changelog, _gbwt);
+    return gbwt_update_items;
+}
+
+void SnarlNormalizer::print_statistics(vector<pair<id_t, id_t>> normalize_regions, int num_snarls_normalized, int total_num_snarls_skipped, vector<int> full_error_record){
     cerr << "Finished normalization. Generating statistics..." << endl;
     int post_norm_net_snarl_size = 0;
     unordered_set<id_t> post_norm_touched_border_nodes;
@@ -339,31 +151,6 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         
         //iterate through all regions after normalization, to measure total amount of sequence within those regions.
         SubHandleGraph region_graph = extract_subgraph(_graph, region.first, region.second);
-        // if (!handlealgs::is_acyclic(&region_graph)) {
-        //     // skip cyclic snarls, just like in actual normalization.
-        //     cerr << "ERROR: I shouldn't have a cyclic region at this point?!" << endl;
-        //     continue;
-        // }
-        // bool skip_this_subgraph = false;
-        // region_graph.for_each_handle([&](handle_t handle){
-        //     const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(region_graph.get_id(handle)));
-        //     // const gbwt::SearchState debug_state = _gbwt_graph.get_state(_gbwt_graph.get_handle(region_graph.get_id(handle))); //todo: consider trying this, in both orientations?
-        //     if (debug_state.empty()) //then we skipped this graph during normalization, so we should skip it here as well.
-        //     {
-        //         // cerr << "skipping" << endl;
-        //         skip_this_subgraph = true;
-        //         return;
-        //     }
-        //     // else
-        //     // {
-        //     //     return false;
-        //     // }
-        // }, true);
-        // if (skip_this_subgraph)
-        // {
-        //     continue;
-        // }
-
 
         region_graph.for_each_handle([&](const handle_t handle){
 
@@ -385,31 +172,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         });
     }
 
-    // //todo: remove this debug code:
-    // int unskipped_snarls_not_found_after_norm = 0;
-    // for (auto unskipped_snarl : _unskipped_snarls)
-    // {
-    //     if (snarls_found_after_norm.find(unskipped_snarl) == snarls_found_after_norm.end())
-    //     {
-    //         unskipped_snarls_not_found_after_norm += 1;
-    //     }
-    // }
-    // cerr << "unskipped_snarls_not_found_after_norm: " << unskipped_snarls_not_found_after_norm << endl;
-    // cerr << "_unskipped_snarls.size(): " << _unskipped_snarls.size() << endl;
-
-    // int snarls_found_after_norm_that_were_skipped = 0;
-    // for (auto snarl_found_after_norm : snarls_found_after_norm)
-    // {
-    //     if (_unskipped_snarls.find(snarl_found_after_norm) == _unskipped_snarls.end())
-    //     {
-    //         snarls_found_after_norm_that_were_skipped += 1;
-    //     }
-    // }
-    // cerr << "snarls_found_after_norm_that_were_skipped: " << snarls_found_after_norm_that_were_skipped << endl;
-    // cerr << "snarls_found_after_norm.size(): " << snarls_found_after_norm.size() << endl;
-
     int num_top_snarls_tracked = 10; // hardcoded for debugging convenience. //todo: change?
-    // partial_sort(_snarl_size_changes.begin(), _snarl_size_changes.begin() + num_top_snarls_tracked,_snarl_size_changes.end(), []());
 
     // Detect the top best snarl changes:
     auto best_compare = [](const pair<pair<id_t, id_t>, pair<int, int>> left, const pair<pair<id_t, id_t>, pair<int, int>> right) 
@@ -421,32 +184,16 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
 
     for (pair<pair<id_t, id_t>, pair<int, int>> region : _snarl_size_changes)
     {
-        // cerr << endl << "all best_snarl_changes: " << endl;
-        // for (auto change : best_snarl_changes)
-        // {
-        //     cerr << change.second.first << " , " << change.second.second << endl;
-        // }
-        // cerr << "deciding whether or not to insert following value: " << region.second.first << " , " << region.second.second << endl;
+
         if (best_snarl_changes.size() < num_top_snarls_tracked)
         {
-            // cerr << "inserted because the best_snarl_changes isn't big enough." << endl;
             best_snarl_changes.insert(upper_bound(best_snarl_changes.begin(), best_snarl_changes.end(), region, best_compare), region);
         }
         else if ((region.second.second - region.second.first) < (best_snarl_changes.back().second.second - best_snarl_changes.back().second.first)) //todo: check that this is proper comparison.
         {
-            // cerr << "inserted and replaced an item. Item replaced: " << best_snarl_changes.back().second.first << " , " << best_snarl_changes.back().second.second << endl;
             best_snarl_changes.insert(upper_bound(best_snarl_changes.begin(), best_snarl_changes.end(), region, best_compare), region);
             best_snarl_changes.pop_back();
         }
-        // else
-        // {
-        //     cerr << "didn't insert an item" << endl;
-        // }
-        // debug_count++;
-        // if (debug_count > 30)
-        // {
-        //     break;
-        // }
     }
     int size_of_all_shrinking_snarls_pre_norm = 0;
     int size_of_all_shrinking_snarls_post_norm = 0;
@@ -490,49 +237,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
         }
     }
 
-    // // find the snarls with the biggest changes in size before/after normalization: //note: doesn't work because I'm trying to sort a map.
-    // sort(_snarl_size_changes.begin(), _snarl_size_changes.end(), [](const pair<pair<id_t, id_t>, pair<int, int>> &left, const pair<pair<id_t, id_t>, pair<int, int>> &right) {
-    //     // return (5) >= (3);
-    //     return (left.second.second - left.second.first) >= (right.second.second - right.second.first);
-    // });
 
-
-
-
-    // // NOTE: MY SILLY (but more efficient?) CODE THAT ONLY TRACKS TOP FEW SNARL CHANGES BELOW, SEE ABOVE FOR FULL-SORT:
-    // // the snarls with the biggest changes in size before/after normalization:
-    // vector<pair<pair<id_t, id_t>, pair<int, int>>> best_snarl_changes; // 0 is snarl with biggest change; 1 the snarl with 2nd biggest change, etc.
-    // int num_top_snarls_tracked = 3; // hardcoded for debugging convenience. //todo: change?
-    // for (auto snarl_size_change : _snarl_size_changes)
-    // {
-    //     int i = 0; // my position iterating through the best_snarl_changes list.
-    //     // int best_replacement = -1; // replacements will only be valid if >= 0.
-    //     while (i < num_top_snarls_tracked)
-    //     {
-    //         if (i < best_snarl_changes.size()) // if best_snarl_changes is not yet filled, and we haven't found a better spot to fill, fill this spot.
-    //         {
-    //             best_snarl_changes.push_back(snarl_size_change);
-    //             break;
-    //         }
-    //         else if ((best_snarl_changes[i].second.second - best_snarl_changes[i].second.first) < (snarl_size_change.second.second - snarl_size_change.second.first))
-    //         {
-    //             best_snarl_changes.insert(best_snarl_changes.begin() + i, snarl_size_change);
-    //             if (best_snarl_changes.size() > num_top_snarls_tracked)
-    //             {
-    //                 best_snarl_changes.pop_back();
-    //             }
-    //         }
-    //         i++; 
-    //     }
-    //     if (best_snarl_changes.size() < num_top_snarls_tracked)
-    //     {
-    //         best_snarl_changes.push_back(snarl_size_change);
-    //     }
-    //     else
-    //     {
-            
-    //     }
-    // }
 
     //todo: replace error_record system with object-wide variables that are edited whenever needed in normalize_snarl(). If I feel like making the code easier to read and edit.
     // float percent_snarl_sequence_reduced = static_cast<float>((post_norm_net_snarl_size/_pre_norm_net_snarl_size)*100.0);
@@ -595,131 +300,6 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     }
 
     cerr << "number of snarls calling for abpoa: " << _alignments_calling_for_abpoa.size() << endl;
-
-    tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = make_tuple(_gbwt_graph, _gbwt_changelog, _gbwt);
-    return gbwt_update_items;
-    // cerr << "_gbwt_changelog size: " << _gbwt_changelog.size() << endl;
-
-    // for (auto& entry : _gbwt_changelog)
-    // {
-    //     // if (entry.first.size() - entry.second.size() == 2) //export a good snarl for debugging.
-    //     // {
-    //     cerr << "old_nodes: " << endl;
-    //     for (auto node : entry.first)
-    //     {
-    //         cerr << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(node)) << " " << _gbwt_graph.get_is_reverse(_gbwt_graph.node_to_handle(node)) << endl;
-    //     }
-    
-    //     cerr << "new_nodes: " << endl;
-    //     for (auto node : entry.second)
-    //     {
-    //         cerr << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(node)) << " " << _gbwt_graph.get_is_reverse(_gbwt_graph.node_to_handle(node)) << endl;
-    //     }
-    //     // }
-        
-    // //     if (false)
-    // //     {
-
-    // //         cerr << "hi" << endl;
-    // //     }
-    // //     for (auto new_node : entry.second)
-    // //     {
-    // //         cerr << "graph contains the new nodes? " << _graph.contains(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(new_node))) << endl;
-
-    // //     }
-    //     // cerr << "size of entries: " << entry.first.size() << " " << entry.second.size() << endl;
-    //     // if (_gbwt.find(entry.first.begin(), entry.first.end()).empty())
-    //     // {
-    //     //     cerr << "found empty path!" << endl;
-    //     //     cerr << "size of entries: " << entry.first.size() << " " << entry.second.size() << endl;
-            
-    //     //     for (auto item : entry.first)
-    //     //     {
-    //     //         cerr << "seq in node: " << _gbwt_graph.get_sequence(_gbwt_graph.node_to_handle(item)) << endl;
-    //     //         entry.second.push_back(item);
-    //     //     }
-    //     // }
-    //     // cerr << _gbwt.find(entry.first.begin(), entry.first.end()) << endl;
-    //     // for (auto item : entry.first)
-    //     // {
-    //     //     cerr << "item" << endl;
-    //         // cerr << "seq in node: " << _gbwt_graph.get_sequence(_gbwt_graph.node_to_handle(item)) << endl;
-    //         // entry.second.push_back(item);
-    //     // }
-    // }
-    // for (auto& entry : _gbwt_changelog)
-    // {
-    //     cerr << "2nd size of entries: " << entry.first.size() << " " << entry.second.size() << endl;
-    // }
-    // cerr << _gbwt.empty() << _gbwt_changelog.empty() << endl;
-    // _gbwt_changelog.push_back()
-    
-    // cerr << "contents of gbwt changelog: " << endl;
-    // for (auto& entry : _gbwt_changelog)
-    // {
-    //     // if (entry.first.size() - entry.second.size() == 2) //export a good snarl for debugging.
-    //     // {
-    //     cerr << "old_nodes: " << endl;
-    //     for (auto node : entry.first)
-    //     {
-    //         cerr << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(node)) << " " << _gbwt_graph.get_is_reverse(_gbwt_graph.node_to_handle(node)) << endl;
-    //     }
-    
-    //     cerr << "new_nodes: " << endl;
-    //     for (auto node : entry.second)
-    //     {
-    //         cerr << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(node)) << " " << _gbwt_graph.get_is_reverse(_gbwt_graph.node_to_handle(node)) << endl;
-    //     }
-    // }
-    
-    // _gbwt_graph.weakly_connected_components(_graph);
-    //todo: use weakly_connected below for multithreading
-    // handlegraph::algorithms::weakly_connected_components(_graph)
-    // gbwtgraph::weakly_connected_components(_graph);
-
-
-    
-    // #ifdef USE_CALLGRIND
-    //     // We want to profile the alignment, not the loading.
-    //     CALLGRIND_START_INSTRUMENTATION;
-    // #endif
-    // if (!_disable_gbwt_update)
-    // {
-    //      gbwt::GBWT output_gbwt = apply_gbwt_changelog();
-    //     // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
-    //     cerr << "finished generating gbwt." << endl;
-    //     return output_gbwt;
-    // }
-    // else
-    // {
-    //     gbwt::GBWT empty_gbwt;
-    //     return empty_gbwt;
-    // }
-    
-    // //todo: debug-code for checking that I can build the gbwt_graph:
-    // cerr << "making new gbwt graph." << endl;
-    // gbwtgraph::GBWTGraph output_gbwt_graph = gbwtgraph::GBWTGraph(output_gbwt, _graph);
-    // cerr << "new gbwt graph created." << endl;
-
-    
-    // cerr << "output have second path?" << endl;
-    // for (auto& entry : _gbwt_changelog)
-    // {
-    //     cerr << _gbwt.find(entry.second.begin(), entry.second.end()).empty() << endl;
-    // }
-
-
-    //todo: debug_statement for extracting snarl of interest.
-    // VG outGraph;
-    // pos_t source_pos = make_pos_t(269695, false, 0);
-    // vector<pos_t> pos_vec;
-    // pos_vec.push_back(source_pos);
-    // algorithms::extract_containing_graph(&_graph, &outGraph, pos_vec, 1000);
-    // _graph = outGraph;
-    // vg::io::VPKG::save(*dynamic_cast<bdsg::HashGraph *>(outGraph.get()), cout);
-    // outGraph.serialize_to_ostream(cout);
-
-
 
 }
 
@@ -2792,6 +2372,49 @@ void SnarlNormalizer::output_msa(const id_t leftmost_id, const id_t rightmost_id
     VG output_subgraph;
     poa_source_to_sink_haplotypes(haplotypes, 0, output_subgraph, true);
 }
+
+// // we want the sizes here to be in bases, not in handles/number of snarls.
+// int _max_region_size = 1000;
+// int _max_snarl_spacing = 1000;
+/*
+ *Goal of snarl stats: give a sense of how big the average snarl is, as well as whatever else I'd like to know about snarls. Used to figure out the recommended clustering gap, cap on alignment size, etc.
+*/
+// void SnarlNormalizer::snarl_stats(const vector<const Snarl *> &snarl_roots) {    
+//     //first, I just want to know what the distribution of snarl sizes are.
+//     vector<int> snarl_sizes;
+//     int sum_size = 0;
+//     int avg_size = 0;
+//     int size_more_than_thousand = 0;
+//     int size_more_than_three_thousand = 0;
+//     for (auto snarl : snarl_roots)
+//     {
+//         SubHandleGraph snarl_graph = SnarlNormalizer::extract_subgraph(_graph, region.first, region.second);
+//         int total_size = 0;
+//         snarl_graph.for_each_handle([&](const handle_t handle){
+//             total_size += _graph.get_sequence(handle).size();
+//         });
+//         sum_size += total_size;
+//         if (total_size > 1000)
+//         {
+//             size_more_than_thousand += 1;
+//         }
+//         if (total_size > 3000)
+//         {
+//             size_more_than_three_thousand += 1;
+//         }
+//         snarl_sizes.push_back(total_size);
+
+//     }
+//     avg_size = sum_size/snarl_sizes.size(); 
+
+//     cerr << "sum_size " << sum_size << endl;
+//     cerr << "avg_size " << avg_size << endl;
+//     cerr << "size_more_than_thousand " << size_more_than_thousand << endl;
+//     cerr << "size_more_than_three_thousand " << size_more_than_three_thousand << endl;
+    
+    
+// }
+
 
 }
 }
