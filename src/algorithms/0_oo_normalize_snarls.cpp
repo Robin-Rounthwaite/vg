@@ -71,7 +71,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
 
     vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
 
-    vector<pair<id_t, id_t>> split_sources_and_sinks(normalize_regions);
+    vector<pair<id_t, id_t>> split_normalize_regions = split_sources_and_sinks(normalize_regions);
 
     int num_snarls_normalized = 0;
     int total_num_snarls_skipped = 0;
@@ -96,7 +96,7 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     vector<int> full_error_record(error_record_size, 0);
 
     int snarl_num = 0;
-    for (auto region : normalize_regions) 
+    for (auto region : split_normalize_regions) 
     {
         snarl_num++;
         if (_debug_print)
@@ -140,11 +140,70 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
 }
 
 vector<pair<id_t, id_t>> SnarlNormalizer::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions){
+    vector<pair<id_t, id_t>> new_normalize_regions;
     for (auto region : normalize_regions){
-        pair<handle_t, handle_t> region_handles = make_pair(_graph.get_handle(region.first), _graph.get_handle(region.second));
-        if 
+        cerr << "leftmost id: " << region.first << endl;
+        cerr << "rightmost id: " << region.second << endl;
+        handle_t leftmost_handle = _graph.get_handle(region.first);
+        handle_t rightmost_handle = _graph.get_handle(region.second);
+
+        pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
+        pair<handle_t, handle_t> new_rightmosts = _graph.divide_handle(rightmost_handle, _graph.get_sequence(rightmost_handle).size()/2);
+        cerr << "new leftmost ids: " << _graph.get_id(new_leftmosts.first) << _graph.get_id(new_leftmosts.second) << endl;
+        cerr << "new rightmost ids: " << _graph.get_id(new_rightmosts.first) << _graph.get_id(new_rightmosts.second) << endl;
+        new_normalize_regions.push_back(make_pair(_graph.get_id(new_leftmosts.second), _graph.get_id(new_rightmosts.first)));
+
+        //TODO: figure out where the original node id went (and delete it, because it shouldn't exist anymore).
+        overwrite_node_id(_graph.get_id(new_leftmosts.first), region.first);
+        overwrite_node_id(_graph.get_id(new_rightmosts.second), region.second);
+
+        cerr << "new leftmost ids: " << _graph.get_id(new_leftmosts.first) << _graph.get_id(new_leftmosts.second) << endl;
+        cerr << "new rightmost ids: " << _graph.get_id(new_rightmosts.first) << _graph.get_id(new_rightmosts.second) << endl;
+
+        //todo: visually verify that tiny.norm.pg looks as expected.
+
+        //todo: make sure that the new_normalize_regions is still accurate. (it should be).
+        //todo: delete below commented code.
+        // // if there are >1 handles to the right of rightmost, then this node needs to be split.
+        // vector<handle_t> right_of_rightmost;
+        // vector<handle_t> left_of_rightmost;
+        // // look only to the right of rightmost_handle
+        // _graph.follow_edges(rightmost_handle, false, [&](const handle_t handle) 
+        // {
+        //     right_of_rightmost.push_back(handle);
+        // });
+        // // look only to the left of rightmost_handle
+        // _graph.follow_edges(rightmost_handle, true, [&](const handle_t handle) 
+        // {
+        //     left_of_rightmost.push_back(handle);
+        // });
+
+        // if (right_of_rightmost.size() > 1)
+        // {
+        //     hanld
+        //     string seq = _graph.get_sequence(rightmost_handle);
+        //     //this will go from beginning to middle of string, not counting the middle-most character if it exists (i.e., if odd number of characters):
+        //     string first_half_seq = seq.substr(0, (seq.size()/2)); 
+        //     //this will go from middle to end of string including the middle-most character if it exists (i.e., if odd number of characters):
+        //     string second_half_seq = seq.substr((seq.size()/2), seq.size());
+        //     _graph.destroy_handle(rightmost_handle)
+            
+        // }
+
+
+        // // if there are >1 handles to the left of leftmost, then this node needs to be split.
+        // int left_of_leftmost = 0;
+        // // look only to the left of leftmost_handle
+        // _graph.follow_edges(leftmost_handle, true, [&](const handle_t handle) 
+        // {
+        //     left_of_leftmost += 1;
+        // });
+
+
     }
+    return new_normalize_regions;
 }
+
 
 void SnarlNormalizer::print_statistics(vector<pair<id_t, id_t>> normalize_regions, int num_snarls_normalized, int total_num_snarls_skipped, vector<int> full_error_record){
     cerr << "Finished normalization. Generating statistics..." << endl;
@@ -389,19 +448,6 @@ RebuildParameters SnarlNormalizer::set_parameters()
     * The defaults should be fine in most cases.
     * If the threads are particularly long and memory usage is not a problem, you may want to increase the batch size to ~20x the length of the longest threads.
     */
-    // parameters.max_region_size = ???;
-    // parameters.sample_interval = ???;
-    // /// Maximum number of parallel construction jobs.
-    // size_t num_jobs = 1;
-
-    // /// Print progress information to stderr.
-    // bool show_progress = false;
-
-    // /// Size of the GBWT construction buffer in nodes.
-    // gbwt::size_type max_region_size = gbwt::DynamicGBWT::INSERT_max_region_size;
-
-    // /// Sample interval for locate queries.
-    // gbwt::size_type sample_interval = gbwt::DynamicGBWT::SAMPLE_INTERVAL;
 }
 
 
@@ -473,22 +519,9 @@ bool SnarlNormalizer::is_trivial(const Snarl& snarl) {
 }
 
 vector<pair<id_t, id_t>> SnarlNormalizer::convert_snarl_clusters_to_regions(const vector<vector<const Snarl *> >& clusters) {
-    // cerr << "convert_snarl_clusters_to_regions" << endl;
     vector<pair<id_t, id_t>> normalize_regions;
-    // int debug_count = 0;
-    // bool debug = false;
     for (auto cluster : clusters )
     {
-        // if (debug_count == clusters.size() - 1)
-        // {
-        //     debug = true;
-        //     cerr << "I found the important cluster in convert_snarl_clusters_to_regions! Here 'tis: " << endl;
-        //     for (auto snarl : cluster)
-        //     {
-        //         cerr << "leftmost: " << (*snarl).start().node_id() << " rightmost: " << (*snarl).end().node_id() << endl;
-        //     }
-        // }
-        
         pair<id_t, id_t> cur_region; 
         if (cluster.front()->start().backward())
         {
@@ -594,75 +627,6 @@ vector<vector<const Snarl *> > SnarlNormalizer::cluster_snarls(const vector<cons
         }            
         SubHandleGraph snarl_graph = extract_subgraph(_graph, leftmost_id, rightmost_id);
         bool cyclic = !handlealgs::is_acyclic(&snarl_graph);
-        // if (!handlealgs::is_acyclic(&snarl_graph))
-        // {
-        //     //This snarl is cyclic. Start new, empty cluster.
-        //     vector<const Snarl*> new_cluster;
-        //     snarl_clusters.push_back(new_cluster);
-        // }
-
-        // if (debug_count >= 54815)
-        // {
-        //     debug = true;
-        // }
-        // if (debug_count >= 54815){
-        //     debug = true;
-        //     auto frog = **cur_snarl;
-        //     id_t leftmost_id, rightmost_id;
-        //     cerr << "is the snarl backward? Start node: " << frog.start().backward() << " end node: " << frog.end().backward() << endl;
-        //     if (frog.start().backward())
-        //     {
-        //         leftmost_id = frog.end().node_id();
-        //         rightmost_id = frog.start().node_id();
-        //     }
-        //     else
-        //     {
-        //         leftmost_id = frog.start().node_id();
-        //         rightmost_id = frog.end().node_id();
-        //     }            
-        //     cerr << "extracting snarl: " << endl;
-        //     SubHandleGraph snarl = extract_subgraph(_graph, leftmost_id, rightmost_id);
-        //     cerr << "extracting snarl_reverse: " << endl;
-        //     SubHandleGraph snarl_reverse = extract_subgraph(_graph, rightmost_id, leftmost_id);
-
-        //     // only normalize non-trivial snarls (i.e. not composed of just a source and sink.):
-        //     int num_handles_in_snarl = 0;
-        //     int num_seq_in_snarl = 0;
-        //     snarl.for_each_handle([&](const handle_t handle){
-        //         num_handles_in_snarl++;
-        //         num_seq_in_snarl+= snarl.get_sequence(handle).size();
-        //     });
-
-        //     // only normalize non-trivial snarls (i.e. not composed of just a source and sink.):
-        //     int num_handles_in_snarl_rev = 0;
-        //     int num_seq_in_snarl_rev = 0;
-        //     snarl_reverse.for_each_handle([&](const handle_t handle){
-        //         num_handles_in_snarl_rev++;
-        //         num_seq_in_snarl_rev+= snarl_reverse.get_sequence(handle).size();
-        //     });
-
-        //     cerr << "debug count: " << debug_count << " info on snarl: " << " with start " << frog.start().node_id() << " and end " << frog.end().node_id() << " and num_handles: " << num_handles_in_snarl << " and num_seq_in_snarls: " << num_seq_in_snarl << endl;
-        //     cerr << " and num_handles from reverse-extracted snarl: " << num_handles_in_snarl_rev << " and num_seq_in_snarls_rev: " << num_seq_in_snarl_rev << endl;
-        // }
-        // if (debug)
-        // {
-        //     cerr << "debug: BEFORE while iter: all nodes in current snarl cluster:" << endl;
-        //     for (auto snarl : snarl_clusters.back()) 
-        //     {
-        //         auto frog = *snarl;
-        //         cerr << frog.start().node_id() << " " << frog.end().node_id() << endl;;
-
-        //     }
-        //     cerr << "end of cluster" << endl;
-        // }
-        // cerr << "snarl_clusters.size()" << snarl_clusters.size() << endl;
-        // if (debug_count>=10 && snarl_clusters.size()>2)
-        // {
-        //     break;
-        // }
-        // debug_count++;
-        // cerr << "cur_snarl" << (*cur_snarl)->start() << endl;
-
 
         // If we are considering extending a snarl cluster, first make sure that we 
         // haven't reached the end conditions of the current cluster.
@@ -732,43 +696,15 @@ vector<vector<const Snarl *> > SnarlNormalizer::cluster_snarls(const vector<cons
         // if we have a snarl that is trivial, but we have a cluster in progress, add it to the cluster.
         else if (snarl_clusters.back().size() > 0)
         {
-        //     if (debug)
-        //     {
-        //         cerr << "is trivial, but belongs in cluster" << endl;
-        //     }
-            // cerr << "third if" << endl;
             snarl_clusters.back().push_back(*cur_snarl);
             trivial_count++;
         }
         // if we have a snarl that is trivial, and we have no cluster in progress, skip it. (no code needed.)
-        // if (debug)
-        // {
-        //     cerr << "end of loop" << endl;
-        // }
         cur_snarl++;
-        // debug_count++;
-
-        // if (debug)
-        // {
-        //     cerr << "debug: AFTER while iter: all nodes in current snarl cluster:" << endl;
-        //     for (auto snarl : snarl_clusters.back()) 
-        //     {
-        //         auto frog = *snarl;
-        //         cerr << frog.start().node_id() << " " << frog.end().node_id() << endl;;
-
-        //     }
-        //     cerr << "end of cluster" << endl;
-        // }
-
-
     }
     //check to see if the snarl_cluster at the end is empty. If so, discard it.
     if (snarl_clusters.back().size() == 0)
     {
-        // if (debug)
-        // {    
-        //     cerr << " popping the snarl cluster at the end. Size is: " << snarl_clusters.back().size() << endl;
-        // }
         snarl_clusters.pop_back();
     }
     return snarl_clusters;
@@ -777,12 +713,6 @@ vector<vector<const Snarl *> > SnarlNormalizer::cluster_snarls(const vector<cons
 vector<pair<id_t, id_t>> SnarlNormalizer::get_single_snarl_normalize_regions(const vector<const Snarl *> &snarl_roots)
 {
     vector<pair<id_t, id_t>> simple_normalize_regions;
-    ////todo: debug_code: 
-    // for (int i = 1; i != snarl_roots.size(); i++)
-    // {
-    //     cerr << "snarls adjacent between " << i-1 << " " << i << "?" << endl;
-    //     cerr << snarls_adjacent(*snarl_roots[i-1], *snarl_roots[i]) << endl;
-    // }
     for (auto roots : snarl_roots)
     {
         if (is_trivial(*roots))
@@ -808,13 +738,6 @@ vector<pair<id_t, id_t>> SnarlNormalizer::get_single_snarl_normalize_regions(con
 }
 
 vector<pair<id_t, id_t>> SnarlNormalizer::get_normalize_regions(const vector<const Snarl *> &snarl_roots) {
-    // cerr << "get_normalize_regions" << endl;
-
-    
-    //I don't need max_interstitial trivials, I just need to trim off trivials if I hit the _max_region_size limit.
-    
-// vector<pair<id_t, id_t>> SnarlNormalizer::get_normalize_regions(vector<const Snarl *> snarl_roots) {
-
     //if batch size is 1, just return the nontrivial roots from snarl_roots.
     //todo: uncomment below if I want? Should be equivalent, but slightly more efficient than the general case. I'm currently using it for testing.
     // if (_max_region_size==1)
@@ -827,136 +750,7 @@ vector<pair<id_t, id_t>> SnarlNormalizer::get_normalize_regions(const vector<con
     
     vector<vector<const Snarl *> > snarl_clusters = cluster_snarls(snarl_roots);
 
-
-    // cerr << "debug: after snarl_clusters formed: all nodes in last snarl cluster:" << endl;
-    // cerr << "note: are all the snarls in the cluster abut back-to-back? They should. Otherwise, the clusterer is removing important interstitial trivial snarls." << endl;
-    // for (auto snarl : snarl_clusters.back()) 
-    // {
-    //     auto frog = *snarl;
-    //     cerr << frog.start().node_id() << " " << frog.end().node_id() << " backwards: " << frog.start().backward() << " " << frog.end().backward() << " size: " << endl;;
-
-    // }
-    // cerr << "end of cluster" << endl;
-
-
-    // cerr << "debug-test: is every snarl root inside a snarl cluster?" << endl;
-    
-    // set<const Snarl *> snarls_in_snarl_clusters;
-    // for (auto cluster : snarl_clusters)
-    // {
-    //     for (auto snarl : cluster)
-    //     {
-    //         snarls_in_snarl_clusters.emplace(snarl);
-    //     }
-    // }
-
-    // cerr << "number of snarls in snarl clusters: " << snarls_in_snarl_clusters.size() << endl;
-    // cerr << "number of snarls in snarl_roots: " << snarl_roots.size() << endl;
-    // cerr << "(if equal, then yes)." << endl;
-
     vector<pair<id_t, id_t>> regions = convert_snarl_clusters_to_regions(snarl_clusters);
-
-    //For comparison across different clustering variables, an export of all handles in the graph:
-    //DEBUG step one: save all nodes in (single-snarl-mode) regions to a file.
-    // I will later read these regions back in and see if they are still contained in all the larger clusters.
-    // ofstream all_region_nodes_file;
-    // string filename = "nodes_in_normalizable_regions_in_k_" + to_string(_max_region_size) + "_i_" + to_string(_max_snarl_spacing) + "_m_" + to_string(_max_alignment_size) + ".txt"; 
-    // string directory = "~/paten_lab/vg-team/vg/robin-graphs/yeast-subset/"; //todo: make dynamic if desired.
-    // cerr << "writing to file named: " << filename << endl;
-    // all_region_nodes_file.open(filename);
-    // for (auto region : regions)
-    // {
-    //     SubHandleGraph region_graph = extract_subgraph(_graph, region.first, region.second);
-        //     region_graph.for_each_handle([&](const handle_t handle){
-        //         all_region_nodes_file << _graph.get_id(handle) << endl;
-        //     });
-    // }
-    // all_region_nodes_file.close();
-
-    // cerr << "last region: " << regions.back().first << " " << regions.back().second << endl;
-    // cerr << "does the last region share first/last node id in common with cluster? " << endl;
-
-    // cerr << "debug-test: is every snarl root contained within a region?" << endl; 
-    // //todo: note that this debug-test only functions if node ids can be used to indicate 
-    // //todo:     relative positions in the graph. If I'd like to implement this as a full 
-    // //todo:     test, I'd need to use position of the nodes in a reference path in the graph.
-    // pair<id_t, id_t> debug_last_region = regions.back();
-    // SubHandleGraph debug_snarl = extract_subgraph(_graph, debug_last_region.first, debug_last_region.second);
-    // for (auto snarl : snarl_clusters.back()) 
-    // {
-    //     cerr << debug_snarl.has_node(snarl->start().node_id()) << " " << debug_snarl.has_node(snarl->start().node_id()) << " ";
-    // }
-    // cerr << endl;
-    
-    // set<id_t> all_border_nodes;
-    // for (auto region : regions)
-    // {
-
-    // }
-
-
-
-    // int uncontained_count = 0;
-    // int snarl_count = 0;
-    // int trivial_count = 0;
-    // for (auto snarl : snarl_roots)
-    // {
-    //     if (is_trivial(*snarl))
-    //     {
-    //         trivial_count++;
-    //         continue;
-    //     }
-    //     bool contained = false;
-    //     for (auto region : regions)
-    //     {
-    //         if (region.first <= region.second)
-    //         {
-    //             if (snarl->start().node_id() >= region.first && snarl->end().node_id() <= region.second)
-    //             {
-    //                 contained = true;
-    //             }
-    //         }
-    //         if (region.first > region.second)
-    //         {
-    //             if (snarl->start().node_id() >= region.second && snarl->end().node_id() <= region.first)
-    //             {
-    //                 contained = true;
-    //             }
-    //         }
-
-    //     }
-    //     if (!contained)
-    //     {
-    //         uncontained_count++;
-    //         if (!is_trivial(*snarl))
-    //         {
-    //             cerr << "error: snarl number " << snarl_count << " with start " << snarl->start().node_id() << " and end " << snarl->end().node_id() << " not contained in the normalize regions." << endl;
-    //             // cerr << "snarl trivial? " << is_trivial(*snarl) << endl;
-    //         }
-    //     }
-    //     snarl_count += 1;
-    // }
-    // cerr << "trivial count: " << trivial_count << endl;
-    // int contained_count = 0;
-    // cerr << "number of snarls not contained in a region: " << uncontained_count << endl;
-
-    // cerr << "size of clusters:" << endl;
-    // for (auto clust : snarl_clusters)
-    // {
-    //     cerr << clust.size() << endl;
-    //     cerr << "contents of cluster: " << endl;
-    //     for (auto snarl : clust)
-    //     {
-    //         cerr << snarl->start().node_id() << " " << snarl->end().node_id() << endl;
-    //     }
-    // }
-
-    // cerr << "contents of regions" << endl;  
-    // vector<pair<id_t, id_t>> regions = convert_snarl_clusters_to_regions(snarl_clusters);
-    // for (auto reg : regions)
-    // {
-    //     cerr << reg.first << " " << reg.second << endl; 
-    // }
     return regions;
 }
 
@@ -977,14 +771,6 @@ vector<pair<id_t, id_t>> SnarlNormalizer::get_normalize_regions(const vector<con
 // TODO: allow for snarls that have haplotypes that begin or end in the middle of the
 // snarl.
 vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t sink_id, const bool backwards, const int snarl_num) {
-    // if (backwards){
-    //     // swap the source and sink ids. Essentially, this guarantees I treat the leftmost node in snarl as "source".
-    //     // (although some adjustments for paths need be made)
-    //     id_t swap_source = sink_id; //temp storage of sink_id value. 
-    //     sink_id = source_id;
-    //     source_id = swap_source; 
-    // }
-
     id_t leftmost_id;
     id_t rightmost_id;
     if (backwards) {
@@ -1741,22 +1527,6 @@ void SnarlNormalizer::force_maximum_handle_size(MutableHandleGraph &graph) {
 SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
                                                  const id_t leftmost_id,
                                                  const id_t rightmost_id) {
-    // cerr << "extract_subgraph has source and sink: " << source_id << " " << sink_id << endl; 
-    // because algorithm moves left to right, determine leftmost and rightmost nodes.
-    // id_t leftmost_id;
-    // id_t rightmost_id;
-    //// if snarl's "backwards," source is rightmost node, sink is leftmost.
-    // if (backwards) 
-    // {
-    //     leftmost_id = sink_id;
-    //     rightmost_id = source_id;
-    // }
-    // else 
-    // {
-    //     leftmost_id = source_id;
-    //     rightmost_id = sink_id;
-    // }
-    // cerr << "extract_subgraph" << endl;
     /// make a subgraph containing only nodes of interest. (e.g. a snarl)
     // make empty subgraph
     SubHandleGraph subgraph = SubHandleGraph(&graph);
