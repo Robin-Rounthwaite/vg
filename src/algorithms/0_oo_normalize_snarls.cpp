@@ -139,66 +139,56 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     return gbwt_update_items;
 }
 
+/// @brief Checks to see if original source and sink of each snarl is shared with another 
+///         snarl. If so, that source and/or sink is split into two. The ids of the 
+///         original source and sink will always be the further of the two split nodes. 
+///         (i.e., the neighboring snarl gets to keep the node with the original id, and 
+///         the current snarl gets its node ids updated.)
+/// @param normalize_regions 
+/// @return 
 vector<pair<id_t, id_t>> SnarlNormalizer::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions){
     vector<pair<id_t, id_t>> new_normalize_regions;
     for (auto region : normalize_regions){
-        cerr << "leftmost id: " << region.first << endl;
-        cerr << "rightmost id: " << region.second << endl;
         handle_t leftmost_handle = _graph.get_handle(region.first);
         handle_t rightmost_handle = _graph.get_handle(region.second);
 
-        pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
-        pair<handle_t, handle_t> new_rightmosts = _graph.divide_handle(rightmost_handle, _graph.get_sequence(rightmost_handle).size()/2);
-        cerr << "new leftmost ids: " << _graph.get_id(new_leftmosts.first) << _graph.get_id(new_leftmosts.second) << endl;
-        cerr << "new rightmost ids: " << _graph.get_id(new_rightmosts.first) << _graph.get_id(new_rightmosts.second) << endl;
-        new_normalize_regions.push_back(make_pair(_graph.get_id(new_leftmosts.second), _graph.get_id(new_rightmosts.first)));
+        // look only to the right of rightmost_handle
+        int right_of_rightmost = 0;
+        int left_of_leftmost = 0;
+        _graph.follow_edges(rightmost_handle, false, [&](const handle_t handle) 
+        {
+            right_of_rightmost += 1;
+        });
+        // look only to the left of rightmost_handle
+        _graph.follow_edges(leftmost_handle, true, [&](const handle_t handle) 
+        {
+            left_of_leftmost += 1;
+        });
 
-        //TODO: figure out where the original node id went (and delete it, because it shouldn't exist anymore).
-        overwrite_node_id(_graph.get_id(new_leftmosts.first), region.first);
-        overwrite_node_id(_graph.get_id(new_rightmosts.second), region.second);
+        //the leftmost and rightmost node ids will only be updated if they need to be changed.
+        id_t new_leftmost = region.first;
+        id_t new_rightmost = region.second;
+        if (left_of_leftmost >1)
+        {
+            // divide handle always gives the original node id to the leftmost of the two 
+            // new handles. In this case, that's what we want.
+            pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
+            new_leftmost = _graph.get_id(new_leftmosts.second); 
+        }
+        if (right_of_rightmost >1)
+        {
+            pair<handle_t, handle_t> new_rightmosts = _graph.divide_handle(rightmost_handle, _graph.get_sequence(rightmost_handle).size()/2);
+            new_rightmost = _graph.get_id(new_rightmosts.first); 
+            // gotta move the original node id to the rightmost of the divided handles, 
+            // rather than the leftmost:
+            handle_t dummy_handle = _graph.create_handle("A");
+            id_t new_node_id = _graph.get_id(dummy_handle);
+            _graph.destroy_handle(dummy_handle);
+            overwrite_node_id(_graph.get_id(new_rightmosts.first), new_node_id);
+            overwrite_node_id(_graph.get_id(new_rightmosts.second), region.second);
+        }
 
-        cerr << "new leftmost ids: " << _graph.get_id(new_leftmosts.first) << _graph.get_id(new_leftmosts.second) << endl;
-        cerr << "new rightmost ids: " << _graph.get_id(new_rightmosts.first) << _graph.get_id(new_rightmosts.second) << endl;
-
-        //todo: visually verify that tiny.norm.pg looks as expected.
-
-        //todo: make sure that the new_normalize_regions is still accurate. (it should be).
-        //todo: delete below commented code.
-        // // if there are >1 handles to the right of rightmost, then this node needs to be split.
-        // vector<handle_t> right_of_rightmost;
-        // vector<handle_t> left_of_rightmost;
-        // // look only to the right of rightmost_handle
-        // _graph.follow_edges(rightmost_handle, false, [&](const handle_t handle) 
-        // {
-        //     right_of_rightmost.push_back(handle);
-        // });
-        // // look only to the left of rightmost_handle
-        // _graph.follow_edges(rightmost_handle, true, [&](const handle_t handle) 
-        // {
-        //     left_of_rightmost.push_back(handle);
-        // });
-
-        // if (right_of_rightmost.size() > 1)
-        // {
-        //     hanld
-        //     string seq = _graph.get_sequence(rightmost_handle);
-        //     //this will go from beginning to middle of string, not counting the middle-most character if it exists (i.e., if odd number of characters):
-        //     string first_half_seq = seq.substr(0, (seq.size()/2)); 
-        //     //this will go from middle to end of string including the middle-most character if it exists (i.e., if odd number of characters):
-        //     string second_half_seq = seq.substr((seq.size()/2), seq.size());
-        //     _graph.destroy_handle(rightmost_handle)
-            
-        // }
-
-
-        // // if there are >1 handles to the left of leftmost, then this node needs to be split.
-        // int left_of_leftmost = 0;
-        // // look only to the left of leftmost_handle
-        // _graph.follow_edges(leftmost_handle, true, [&](const handle_t handle) 
-        // {
-        //     left_of_leftmost += 1;
-        // });
-
+        new_normalize_regions.push_back(make_pair(new_leftmost, new_rightmost));
 
     }
     return new_normalize_regions;
