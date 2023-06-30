@@ -3,6 +3,7 @@
 #include "0_oo_normalize_snarls.hpp"
 #include "0_snarl_sequence_finder.hpp"
 #include <string>
+#include <tuple>
 
 #include <seqan/align.h>
 #include <seqan/graph_align.h>
@@ -63,6 +64,260 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
       _max_handle_size(max_handle_size), _max_region_size(max_region_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder), _gbwt_graph(gbwt_graph),
        _alignment_algorithm(alignment_algorithm), _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
 
+/// @brief note: assumes that each region is pair<leftmost_id, rightmost_id>, i.e. that 
+///     backwards is false (which it is fo return values of get_ and split_normalize_regions).
+/// @param split_normalize_regions 
+void SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions)
+{
+    //todo: add back the exhaustive path finder option?
+    assert(_path_finder=="GBWT");
+
+    //normalized snarls will contain all the normalized snarls before inserting them into the graph.
+    // This is because inserting the snarls in a parallel fashion is difficult. 
+    // (and would probably involve locking individual subgraphs using an adaptation of 
+    // Adam's lock code)
+    // each entry in normalized_snarls will be the arguments necessary to call integrate_snarl.
+    // integrate_snarl(SubHandleGraph &old_snarl,  const HandleGraph &to_insert_snarl, vector<pair<step_handle_t, step_handle_t>>& embedded_paths,  const id_t source_id, const id_t sink_id, const bool backwards)
+    //todo: change to make more memory efficient? 
+    //todo: I could also at least re-derive the SubHandleGraph if I needed to.
+    // vector< pair< vg::VG, pair<id_t,id_t> > > normalized_snarls;
+    vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool >> normalized_snarls;
+    for (auto region : split_normalize_regions)
+    {
+        SubHandleGraph snarl = extract_subgraph(_graph, region.first, region.second);
+
+        //get original snarl size for comparison stats
+        int original_snarl_size = 0;
+        snarl.for_each_handle([&](handle_t handle){
+            original_snarl_size += snarl.get_sequence(handle).size();
+        });
+
+        // check that snarl is normalizable:
+        bool passes_normalize_tests = test_snarl(snarl, region, original_snarl_size);
+        if (passes_normalize_tests == false) { continue; }
+
+        // extract threads.
+        // haplotypes is of format:
+        // 0: a set of all the haplotypes which stretch from source to sink, in string format.
+        //   - it's a set, so doesn't contain duplicates
+        // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
+        // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
+        //todo: figure out how to debug "tie" as below, to prevent copying the items in the pair, or else dealing with awful haplotypes_and_embedded_paths.first and .second.
+        tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes; // = haplotypes_and_embedded_paths.first;
+        vector<pair<step_handle_t, step_handle_t>> embedded_paths; // = haplotypes_and_embedded_paths.second;
+        pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> >
+            tie(haplotypes, embedded_paths) = extract_haplotypes(snarl, region);
+
+        // further checks that snarl is normalizable:
+        bool passes_haplotype_tests = test_haplotypes(haplotypes, region, original_snarl_size);
+        if (passes_haplotype_tests == false) { continue; }
+
+        // align haplotypes to form new snarl:
+        VG new_snarl;
+        if (_alignment_algorithm == "TCoffee")
+        {
+            new_snarl = align_source_to_sink_haplotypes(get<0>(haplotypes));
+        }
+        else if (_alignment_algorithm == "sPOA")
+        {
+            bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes), new_snarl, false);
+            if (run_successful == false)
+            {
+                //note: this snippet should never run, because it's also handled by the "if (hap.size() > max_spoa_length)" condition a in test_haplotypes.
+                cerr << "poa source to sink haplotypes run unsuccessful because haps too long. But since this situation is handled in a previous check, you should never see this message." << endl;
+                exit(1);
+            }
+        }
+        else
+        {
+            cerr << "error:[vg normalize] _alignment_algorithm variable must be set as either T-Coffee or sPOA." << endl;
+            exit(1);
+        }
+
+        // get new snarl size for comparison stats
+        int new_snarl_size = 0;
+        new_snarl.for_each_handle([&](const handle_t handle) {
+            new_snarl_size += new_snarl.get_sequence(handle).size();
+        });
+        
+
+        //make sure all the handles are the proper size of <=_maximum_handle_size.
+        force_maximum_handle_size(new_snarl);
+
+        normalized_snarls.push_back(make_tuple(snarl, new_snarl, embedded_paths, region.first, region.second, false));
+    }
+
+
+}
+
+/// @brief 
+/// @param snarl 
+/// @param region 
+/// @param snarl_size 
+/// @return bool snarl_passes: if the snarl is normalizable, returns true. Else, false. 
+bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, id_t>& region, const int snarl_size)
+{
+    //make sure that all handles in the snarl are represented by the gbwt.
+    bool all_handles_in_gbwt = true;
+    snarl.for_each_handle([&](handle_t handle){
+        const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)));
+        if (debug_state.empty())
+        {
+            all_handles_in_gbwt = false;
+            return;
+        }
+    }, true);
+    if (!all_handles_in_gbwt)
+    {
+        _sizes_of_snarls_skipped_because_gbwt_misses_handles.push_back(snarl_size);
+        _snarls_skipped_because_gbwt_misses_handles.push_back(region);
+        return false;
+    }
+
+    // check for cyclic snarls
+    if (!handlealgs::is_acyclic(&snarl)) {
+        _sizes_of_snarls_skipped_because_cyclic.push_back(snarl_size);
+        _snarls_skipped_because_cyclic.push_back(region);
+        return false;
+    }
+
+    return true;
+}
+
+bool SnarlNormalizer::test_haplotypes(const tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>>& haplotypes, const pair<id_t, id_t>& region, const int original_snarl_size)
+{
+    // this if statement only permits snarls that have no haplotypes beginning or 
+    //      ending in the middle of the snarl. 
+    //todo: Get rid of this once I can align these types of haps.
+    if (!(get<1>(haplotypes).empty()))
+    {
+        _sizes_of_snarls_skipped_because_haplotype_ends_in_middle.push_back(original_snarl_size);
+        _snarls_skipped_because_haplotype_ends_in_middle.push_back(region);
+        return false;
+    }
+    // also, limit the number of haplotypes to be aligned, since normalize slows down 
+    // greatly at higher thread counts. //todo: identify best _max_alignment_size for spoa/abpoa
+    if (get<0>(haplotypes).size() > _max_alignment_size)
+    {
+        _sizes_of_snarls_skipped_because_alignment_too_many_threads.push_back(original_snarl_size);
+        _snarls_skipped_because_alignment_too_many_threads.push_back(region);
+        return false;
+    }
+
+    int max_spoa_length = 750; // somewhere between 500-1000 bases, sPOA starts to struggle. //todo: That's why I'll eventually want abPOA to take over.
+    for (string hap : get<0>(haplotypes))
+    {
+        if (hap.size() > max_spoa_length)
+        {
+            _sizes_of_snarls_skipped_because_haps_too_long_for_spoa.push_back(original_snarl_size);
+            _snarls_skipped_because_haps_too_long_for_spoa.push_back(region);
+            return false;
+        }
+    }
+    return true;
+}
+
+//todo: make the return value void, and instead be returned by reference in arguments passed to extract_haplotypes.
+pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> >
+    SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region)
+{
+    bool backwards = false;
+    // extract threads.
+    // haplotypes is of format:
+    // 0: a set of all the haplotypes which stretch from source to sink, in string format.
+    //   - it's a set, so doesn't contain duplicates
+    // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
+    // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
+    tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes;
+    SnarlSequenceFinder sequence_finder = SnarlSequenceFinder(_graph, snarl, _gbwt_graph, region.first, region.second, false);
+    vector<pair<gbwt::vector_type, string>> source_to_sink_gbwt_paths;
+
+    //todo: here is where the exhaustive path finder would be used, if it was working.
+    tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<id_t>>
+        gbwt_haplotypes = sequence_finder.find_gbwt_haps();
+
+    unordered_set<id_t> nodes_in_snarl;
+    snarl.for_each_handle([&](handle_t handle){
+        nodes_in_snarl.emplace(snarl.get_id(handle));
+    });
+
+    //check that all handles touched by find_gbwt_haps is equivalent to all the 
+    //  handles in the subgraph:
+    int debug_sequence_not_in_gbwt = 0;
+    for(id_t node_id : nodes_in_snarl)
+    {
+        if (get<2>(gbwt_haplotypes).find(node_id) == nodes_in_snarl.end()){
+            const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(node_id));
+            if (debug_state.empty())
+            {
+                //i.e., there's a node in the graph that isn't in the gbwt.
+                cerr << "since this situation is handled in a previous check, you should never see this message." << endl;
+                exit(1);
+            }
+            else
+            {
+                cerr << "ERROR: the node " << node_id << " in the graph at the snarl with leftmost node id " << region.first << " and rightmost node id " << region.second << " is not touched by find_gbwt_haps(), but the node still exists in the gbwt. This is not supposed to happen. Exiting the program." << endl;
+                exit(1);
+            }
+        }
+    }
+
+    // Convert the haplotypes from vector<handle_t> format to string format.
+    get<0>(haplotypes) = format_handle_haplotypes_to_strings(_graph, _gbwt_graph, get<0>(gbwt_haplotypes));
+
+    //todo: possibly remove the duplicate storage of gbwt info in source_to_sink_gbwt_paths, by finding a way to only pass the gbwt info to the "log_gbwt_changes" function. (currently, get<0>haplotypes will also include any source-to-sink paths embedded in the graph.)
+    //deep copy of gbwt_haplotypes.
+    for (vector<handle_t> hap_handles : get<0>(gbwt_haplotypes))
+    {
+        string hap_str;
+        gbwt::vector_type hap_ids;
+        for (handle_t handle : hap_handles) 
+        {
+            hap_ids.emplace_back(_gbwt_graph.handle_to_node(handle));
+            hap_str += _graph.get_sequence(_graph.get_handle(_gbwt_graph.get_id(handle), _gbwt_graph.get_is_reverse(handle)));
+        }
+        
+        pair<gbwt::vector_type, string> hap = make_pair(hap_ids, hap_str);
+        source_to_sink_gbwt_paths.emplace_back(hap);
+    }
+    get<1>(haplotypes) = get<1>(gbwt_haplotypes);
+    get<2>(haplotypes) = get<2>(gbwt_haplotypes);
+
+    // Get the embedded paths in the snarl from _graph, to move them to new_snarl.
+    // Any embedded paths not in gbwt are aligned in the new snarl.
+    vector<pair<step_handle_t, step_handle_t>> embedded_paths =
+        sequence_finder.find_embedded_paths();
+
+    // TODO: once haplotypes that begin/end in the middle of the snarl have been
+    //       accounted for in the code, remove next chunk of code that finds 
+    //       source-to-sink paths.
+    // find the paths that stretch from source to sink:
+    for (auto path : embedded_paths) 
+    {
+        if (_graph.get_id(_graph.get_handle_of_step(path.first)) == region.first &&
+            _graph.get_id(_graph.get_handle_of_step(
+                _graph.get_previous_step(path.second))) == region.second)  {
+            // get the sequence of the source to sink path, and add it to the
+            // paths to be aligned.
+            string path_seq;
+            step_handle_t cur_step = path.first;
+            while (cur_step != path.second) {
+                path_seq += _graph.get_sequence(_graph.get_handle_of_step(cur_step));
+                cur_step = _graph.get_next_step(cur_step);
+            }
+            if (backwards) //guaranteed false, here. (but not where code was copied from)
+            {
+                get<0>(haplotypes).emplace(reverse_complement(path_seq));
+            }
+            else {
+                get<0>(haplotypes).emplace(path_seq);
+            }
+        }
+    }
+    pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> > haplotypes_and_embedded_paths = make_pair(haplotypes, embedded_paths);
+    return haplotypes_and_embedded_paths;
+}
+
 /**
  * Iterates over all top-level snarls in _graph, and normalizes them.
  * @param snarl_stream file stream from .snarl.pb output of vg snarls
@@ -72,6 +327,8 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
     vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
 
     vector<pair<id_t, id_t>> split_normalize_regions = split_sources_and_sinks(normalize_regions);
+
+    parallel_normalization(split_normalize_regions);
 
     int num_snarls_normalized = 0;
     int total_num_snarls_skipped = 0;
@@ -195,7 +452,7 @@ vector<pair<id_t, id_t>> SnarlNormalizer::split_sources_and_sinks(vector<pair<id
 }
 
 
-void SnarlNormalizer::print_statistics(vector<pair<id_t, id_t>> normalize_regions, int num_snarls_normalized, int total_num_snarls_skipped, vector<int> full_error_record){
+void SnarlNormalizer::print_statistics(const vector<pair<id_t, id_t>>& normalize_regions, const int num_snarls_normalized, const int total_num_snarls_skipped, const vector<int>& full_error_record){
     cerr << "Finished normalization. Generating statistics..." << endl;
     int post_norm_net_snarl_size = 0;
     unordered_set<id_t> post_norm_touched_border_nodes;
@@ -1158,7 +1415,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes), snarl_num, new_snarl, false);
+            bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes), new_snarl, false);
             if (run_successful == false)
             {
                 //note: this snippet probably never needs to run. It's also handled by the "if (hap.size() > max_spoa_length)" condition a few lines above.
@@ -2139,7 +2396,7 @@ void SnarlNormalizer::output_msa(const id_t leftmost_id, const id_t rightmost_id
 
     //true, because I want to print the msa to cout.
     VG output_subgraph;
-    poa_source_to_sink_haplotypes(haplotypes, 0, output_subgraph, true);
+    poa_source_to_sink_haplotypes(haplotypes, output_subgraph, true);
 }
 
 // // we want the sizes here to be in bases, not in handles/number of snarls.

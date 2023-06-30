@@ -10,8 +10,8 @@ namespace algorithms{
 
 
 //Note: you probably don't want to set output_msa to true while sending other things to cout. Because the msa is outputted to cout as well.
-bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num, VG& output_subgraph, const bool output_msa/*=false*/) {
-    bool run_successful = true;
+bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, VG& output_subgraph, const bool output_msa/*=false*/) {
+    // bool run_successful = true;
     // uint8_t ***msa_seq = NULL;
     // cerr << "size of source_to_sink_haplotypes " << source_to_sink_haplotypes.size() << endl;
     // cerr << "size of each hap in source_to_sink_haplotypes: " << endl;
@@ -143,6 +143,7 @@ bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>&
             //otherwise, just directly generate the MSA output.
             msa_output = spoa_graph.GenerateMultipleSequenceAlignment();
         }
+        return true;
     }
     else
     {

@@ -92,9 +92,20 @@ class SnarlNormalizer {
     const bool _debug_print; // for printing info that isn't necessarily something gone wrong.
     const int _threads;
     const string _alignment_algorithm;
+
+    void parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions);
+
     //////////////////////////////////////////////////////////////////////////////////////
     // finding information on original graph:
     //////////////////////////////////////////////////////////////////////////////////////
+    bool test_snarl(const SubHandleGraph& snarl, const pair<id_t, id_t>& region, const int snarl_size);
+
+    bool SnarlNormalizer::test_haplotypes(const tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>>& haplotypes, const pair<id_t, id_t>& region, const int original_snarl_size);
+
+    pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> >
+      extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region);
+
+    // tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region);
 
     // SubHandleGraph extract_subgraph(const HandleGraph &graph, const id_t leftmost_id, const id_t rightmost_id);
                                     
@@ -123,7 +134,7 @@ class SnarlNormalizer {
     //////////////////////////////////////////////////////////////////////////////////////
     // creation of noramlized graph:
     //////////////////////////////////////////////////////////////////////////////////////
-    bool poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const int snarl_num, VG& output_subgraph, const bool output_msa=false);
+    bool poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, VG& output_subgraph, const bool output_msa=false);
 
     VG kalign_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 
@@ -160,9 +171,26 @@ class SnarlNormalizer {
 
     RebuildParameters set_parameters();
     
-    //printing statistics:
-    void print_statistics(vector<pair<id_t, id_t>> normalize_regions, int num_snarls_normalized, int total_num_snarls_skipped, vector<int> full_error_record);
+    //////////////////////////////////////////////////////////////////////////////////////
+    // Statistics Tracking
+    //////////////////////////////////////////////////////////////////////////////////////
 
+    void print_statistics(const vector<pair<id_t, id_t>>& normalize_regions, const int num_snarls_normalized, const int total_num_snarls_skipped, const vector<int>& full_error_record);
+    
+    vector<int> _sizes_of_snarls_skipped_because_gbwt_misses_handles;
+    vector<pair<id_t, id_t>> _snarls_skipped_because_gbwt_misses_handles;
+
+    vector<int> _sizes_of_snarls_skipped_because_cyclic;
+    vector<pair<id_t, id_t>> _snarls_skipped_because_cyclic;
+
+    vector<int> _sizes_of_snarls_skipped_because_haplotype_ends_in_middle;
+    vector<pair<id_t, id_t>> _snarls_skipped_because_haplotype_ends_in_middle;
+
+    vector<int> _sizes_of_snarls_skipped_because_alignment_too_many_threads;
+    vector<pair<id_t, id_t>> _snarls_skipped_because_alignment_too_many_threads;
+
+    vector<int> _sizes_of_snarls_skipped_because_haps_too_long_for_spoa;
+    vector<pair<id_t, id_t>> _snarls_skipped_because_haps_too_long_for_spoa;
 
 
     // -------------------------------- DEBUG CODE BELOW:
