@@ -84,6 +84,7 @@ void SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_norm
     vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool >> normalized_snarls;
     for (auto region : split_normalize_regions)
     {
+        cerr << "starting snarl region " << region.first << " " << region.second << endl; 
         SubHandleGraph snarl = extract_subgraph(_graph, region.first, region.second);
 
         //get original snarl size for comparison stats
@@ -94,7 +95,7 @@ void SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_norm
 
         // check that snarl is normalizable:
         bool passes_normalize_tests = test_snarl(snarl, region, original_snarl_size);
-        if (passes_normalize_tests == false) { continue; }
+        if (passes_normalize_tests == false) { cerr <<  "failed normalize tests" << endl; continue; }
 
         // extract threads.
         // haplotypes is of format:
@@ -103,24 +104,24 @@ void SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_norm
         // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
         // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
         //todo: figure out how to debug "tie" as below, to prevent copying the items in the pair, or else dealing with awful haplotypes_and_embedded_paths.first and .second.
-        tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes; // = haplotypes_and_embedded_paths.first;
-        vector<pair<step_handle_t, step_handle_t>> embedded_paths; // = haplotypes_and_embedded_paths.second;
+        // tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes; // = haplotypes_and_embedded_paths.first;
+        // vector<pair<step_handle_t, step_handle_t>> embedded_paths; // = haplotypes_and_embedded_paths.second;
         pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> >
-            tie(haplotypes, embedded_paths) = extract_haplotypes(snarl, region);
+            haplotypes_and_embedded_paths = extract_haplotypes(snarl, region);
 
         // further checks that snarl is normalizable:
-        bool passes_haplotype_tests = test_haplotypes(haplotypes, region, original_snarl_size);
-        if (passes_haplotype_tests == false) { continue; }
+        bool passes_haplotype_tests = test_haplotypes(haplotypes_and_embedded_paths.first, region, original_snarl_size);
+        if (passes_haplotype_tests == false) { cerr <<  "failed haplotype tests" << endl; continue; }
 
         // align haplotypes to form new snarl:
         VG new_snarl;
         if (_alignment_algorithm == "TCoffee")
         {
-            new_snarl = align_source_to_sink_haplotypes(get<0>(haplotypes));
+            new_snarl = align_source_to_sink_haplotypes(get<0>(haplotypes_and_embedded_paths.first));
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes), new_snarl, false);
+            bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes_and_embedded_paths.first), new_snarl, false);
             if (run_successful == false)
             {
                 //note: this snippet should never run, because it's also handled by the "if (hap.size() > max_spoa_length)" condition a in test_haplotypes.
@@ -144,10 +145,60 @@ void SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_norm
         //make sure all the handles are the proper size of <=_maximum_handle_size.
         force_maximum_handle_size(new_snarl);
 
-        normalized_snarls.push_back(make_tuple(snarl, new_snarl, embedded_paths, region.first, region.second, false));
+        cerr << "finished snarl region " << region.first << " " << region.second << endl; 
+        normalized_snarls.push_back(make_tuple(snarl, new_snarl, haplotypes_and_embedded_paths.second, region.first, region.second, false));
     }
 
+    cerr << "between for loops " << endl;
 
+    for (auto snarl : normalized_snarls)
+    {
+        cerr << "original left right" << get<3>(snarl) << " " << get<4>(snarl) << endl;
+        pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
+        cerr << "new left right" << _graph.get_id(new_left_right.first) << " " << _graph.get_id(new_left_right.second) << endl;
+        // _unskipped_snarls.emplace(make_pair(get<3>(snarl), get<4>(snarl)));
+    }
+
+    print_parallel_statistics();
+
+}
+
+void SnarlNormalizer::print_parallel_statistics()
+{
+        //todo: include the size avg? Or some other size-related stat.
+    // vector<int> _sizes_of_snarls_skipped_because_gbwt_misses_handles;
+    if (_snarls_skipped_because_gbwt_misses_handles.size() >0)
+    {
+        cerr << "number of snarls skipped because gbwt misses handles: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl; 
+    }
+
+    //todo: include the size avg? Or some other size-related stat.
+    // vector<int> _sizes_of_snarls_skipped_because_cyclic;
+    if (_snarls_skipped_because_cyclic.size() >0)
+    {
+        cerr << "number of snarls skipped because cyclic: " << _snarls_skipped_because_cyclic.size() << endl; 
+    }
+
+    //todo: include the size avg? Or some other size-related stat.
+    // vector<int> _sizes_of_snarls_skipped_because_haplotype_ends_in_middle;
+    if (_snarls_skipped_because_haplotype_ends_in_middle.size() >0)
+    {
+        cerr << "number of snarls skipped because haplotype ends in middle: " << _snarls_skipped_because_haplotype_ends_in_middle.size() << endl; 
+    }
+
+    //todo: include the size avg? Or some other size-related stat.
+    // vector<int> _sizes_of_snarls_skipped_because_alignment_too_many_threads;
+    if (_snarls_skipped_because_alignment_too_many_threads.size() >0)
+    {
+        cerr << "number of snarls skipped because alignment too many threads: " << _snarls_skipped_because_alignment_too_many_threads.size() << endl; 
+    }
+
+    //todo: include the size avg? Or some other size-related stat.
+    // vector<int> _sizes_of_snarls_skipped_because_haps_too_long_for_spoa;
+    if (_snarls_skipped_because_haps_too_long_for_spoa.size() >0)
+    {
+        cerr << "number of snarls skipped because haps too long for spoa: " << _snarls_skipped_because_haps_too_long_for_spoa.size() << endl; 
+    }
 }
 
 /// @brief 
@@ -326,72 +377,83 @@ tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBW
 
     vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
 
+    for (auto region : normalize_regions)
+    {
+        cerr << "original normalize regions: " << region.first << " " << region.second << endl;
+    }
+
     vector<pair<id_t, id_t>> split_normalize_regions = split_sources_and_sinks(normalize_regions);
+
+    for (auto region : split_normalize_regions)
+    {
+        cerr << "split normalize regions: " << region.first << " " << region.second << endl;
+    }
+
 
     parallel_normalization(split_normalize_regions);
 
-    int num_snarls_normalized = 0;
-    int total_num_snarls_skipped = 0;
+    // int num_snarls_normalized = 0;
+    // int total_num_snarls_skipped = 0;
     
-    /**
-     * We keep an error record to observe when snarls are skipped because they aren't 
-     * normalizable under current restraints. Bools:
-     *      0) snarl exceeds max number of threads that can be efficiently aligned,
-     *      1) snarl has haplotypes starting/ending in the middle,
-     *      2)  some handles in the snarl aren't connected by a thread,
-     *      3) snarl is cyclic.
-     * There are two additional ints for tracking the snarl size. Ints:
-     *      4) number of bases in the snarl before normalization
-     *      5) number of bases in the snarl after normalization.
-     * Further error records:
-     *      6) snarl is trivial (either one or two nodes only), so we skipped normalizing them.
-     *      7) snarl has handles not represented in the gbwt, and so would be dropped if normalized.
-     *      8) snarl alignment includes sequences too long to suitably fit into sPOA. Need to implement abPOA.
-    */ 
-    int error_record_size = 8;
-    vector<int> one_snarl_error_record(error_record_size, 0);
-    vector<int> full_error_record(error_record_size, 0);
+    // /**
+    //  * We keep an error record to observe when snarls are skipped because they aren't 
+    //  * normalizable under current restraints. Bools:
+    //  *      0) snarl exceeds max number of threads that can be efficiently aligned,
+    //  *      1) snarl has haplotypes starting/ending in the middle,
+    //  *      2)  some handles in the snarl aren't connected by a thread,
+    //  *      3) snarl is cyclic.
+    //  * There are two additional ints for tracking the snarl size. Ints:
+    //  *      4) number of bases in the snarl before normalization
+    //  *      5) number of bases in the snarl after normalization.
+    //  * Further error records:
+    //  *      6) snarl is trivial (either one or two nodes only), so we skipped normalizing them.
+    //  *      7) snarl has handles not represented in the gbwt, and so would be dropped if normalized.
+    //  *      8) snarl alignment includes sequences too long to suitably fit into sPOA. Need to implement abPOA.
+    // */ 
+    // int error_record_size = 8;
+    // vector<int> one_snarl_error_record(error_record_size, 0);
+    // vector<int> full_error_record(error_record_size, 0);
 
-    int snarl_num = 0;
-    for (auto region : split_normalize_regions) 
-    {
-        snarl_num++;
-        if (_debug_print)
-        {
-            // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
-            cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
-        }
-        else if (snarl_num==1 || snarl_num%10000 == 0)
-        {
-            // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
-            cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
-        }
-            one_snarl_error_record = normalize_snarl(region.first, region.second, false, snarl_num);
-            if (!(one_snarl_error_record[0] || one_snarl_error_record[1] ||
-                    one_snarl_error_record[2] || one_snarl_error_record[3] ||
-                    one_snarl_error_record[6] || one_snarl_error_record[7] ||
-                    one_snarl_error_record[8])) {
-                // if there are no errors, then we've successfully normalized a snarl.
-                num_snarls_normalized += 1;
-                // track the change in size of the snarl.
-            } else {
-                // else, there was an error. Track which errors caused the snarl to not
-                // normalize.
-                // note: the ints 4 and 5 are ignored here b/c they're for
-                // recording the changing size of snarls that are successfully normalized.
-                for (int i = 0; i < error_record_size; i++) {
-                    if ( i != 4 && i != 5)
-                    {
-                        full_error_record[i] += one_snarl_error_record[i];
-                    }
-                }
-                total_num_snarls_skipped += 1;
-            }
+    // int snarl_num = 0;
+    // for (auto region : split_normalize_regions) 
+    // {
+    //     snarl_num++;
+    //     if (_debug_print)
+    //     {
+    //         // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
+    //         cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
+    //     }
+    //     else if (snarl_num==1 || snarl_num%10000 == 0)
+    //     {
+    //         // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
+    //         cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
+    //     }
+    //         one_snarl_error_record = normalize_snarl(region.first, region.second, false, snarl_num);
+    //         if (!(one_snarl_error_record[0] || one_snarl_error_record[1] ||
+    //                 one_snarl_error_record[2] || one_snarl_error_record[3] ||
+    //                 one_snarl_error_record[6] || one_snarl_error_record[7] ||
+    //                 one_snarl_error_record[8])) {
+    //             // if there are no errors, then we've successfully normalized a snarl.
+    //             num_snarls_normalized += 1;
+    //             // track the change in size of the snarl.
+    //         } else {
+    //             // else, there was an error. Track which errors caused the snarl to not
+    //             // normalize.
+    //             // note: the ints 4 and 5 are ignored here b/c they're for
+    //             // recording the changing size of snarls that are successfully normalized.
+    //             for (int i = 0; i < error_record_size; i++) {
+    //                 if ( i != 4 && i != 5)
+    //                 {
+    //                     full_error_record[i] += one_snarl_error_record[i];
+    //                 }
+    //             }
+    //             total_num_snarls_skipped += 1;
+    //         }
         
 
-    }
+    // }
     
-    print_statistics(normalize_regions, num_snarls_normalized, total_num_snarls_skipped, full_error_record);
+    // print_statistics(normalize_regions, num_snarls_normalized, total_num_snarls_skipped, full_error_record);
     tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = make_tuple(_gbwt_graph, _gbwt_changelog, _gbwt);
     return gbwt_update_items;
 }
@@ -425,17 +487,22 @@ vector<pair<id_t, id_t>> SnarlNormalizer::split_sources_and_sinks(vector<pair<id
         //the leftmost and rightmost node ids will only be updated if they need to be changed.
         id_t new_leftmost = region.first;
         id_t new_rightmost = region.second;
+        cerr << "new_leftmost " << new_leftmost << endl;
+        cerr << "new_rightmost " << new_rightmost << endl;
         if (left_of_leftmost >1)
         {
+            cerr << "left of leftmost > 1" << endl;
             // divide handle always gives the original node id to the leftmost of the two 
             // new handles. In this case, that's what we want.
             pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
             new_leftmost = _graph.get_id(new_leftmosts.second); 
+            cerr << "new_leftmost " << new_leftmost << endl;
         }
         if (right_of_rightmost >1)
         {
+            cerr << "right of rightmost > 1" << endl;
+
             pair<handle_t, handle_t> new_rightmosts = _graph.divide_handle(rightmost_handle, _graph.get_sequence(rightmost_handle).size()/2);
-            new_rightmost = _graph.get_id(new_rightmosts.first); 
             // gotta move the original node id to the rightmost of the divided handles, 
             // rather than the leftmost:
             handle_t dummy_handle = _graph.create_handle("A");
@@ -443,6 +510,9 @@ vector<pair<id_t, id_t>> SnarlNormalizer::split_sources_and_sinks(vector<pair<id
             _graph.destroy_handle(dummy_handle);
             overwrite_node_id(_graph.get_id(new_rightmosts.first), new_node_id);
             overwrite_node_id(_graph.get_id(new_rightmosts.second), region.second);
+            new_rightmost = new_node_id; 
+            cerr << "new_rightmost " << new_node_id << endl;
+
         }
 
         new_normalize_regions.push_back(make_pair(new_leftmost, new_rightmost));
