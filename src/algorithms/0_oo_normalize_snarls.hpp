@@ -115,24 +115,6 @@ class SnarlNormalizer {
                                                   const string &path_seq);
 
 
-    // clustering snarls based on _max_region_size and //todo add variable!
-    vector<pair<id_t, id_t>> get_normalize_regions(const vector<const Snarl *>& snarl_roots);
-
-    vector<pair<id_t, id_t>> get_single_snarl_normalize_regions(const vector<const Snarl *> &snarl_roots);
-
-    bool is_trivial(const Snarl& snarl);
-
-    bool snarls_adjacent(const Snarl& snarl_1, const Snarl& snarl_2);
-
-    vector<vector<const Snarl *> > cluster_snarls(const vector<const Snarl *> &snarl_roots);
-
-    vector<pair<id_t, id_t>> convert_snarl_clusters_to_regions(const vector<vector<const Snarl *> >& clusters);
-
-    //////////////////////////////////////////////////////////////////////////////////////
-    // preparing for creation of normalized graph:
-    //////////////////////////////////////////////////////////////////////////////////////
-    vector<pair<id_t, id_t>> split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions);
-
     //////////////////////////////////////////////////////////////////////////////////////
     // creation of noramlized graph:
     //////////////////////////////////////////////////////////////////////////////////////
@@ -164,14 +146,14 @@ class SnarlNormalizer {
 
     pair<step_handle_t, step_handle_t> move_path_to_new_snarl(const pair<step_handle_t, step_handle_t> old_path, const id_t source, const id_t sink, const pair<bool, bool> path_spans_left_right, const bool path_directed_left_to_right, const pair<id_t, id_t> main_graph_source_and_sink);
 
-    // updating the gbwt:
-    gbwt::GBWT apply_gbwt_changelog();
+    //// updating the gbwt:
+    // gbwt::GBWT apply_gbwt_changelog();
 
-    std::unordered_map<nid_t, size_t> get_node_to_job(const vector<unordered_set<nid_t>>& weakly_connected_components);
+    // std::unordered_map<nid_t, size_t> get_node_to_job(const vector<unordered_set<nid_t>>& weakly_connected_components);
 
-    std::vector<RebuildJob> divide_changelog_into_jobs(const std::unordered_map<nid_t, size_t>& node_to_job, const vector<unordered_set<nid_t>>& weakly_connected_components);
+    // std::vector<RebuildJob> divide_changelog_into_jobs(const std::unordered_map<nid_t, size_t>& node_to_job, const vector<unordered_set<nid_t>>& weakly_connected_components);
 
-    RebuildParameters set_parameters();
+    // RebuildParameters set_parameters();
     
     //////////////////////////////////////////////////////////////////////////////////////
     // Statistics Tracking

@@ -18,6 +18,7 @@
 
 #include "../io/save_handle_graph.hpp"
 
+#include "../algorithms/0_get_parallel_normalize_regions.hpp"
 #include "../algorithms/0_oo_normalize_snarls.hpp"
 #include "../algorithms/0_snarl_analyzer.hpp"
 #include "../algorithms/0_update_gbwt_wrapper.hpp"
@@ -617,6 +618,29 @@ int main_normalize(int argc, char **argv) {
     
 
     /////////// normalize graph /////////////////
+    //todo: remove irrelevant testing code for get_parallel_normalize_regions.cpp
+    algorithms::NormalizeRegionFinder region_finder = algorithms::NormalizeRegionFinder(*graph, max_region_size, max_snarl_spacing);
+    std::vector<std::pair<gbwtgraph::nid_t, gbwtgraph::nid_t>> parallel_normalize_regions;
+    std::vector<gbwtgraph::nid_t> nodes_to_delete;
+    std::vector<vg::RebuildJob::mapping_type> gbwt_update_info = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, nodes_to_delete);
+
+    // update the gbwt for the split handles made in get_parallel_normalize_regions 
+    cerr << "generating gbwt for graph with regions updated for parallelization..." << endl;
+    auto _gbwt_update_start = chrono::high_resolution_clock::now();    
+    gbwt::GBWT parallel_regions_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, gbwt_update_info, *gbwt, threads, false);
+    // save_gbwt(normalized_gbwt, output_gbwt_file, true);
+    auto _gbwt_update_end = chrono::high_resolution_clock::now();    
+    chrono::duration<double> apply_gbwt_changelog_time = _gbwt_update_end - _gbwt_update_start;
+    cerr << "Time spent generating the updated gbwt: " << apply_gbwt_changelog_time.count() << " s" << endl;
+
+    // make a new gbwt_graph for the parallel_regions_gbwt.
+    gbwtgraph::GBWTGraph parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
+
+    //todo: remove this:
+    vg::io::save_handle_graph(graph.get(), std::cout);
+    return 0;
+
+
     // normalize
     cerr << "running normalize" << endl;
     algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(

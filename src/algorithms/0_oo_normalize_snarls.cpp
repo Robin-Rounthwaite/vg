@@ -375,152 +375,88 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
 */
 tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> SnarlNormalizer::normalize_snarls(const vector<const Snarl *>& snarl_roots) {
 
-    vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
+    // vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
 
-    for (auto region : normalize_regions)
-    {
-        cerr << "original normalize regions: " << region.first << " " << region.second << endl;
-    }
-
-    vector<pair<id_t, id_t>> split_normalize_regions = split_sources_and_sinks(normalize_regions);
-
-    for (auto region : split_normalize_regions)
-    {
-        cerr << "split normalize regions: " << region.first << " " << region.second << endl;
-    }
-
-
-    parallel_normalization(split_normalize_regions);
-
-    // int num_snarls_normalized = 0;
-    // int total_num_snarls_skipped = 0;
-    
-    // /**
-    //  * We keep an error record to observe when snarls are skipped because they aren't 
-    //  * normalizable under current restraints. Bools:
-    //  *      0) snarl exceeds max number of threads that can be efficiently aligned,
-    //  *      1) snarl has haplotypes starting/ending in the middle,
-    //  *      2)  some handles in the snarl aren't connected by a thread,
-    //  *      3) snarl is cyclic.
-    //  * There are two additional ints for tracking the snarl size. Ints:
-    //  *      4) number of bases in the snarl before normalization
-    //  *      5) number of bases in the snarl after normalization.
-    //  * Further error records:
-    //  *      6) snarl is trivial (either one or two nodes only), so we skipped normalizing them.
-    //  *      7) snarl has handles not represented in the gbwt, and so would be dropped if normalized.
-    //  *      8) snarl alignment includes sequences too long to suitably fit into sPOA. Need to implement abPOA.
-    // */ 
-    // int error_record_size = 8;
-    // vector<int> one_snarl_error_record(error_record_size, 0);
-    // vector<int> full_error_record(error_record_size, 0);
-
-    // int snarl_num = 0;
-    // for (auto region : split_normalize_regions) 
+    // for (auto region : normalize_regions)
     // {
-    //     snarl_num++;
-    //     if (_debug_print)
-    //     {
-    //         // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
-    //         cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
-    //     }
-    //     else if (snarl_num==1 || snarl_num%10000 == 0)
-    //     {
-    //         // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
-    //         cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
-    //     }
-    //         one_snarl_error_record = normalize_snarl(region.first, region.second, false, snarl_num);
-    //         if (!(one_snarl_error_record[0] || one_snarl_error_record[1] ||
-    //                 one_snarl_error_record[2] || one_snarl_error_record[3] ||
-    //                 one_snarl_error_record[6] || one_snarl_error_record[7] ||
-    //                 one_snarl_error_record[8])) {
-    //             // if there are no errors, then we've successfully normalized a snarl.
-    //             num_snarls_normalized += 1;
-    //             // track the change in size of the snarl.
-    //         } else {
-    //             // else, there was an error. Track which errors caused the snarl to not
-    //             // normalize.
-    //             // note: the ints 4 and 5 are ignored here b/c they're for
-    //             // recording the changing size of snarls that are successfully normalized.
-    //             for (int i = 0; i < error_record_size; i++) {
-    //                 if ( i != 4 && i != 5)
-    //                 {
-    //                     full_error_record[i] += one_snarl_error_record[i];
-    //                 }
-    //             }
-    //             total_num_snarls_skipped += 1;
-    //         }
+    //     cerr << "original normalize regions: " << region.first << " " << region.second << endl;
+    // }
+
+    // vector<pair<id_t, id_t>> split_normalize_regions = split_sources_and_sinks(normalize_regions);
+
+    // for (auto region : split_normalize_regions)
+    // {
+    //     cerr << "split normalize regions: " << region.first << " " << region.second << endl;
+    // }
+
+
+    // parallel_normalization(split_normalize_regions);
+
+    // // int num_snarls_normalized = 0;
+    // // int total_num_snarls_skipped = 0;
+    
+    // // /**
+    // //  * We keep an error record to observe when snarls are skipped because they aren't 
+    // //  * normalizable under current restraints. Bools:
+    // //  *      0) snarl exceeds max number of threads that can be efficiently aligned,
+    // //  *      1) snarl has haplotypes starting/ending in the middle,
+    // //  *      2)  some handles in the snarl aren't connected by a thread,
+    // //  *      3) snarl is cyclic.
+    // //  * There are two additional ints for tracking the snarl size. Ints:
+    // //  *      4) number of bases in the snarl before normalization
+    // //  *      5) number of bases in the snarl after normalization.
+    // //  * Further error records:
+    // //  *      6) snarl is trivial (either one or two nodes only), so we skipped normalizing them.
+    // //  *      7) snarl has handles not represented in the gbwt, and so would be dropped if normalized.
+    // //  *      8) snarl alignment includes sequences too long to suitably fit into sPOA. Need to implement abPOA.
+    // // */ 
+    // // int error_record_size = 8;
+    // // vector<int> one_snarl_error_record(error_record_size, 0);
+    // // vector<int> full_error_record(error_record_size, 0);
+
+    // // int snarl_num = 0;
+    // // for (auto region : split_normalize_regions) 
+    // // {
+    // //     snarl_num++;
+    // //     if (_debug_print)
+    // //     {
+    // //         // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
+    // //         cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
+    // //     }
+    // //     else if (snarl_num==1 || snarl_num%10000 == 0)
+    // //     {
+    // //         // cerr << "normalizing region number " << snarl_num << " with source at: " << roots->start().node_id() << " and sink at: " << roots->end().node_id() << endl;
+    // //         cerr << "normalizing region number " << snarl_num << " with source at: " << region.first << " and sink at: " << region.second << endl;
+    // //     }
+    // //         one_snarl_error_record = normalize_snarl(region.first, region.second, false, snarl_num);
+    // //         if (!(one_snarl_error_record[0] || one_snarl_error_record[1] ||
+    // //                 one_snarl_error_record[2] || one_snarl_error_record[3] ||
+    // //                 one_snarl_error_record[6] || one_snarl_error_record[7] ||
+    // //                 one_snarl_error_record[8])) {
+    // //             // if there are no errors, then we've successfully normalized a snarl.
+    // //             num_snarls_normalized += 1;
+    // //             // track the change in size of the snarl.
+    // //         } else {
+    // //             // else, there was an error. Track which errors caused the snarl to not
+    // //             // normalize.
+    // //             // note: the ints 4 and 5 are ignored here b/c they're for
+    // //             // recording the changing size of snarls that are successfully normalized.
+    // //             for (int i = 0; i < error_record_size; i++) {
+    // //                 if ( i != 4 && i != 5)
+    // //                 {
+    // //                     full_error_record[i] += one_snarl_error_record[i];
+    // //                 }
+    // //             }
+    // //             total_num_snarls_skipped += 1;
+    // //         }
         
 
-    // }
+    // // }
     
-    // print_statistics(normalize_regions, num_snarls_normalized, total_num_snarls_skipped, full_error_record);
+    // // print_statistics(normalize_regions, num_snarls_normalized, total_num_snarls_skipped, full_error_record);
     tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = make_tuple(_gbwt_graph, _gbwt_changelog, _gbwt);
     return gbwt_update_items;
 }
-
-/// @brief Checks to see if original source and sink of each snarl is shared with another 
-///         snarl. If so, that source and/or sink is split into two. The ids of the 
-///         original source and sink will always be the further of the two split nodes. 
-///         (i.e., the neighboring snarl gets to keep the node with the original id, and 
-///         the current snarl gets its node ids updated.)
-/// @param normalize_regions 
-/// @return 
-vector<pair<id_t, id_t>> SnarlNormalizer::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions){
-    vector<pair<id_t, id_t>> new_normalize_regions;
-    for (auto region : normalize_regions){
-        handle_t leftmost_handle = _graph.get_handle(region.first);
-        handle_t rightmost_handle = _graph.get_handle(region.second);
-
-        // look only to the right of rightmost_handle
-        int right_of_rightmost = 0;
-        int left_of_leftmost = 0;
-        _graph.follow_edges(rightmost_handle, false, [&](const handle_t handle) 
-        {
-            right_of_rightmost += 1;
-        });
-        // look only to the left of rightmost_handle
-        _graph.follow_edges(leftmost_handle, true, [&](const handle_t handle) 
-        {
-            left_of_leftmost += 1;
-        });
-
-        //the leftmost and rightmost node ids will only be updated if they need to be changed.
-        id_t new_leftmost = region.first;
-        id_t new_rightmost = region.second;
-        cerr << "new_leftmost " << new_leftmost << endl;
-        cerr << "new_rightmost " << new_rightmost << endl;
-        if (left_of_leftmost >1)
-        {
-            cerr << "left of leftmost > 1" << endl;
-            // divide handle always gives the original node id to the leftmost of the two 
-            // new handles. In this case, that's what we want.
-            pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
-            new_leftmost = _graph.get_id(new_leftmosts.second); 
-            cerr << "new_leftmost " << new_leftmost << endl;
-        }
-        if (right_of_rightmost >1)
-        {
-            cerr << "right of rightmost > 1" << endl;
-
-            pair<handle_t, handle_t> new_rightmosts = _graph.divide_handle(rightmost_handle, _graph.get_sequence(rightmost_handle).size()/2);
-            // gotta move the original node id to the rightmost of the divided handles, 
-            // rather than the leftmost:
-            handle_t dummy_handle = _graph.create_handle("A");
-            id_t new_node_id = _graph.get_id(dummy_handle);
-            _graph.destroy_handle(dummy_handle);
-            overwrite_node_id(_graph.get_id(new_rightmosts.first), new_node_id);
-            overwrite_node_id(_graph.get_id(new_rightmosts.second), region.second);
-            new_rightmost = new_node_id; 
-            cerr << "new_rightmost " << new_node_id << endl;
-
-        }
-
-        new_normalize_regions.push_back(make_pair(new_leftmost, new_rightmost));
-
-    }
-    return new_normalize_regions;
-}
-
 
 void SnarlNormalizer::print_statistics(const vector<pair<id_t, id_t>>& normalize_regions, const int num_snarls_normalized, const int total_num_snarls_skipped, const vector<int>& full_error_record){
     cerr << "Finished normalization. Generating statistics..." << endl;
@@ -687,390 +623,6 @@ void SnarlNormalizer::print_statistics(const vector<pair<id_t, id_t>>& normalize
     cerr << "number of snarls calling for abpoa: " << _alignments_calling_for_abpoa.size() << endl;
 
 }
-
-////////////////////////////////////////////////////////////
-/// Use the gbwt_changelog to perform paralellized rebuild_gbwt():
-////////////////////////////////////////////////////////////
-
-
-gbwt::GBWT SnarlNormalizer::apply_gbwt_changelog()
-{
-    // is the changelog in _graph ids? Or gbwt ids? If gbwt ids, use the gbwt weakly_connected_components. If it's the graph, I need to compute the connected components before changing it.
-    // Uh, but actually the gbwt algorithm is gonna be expecting gbwt ids. So basically, use the gbwt info.
-    
-    // vector<unordered_set<nid_t>> components = gbwtgraph::weakly_connected_components(&_gbwt_graph);
-    vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&_gbwt_graph);
-    // vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&_graph); // this was using the handlegraph algorithm, but I think we want the gbwt's view of the connected components.
-
-    std::unordered_map<nid_t, size_t> node_to_job = get_node_to_job(components);
-
-    std::vector<RebuildJob> jobs = divide_changelog_into_jobs(node_to_job, components); 
-
-    RebuildParameters rebuild_parameters = set_parameters();
-    
-    gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, jobs, node_to_job, rebuild_parameters);
-    //todo: remove temporary non-parallelized rebuild_gbwt.
-    // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
-    return output_gbwt;
-}
-
-std::unordered_map<nid_t, size_t> SnarlNormalizer::get_node_to_job(const vector<unordered_set<nid_t>>& weakly_connected_components)
-{
-    // cerr << "weakly_connected_components.size()" << weakly_connected_components.size() << endl;
-    std::unordered_map<nid_t, size_t> node_to_job;
-    for (int i=0; i!= weakly_connected_components.size(); i++)
-    {
-        // cerr << "i" << i << endl;
-        for (nid_t node : weakly_connected_components[i])
-        {
-            // cerr << "node in i" << node << endl;
-            node_to_job[node] = i;
-        }
-    }
-    return node_to_job;
-}
-
-std::vector<RebuildJob> SnarlNormalizer::divide_changelog_into_jobs(const std::unordered_map<nid_t, size_t>& node_to_job, const vector<unordered_set<nid_t>>& weakly_connected_components)
-{
-    std::vector<RebuildJob> jobs(weakly_connected_components.size());
-    // cerr << "jobs.size()" << jobs.size() << endl;   
-    // cerr << "jobs[0].size() " << jobs[0].mappings.size() << endl;
-
-    for (pair<gbwt::vector_type, gbwt::vector_type> change : _gbwt_changelog)
-    {
-        // RebuildJob job;
-        // cerr << "change.first.front() " << change.first.front() << endl;
-        // cerr << "change.first.front() in node_id form. " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(change.first.front())) << endl;
-        // cerr << "The node id from gbwt::Node::id: " << gbwt::Node::id(change.first.front()) << endl;
-        // cerr << "does ndoe_to_job have the id when in change.first.front() in node_id form? " << node_to_job.at(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(change.first.front()))) << endl;
-        // cerr << "node_to_job.contains(change.first.front())" << node_to_job.contains(change.first.front()) << endl;
-        RebuildJob& cur_job = jobs[node_to_job.at(gbwt::Node::id(change.first.front()))];
-        cur_job.mappings.push_back(change); //todo: make sure that I'm still correct in placing the gbwt::node in here, not the node id. I'm pretty sure I'm right.
-        cur_job.total_size++;
-        // cerr << "uh oh" << endl;
-    }
-    // cerr << "jobs[0].size() " << jobs[0].mappings.size() << endl;
-    return jobs;
-}
-
-RebuildParameters SnarlNormalizer::set_parameters()
-{
-    RebuildParameters parameters;
-    parameters.num_jobs = _threads; //todo: add option for this to constructor.
-    parameters.show_progress = _debug_print;
-    return parameters;
-    //todo: implement Jouni's advice for the max_region_size and sample_interval. Advice:
-    /*
-    * From Jouni:
-    * The defaults should be fine in most cases.
-    * If the threads are particularly long and memory usage is not a problem, you may want to increase the batch size to ~20x the length of the longest threads.
-    */
-}
-
-
-////////////////////////////////////////////////////////////
-/// Data preprocessing, as encapsulated in get_normalize_regions():
-////////////////////////////////////////////////////////////
-
-//snarls_adjacent used to identify if two snarls overlap at one of their boundary nodes.
-bool SnarlNormalizer::snarls_adjacent(const Snarl& snarl_1, const Snarl& snarl_2) 
-{
-    //does snarl_2 overlap at the start handle of snarl_1?
-    handle_t start_h = _graph.get_handle(snarl_1.start().node_id());
-    bool overlap = _graph.follow_edges(start_h, snarl_1.start().backward(), [&](handle_t potential_end){
-        if (snarl_2.start().node_id() == snarl_1.start().node_id() || snarl_2.end().node_id() == snarl_1.start().node_id())
-        {
-            return true;
-        }
-        return false;
-    });
-    if (overlap) // to pass the result of the follow_edges to the return value of the snarls_adjacent:
-    {
-        return true;
-    }
-    //does snarl_2 overlap at the end handle of snarl_1?
-    handle_t end_h = _graph.get_handle(snarl_1.end().node_id());
-    overlap = _graph.follow_edges(end_h, !snarl_1.end().backward(), [&](handle_t potential_end){
-        if (snarl_2.start().node_id() == snarl_1.end().node_id() || snarl_2.end().node_id() == snarl_1.end().node_id())
-        {
-            return true;
-        }
-        return false;
-    });
-    if (overlap) // to pass the result of the follow_edges to the return value of the snarls_adjacent:
-    {
-        return true;
-    }
-
-    return false;
-}
-
-bool SnarlNormalizer::is_trivial(const Snarl& snarl) {
-    vector<id_t> nodes_adjacent_to_source;
-    handle_t first_h = _graph.get_handle(snarl.start().node_id());
-
-    _graph.follow_edges(first_h, snarl.start().backward(), [&](handle_t next)
-    {
-        nodes_adjacent_to_source.push_back(_graph.get_id(next));
-    });
-
-    if (nodes_adjacent_to_source.size() == 1)
-    {
-        if (nodes_adjacent_to_source.back() == snarl.end().node_id())
-        {
-            return true;
-        }
-        else
-        {
-            cerr << "error:[vg normalize] snarl with start" << snarl.start().node_id();
-            cerr << " and end " << snarl.end().node_id();
-            cerr << " is performing unexpectedly. The start has only one internal-to-snarl";
-            cerr << " neighbor, and it is not the end node. Malformed snarl input?" << endl;
-            exit(1);
-        }
-    }
-    else
-    {
-        return false;
-    }
-}
-
-vector<pair<id_t, id_t>> SnarlNormalizer::convert_snarl_clusters_to_regions(const vector<vector<const Snarl *> >& clusters) {
-    vector<pair<id_t, id_t>> normalize_regions;
-    for (auto cluster : clusters )
-    {
-        pair<id_t, id_t> cur_region; 
-        if (cluster.front()->start().backward())
-        {
-            cur_region.first = cluster.front()->end().node_id();
-            cur_region.second = cluster.front()->start().node_id();
-        } 
-        else
-        {
-            cur_region.first = cluster.front()->start().node_id();
-            cur_region.second = cluster.front()->end().node_id();
-        }
-        for (int i = 1; i != cluster.size(); i++)
-        {
-            //find which part of the cur_region to replace with this snarl:
-            if (cur_region.first == cluster[i]->end().node_id())
-            {
-                cur_region.first = cluster[i]->start().node_id();
-                // if (debug) 
-                // {
-                //     cerr << 1 << endl;
-                //     cerr << cur_region.first << " " << cur_region.second << endl;
-                // }
-            }
-            else if (cur_region.first == cluster[i]->start().node_id())
-            {
-                cur_region.first = cluster[i]->end().node_id();
-                // if (debug) 
-                // {
-                //     cerr << 2 << endl;
-                //     cerr << cur_region.first << " " << cur_region.second << endl;
-                // }
-            }
-            else if (cur_region.second == cluster[i]->end().node_id())
-            {
-                cur_region.second = cluster[i]->start().node_id();
-                // if (debug) 
-                // {
-                //     cerr << 3 << endl;
-                //     cerr << cur_region.first << " " << cur_region.second << endl;
-                // }
-            }
-            else if (cur_region.second == cluster[i]->start().node_id())
-            {
-                cur_region.second = cluster[i]->end().node_id();
-                // if (debug) 
-                // {
-                //     cerr << 4 << endl;
-                //     cerr << cur_region.first << " " << cur_region.second << endl;
-                // }
-            }
-            else
-            {
-                // the current snarl is not adjacent to the previous snarl; we have left 
-                // the snarl chain. 
-                // This is supposed to be guaranteed not to happen, because of the way 
-                // get_normalize_regions generates clusters. Raise an error.
-                cerr << "error:[vg normalize] snarl cluster is not within only a single"<< 
-                " connected component. There is likely a bug in whatever passed clusters"<<
-                " to convert_snarl_clusters_to_regions." << endl;
-                exit(1);
-            }
-            
-        }
-        // auto test = cur_region.first;
-        // cur_region.first = cur_region.second;
-        // cur_region.second = test;
-        normalize_regions.push_back(cur_region);
-        // debug_count ++;
-
-    }
-    return normalize_regions;
-}
-
-vector<vector<const Snarl *> > SnarlNormalizer::cluster_snarls(const vector<const Snarl *> &snarl_roots) {    
-    vector<vector<const Snarl *> > snarl_clusters;
-    auto cur_snarl = snarl_roots.begin();
-    int trivial_count = 0;
-    vector<const Snarl*> first_cluster;
-    snarl_clusters.push_back(first_cluster);
-    // cerr << "snarl_clusters.size()" << snarl_clusters.size() << endl;
-
-    // int debug_count = 0;
-    // bool debug = false;
-    while (cur_snarl != snarl_roots.end())
-    {
-        // if (debug_count>53000)
-        // {
-        //     cerr << "Inserting snarl number " << debug_count << " into a cluster" <<endl;
-        // }
-        //todo: Find out if this graph extraction is highly inefficient. If so, remove the graph_extraction I perform here, or else integrate it into the 
-        //todo:     overall normalizer in a way that prevents me from having to extract it twice (if that's efficient).
-        auto deptr_snarl = **cur_snarl;
-        id_t leftmost_id, rightmost_id;
-        if (deptr_snarl.start().backward())
-        {
-            leftmost_id = deptr_snarl.end().node_id();
-            rightmost_id = deptr_snarl.start().node_id();
-        }
-        else
-        {
-            leftmost_id = deptr_snarl.start().node_id();
-            rightmost_id = deptr_snarl.end().node_id();
-        }            
-        SubHandleGraph snarl_graph = extract_subgraph(_graph, leftmost_id, rightmost_id);
-        bool cyclic = !handlealgs::is_acyclic(&snarl_graph);
-
-        // If we are considering extending a snarl cluster, first make sure that we 
-        // haven't reached the end conditions of the current cluster.
-        // batch size exceeded? Or snarls aren't part of the same connected component?
-        // start new cluster, and trim the previous one of any trailing trivial snarls.
-        if (snarl_clusters.back().size() != 0)
-        {
-            // if (debug){
-            //     cerr << "first if" << endl;
-            // }
-            const Snarl prev_snarl = *snarl_clusters.back().back();
-            if (snarl_clusters.back().size() == _max_region_size || !snarls_adjacent(prev_snarl, **cur_snarl) || trivial_count > _max_snarl_spacing || cyclic)
-            {
-                // if (cyclic)
-                // {
-                //     cerr << "cyclic in the nested if" << endl;
-                // }
-                //If we're here, we've reached the end condition for this cluster.
-                //Trim the tirivial snarls from the end of the cluster:
-                for (int i = 0; i < trivial_count; i++)
-                {
-                    // if (debug){
-                    //     cerr << "trim" << endl;
-                    // }
-                    // cerr << " before pop_back, trivial count: " << trivial_count << ", i" << i << " snarl_clusters.size()" << snarl_clusters.size() << endl;
-                    // snarl_clusters.pop_back();
-                    snarl_clusters.back().pop_back();
-                    // cerr << " after pop_back " << endl;
-                }
-                trivial_count = 0;
-
-                // if (debug)
-                // {
-                //     cerr << " make new cluster" << endl;
-                // }
-                //start new cluster
-                vector<const Snarl*> new_cluster;
-                snarl_clusters.push_back(new_cluster);
-            }
-
-        }
-        
-        // special case: if we find a cyclic snarl and its the first snarl of a new cluster:
-        if (snarl_clusters.back().size() == 0 && cyclic)
-        {
-            // cerr << "skipping a cyclic snarl." << endl;
-            // Then just skip the cyclic snarl.
-            cur_snarl++;
-            // debug_count++;
-            continue;
-        }
-        
-        bool trivial = is_trivial(**cur_snarl);
-        // if we have a snarl that isn't trivial, add it to the latest cluster.
-        if (!trivial)
-        {
-            // if (debug)
-            // {
-            //     cerr << "not trivial" << endl;
-            // }
-            // cerr << "second if" << endl;
-            snarl_clusters.back().push_back(*cur_snarl);
-            //reset the trivial_count
-            trivial_count=0;
-        }
-            
-        // if we have a snarl that is trivial, but we have a cluster in progress, add it to the cluster.
-        else if (snarl_clusters.back().size() > 0)
-        {
-            snarl_clusters.back().push_back(*cur_snarl);
-            trivial_count++;
-        }
-        // if we have a snarl that is trivial, and we have no cluster in progress, skip it. (no code needed.)
-        cur_snarl++;
-    }
-    //check to see if the snarl_cluster at the end is empty. If so, discard it.
-    if (snarl_clusters.back().size() == 0)
-    {
-        snarl_clusters.pop_back();
-    }
-    return snarl_clusters;
-}
-
-vector<pair<id_t, id_t>> SnarlNormalizer::get_single_snarl_normalize_regions(const vector<const Snarl *> &snarl_roots)
-{
-    vector<pair<id_t, id_t>> simple_normalize_regions;
-    for (auto roots : snarl_roots)
-    {
-        if (is_trivial(*roots))
-        {
-            continue;
-        }
-        id_t leftmost_id;
-        id_t rightmost_id;
-        if (roots->start().backward())
-        {
-            leftmost_id = roots->end().node_id();
-            rightmost_id = roots->start().node_id();
-        }
-        else
-        {
-            leftmost_id = roots->start().node_id();
-            rightmost_id = roots->end().node_id();
-        }
-        pair<id_t, id_t> normalize_region = make_pair(leftmost_id, rightmost_id);
-        simple_normalize_regions.push_back(normalize_region);
-    }
-    return simple_normalize_regions;
-}
-
-vector<pair<id_t, id_t>> SnarlNormalizer::get_normalize_regions(const vector<const Snarl *> &snarl_roots) {
-    //if batch size is 1, just return the nontrivial roots from snarl_roots.
-    //todo: uncomment below if I want? Should be equivalent, but slightly more efficient than the general case. I'm currently using it for testing.
-    // if (_max_region_size==1)
-    // {
-    //     return get_single_snarl_normalize_regions(snarl_roots);
-    // }
-    //otherwise, cluster snarls.
-    // vector<pair<id_t, id_t>> simple_normalize_regions = get_single_snarl_normalize_regions(snarl_roots);
-    // cerr << "debug-test: what is simple_normalize regions size? " << simple_normalize_regions.size() << endl;
-    
-    vector<vector<const Snarl *> > snarl_clusters = cluster_snarls(snarl_roots);
-
-    vector<pair<id_t, id_t>> regions = convert_snarl_clusters_to_regions(snarl_clusters);
-    return regions;
-}
-
 
 ////////////////////////////////////////////////////////////
 /// Normalization of a single snarl:
@@ -1832,7 +1384,6 @@ void SnarlNormalizer::force_maximum_handle_size(MutableHandleGraph &graph) {
     });
 }
 
-// TODO: change the arguments to handles, which contain orientation within themselves.
 // Given a start and end node id, construct an extract subgraph between the two nodes
 // (inclusive). Arguments:
 //      graph: a pathhandlegraph containing the snarl with embedded paths.
