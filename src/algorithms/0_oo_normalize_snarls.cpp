@@ -175,9 +175,10 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //integrate all the normalized snarls formed in the parallel loop above.
     for (auto snarl : normalized_snarls)
     {
-        cerr << "original left right" << get<3>(snarl) << " " << get<4>(snarl) << endl;
+        // cerr << "original left right" << get<3>(snarl) << " " << get<4>(snarl) << endl;
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
-        cerr << "new left right" << _graph.get_id(new_left_right.first) << " " << _graph.get_id(new_left_right.second) << endl;
+        // delete_blanks_on_flanks(new_left_right);
+        // cerr << "new left right" << _graph.get_id(new_left_right.first) << " " << _graph.get_id(new_left_right.second) << endl;
         // _unskipped_snarls.emplace(make_pair(get<3>(snarl), get<4>(snarl)));
     }
 
@@ -1744,6 +1745,44 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     return new_left_right;
 }
 
+// /// @brief If there is a blank node for either the new leftmost handle or rightmost handle, it will be removed from the graph.  
+// /// @param new_left_right 
+// void SnarlNormalizer::delete_blanks_on_flanks(pair<handle_t, handle_t> new_left_right)
+// {
+//     if (_graph.get_sequence(new_left_right.first).size() == 0)
+//     {
+//         destroy_handle_and_stitch(new_left_right.first);
+//     }
+//     if (_graph.get_sequence(new_left_right.second).size() == 0)
+//     {
+//         destroy_handle_and_stitch(new_left_right.second);
+//     }
+// }
+
+// void SnarlNormalizer::destroy_handle_and_stitch(handle_t to_delete)
+// {
+//     vector<handle_t> left_handles;
+//     _graph.follow_edges(
+//     to_delete, true, [&](const handle_t left_handle) {
+//         left_handles.push_back(left_handle);
+//     });
+
+//     vector<handle_t> right_handles;
+//     _graph.follow_edges(
+//     to_delete, false, [&](const handle_t left_handle) {
+//         left_handles.push_back(left_handle);
+//     });
+
+//     for (handle_t left_handle : left_handles)
+//     {
+//         for (handle_t right_handle : right_handles)
+//         {
+//             _graph.create_edge(left_handle, right_handle);
+//         }
+//     }
+
+//     _graph.destroy_handle(to_delete);
+// }
 
 /**
  * Deletes the given node, replacing it with a new node that has the desired

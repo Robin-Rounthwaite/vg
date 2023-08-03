@@ -67,7 +67,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
     // pair<id_t, id_t> debug_region = make_pair(1883644, 1883647);
     // normalize_regions.push_back(debug_region);
     for (auto region : normalize_regions){
-        cerr << "region: " << region.first << " " << region.second << endl;
+        // cerr << "region: " << region.first << " " << region.second << endl;
         handle_t leftmost_handle = _graph.get_handle(region.first);
         handle_t rightmost_handle = _graph.get_handle(region.second);
 
@@ -98,7 +98,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             // divide handle always gives the original node id to the leftmost of the two 
             // new handles. In this case, that's what we want.
             pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
-            cerr << "new leftmosts: 1: " << _graph.get_id(new_leftmosts.first) << " " << _graph.get_sequence(new_leftmosts.first) << " 2: " << _graph.get_id(new_leftmosts.second) << " " << _graph.get_sequence(new_leftmosts.second) << endl; 
+            // cerr << "new leftmosts: 1: " << _graph.get_id(new_leftmosts.first) << " " << _graph.get_sequence(new_leftmosts.first) << " 2: " << _graph.get_id(new_leftmosts.second) << " " << _graph.get_sequence(new_leftmosts.second) << endl; 
             new_leftmost = _graph.get_id(new_leftmosts.second); 
             // if seq is length one, mark the empty handle as to-remove after the separated regions are done with.
             if (original_handle_seq_len == 1)

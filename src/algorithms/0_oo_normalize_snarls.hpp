@@ -151,6 +151,10 @@ class SnarlNormalizer {
 
     pair<step_handle_t, step_handle_t> move_path_to_new_snarl(const pair<step_handle_t, step_handle_t> old_path, const id_t source, const id_t sink, const pair<bool, bool> path_spans_left_right, const bool path_directed_left_to_right, const pair<id_t, id_t> main_graph_source_and_sink);
 
+    // void delete_blanks_on_flanks(pair<handle_t, handle_t> new_left_right);
+
+    // void SnarlNormalizer::destroy_handle_and_stitch(handle_t to_delete)
+
     //// updating the gbwt:
     // gbwt::GBWT apply_gbwt_changelog();
 
