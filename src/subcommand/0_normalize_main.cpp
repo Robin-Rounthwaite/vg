@@ -621,13 +621,37 @@ int main_normalize(int argc, char **argv) {
     //todo: remove irrelevant testing code for get_parallel_normalize_regions.cpp
     algorithms::NormalizeRegionFinder region_finder = algorithms::NormalizeRegionFinder(*graph, max_region_size, max_snarl_spacing);
     std::vector<std::pair<gbwtgraph::nid_t, gbwtgraph::nid_t>> parallel_normalize_regions;
-    std::vector<gbwtgraph::nid_t> nodes_to_delete;
-    std::vector<vg::RebuildJob::mapping_type> gbwt_update_info = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, nodes_to_delete);
+    std::set<nid_t> nodes_to_delete;
+    std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_update_info = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, nodes_to_delete);
+    
+    // cerr << "contents of parallel_regions_gbwt_update_info" << endl; 
+    // for (auto region : parallel_regions_gbwt_update_info)
+    // {
+    //   cerr << "region original: ";
+    //   for (auto node : region.first)
+    //   {
+    //     cerr << node << " "  << graph->get_sequence(graph->get_handle(node)) << endl;
+    //   }
+    //   cerr << endl;
+    //   cerr << "new region: ";
+    //   for (auto node : region.second)
+    //   {
+    //     cerr << node << " "  << graph->get_sequence(graph->get_handle(node)) << endl;
+    //     // cerr << node << " ";
+    //   }
+    //   cerr << endl;
+    //   // cerr << "region: " << region.first.back() << " " << region.second.back() << endl; 
+    // }
 
     // update the gbwt for the split handles made in get_parallel_normalize_regions 
     cerr << "generating gbwt for graph with regions updated for parallelization..." << endl;
     auto _gbwt_update_start = chrono::high_resolution_clock::now();    
-    gbwt::GBWT parallel_regions_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, gbwt_update_info, *gbwt, threads, false);
+    int gbwt_threads = threads;
+    if (threads > 12)
+    {
+      gbwt_threads = 12;
+    }
+    gbwt::GBWT parallel_regions_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, parallel_regions_gbwt_update_info, *gbwt, gbwt_threads, false);
     // save_gbwt(normalized_gbwt, output_gbwt_file, true);
     auto _gbwt_update_end = chrono::high_resolution_clock::now();    
     chrono::duration<double> apply_gbwt_changelog_time = _gbwt_update_end - _gbwt_update_start;
@@ -636,15 +660,10 @@ int main_normalize(int argc, char **argv) {
     // make a new gbwt_graph for the parallel_regions_gbwt.
     gbwtgraph::GBWTGraph parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
 
-    //todo: remove this:
-    vg::io::save_handle_graph(graph.get(), std::cout);
-    return 0;
-
-
     // normalize
     cerr << "running normalize" << endl;
     algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
-      *graph, *gbwt, *gbwt_graph, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
+      *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, nodes_to_delete, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
     
     if (output_msa)
     {
@@ -659,10 +678,12 @@ int main_normalize(int argc, char **argv) {
     else
     {
       // perform the normalization.
-      tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = normalizer.normalize_snarls(snarl_roots);
+      std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
+
+      //todo:remove to-delete nodes.
+      
 
       //save normalized graph
-      //todo: integrate this into norm
       vg::io::save_handle_graph(graph.get(), std::cout);
 
       /////////// perform apply_gbwt_changelog /////////////////
@@ -683,7 +704,7 @@ int main_normalize(int argc, char **argv) {
         cerr << "generating gbwt for normalized graph..." << endl;
         cerr << "(If you cancel the normalize operation now, the normalized graph will remain saved to cout. However, its corresponding gbwt will be not be generated.)" << endl;
 
-        gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(get<0>(gbwt_update_items), get<1>(gbwt_update_items), get<2>(gbwt_update_items), threads, debug_print);
+        gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(parallel_regions_gbwt_graph, gbwt_normalize_updates, parallel_regions_gbwt, gbwt_threads, false);
         save_gbwt(normalized_gbwt, output_gbwt_file, true);
         
         auto _gbwt_update_end = chrono::high_resolution_clock::now();    

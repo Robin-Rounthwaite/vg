@@ -24,7 +24,7 @@ NormalizeRegionFinder::NormalizeRegionFinder(MutablePathDeletableHandleGraph &gr
 /// parallelized normalization.
 /// @return A tuple of arguments to pass to gbwt_update_items if you want an updated gbwt
 /// to match the parallel normalize regions. Tuple: (_gbwt_graph, _gbwt_changelog, _gbwt)
-std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<const Snarl *> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, vector<id_t>& nodes_to_remove)
+std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<const Snarl *> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, set<id_t>& nodes_to_remove)
 {
     vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
     vector<pair<id_t, id_t>> split_normalize_regions = split_sources_and_sinks(normalize_regions, nodes_to_remove);
@@ -59,13 +59,13 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vect
 ///         the current snarl gets its node ids updated.)
 /// @param normalize_regions 
 /// @return a set of sources and sinks representing each (now isolated) snarl.
-vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, vector<id_t>& nodes_to_remove){
+vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, set<id_t>& nodes_to_remove){
     vector<pair<id_t, id_t>> new_normalize_regions;
     //todo: remove debug comment:
     // snarl 1883644 1883647 righttmost is of size 1
-    normalize_regions.clear();
-    pair<id_t, id_t> debug_region = make_pair(1883644, 1883647);
-    normalize_regions.push_back(debug_region);
+    // normalize_regions.clear();
+    // pair<id_t, id_t> debug_region = make_pair(1883644, 1883647);
+    // normalize_regions.push_back(debug_region);
     for (auto region : normalize_regions){
         cerr << "region: " << region.first << " " << region.second << endl;
         handle_t leftmost_handle = _graph.get_handle(region.first);
@@ -103,7 +103,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             // if seq is length one, mark the empty handle as to-remove after the separated regions are done with.
             if (original_handle_seq_len == 1)
             {
-                nodes_to_remove.push_back(_graph.get_id(new_leftmosts.first));
+                nodes_to_remove.emplace(_graph.get_id(new_leftmosts.first));
             }
             // encode the change in gbwt path in the gbwt.
             gbwt::vector_type original_gbwt_path;
@@ -112,17 +112,76 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_leftmosts.first), false));
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_leftmosts.second), false));
             _gbwt_changelog.emplace_back(original_gbwt_path, new_gbwt_path);
+            // cerr << "contents of _gbwt_changelog" << endl; 
+            // for (auto region : _gbwt_changelog)
+            // {
+            //     cerr << "region original: ";
+            //     for (auto node : region.first)
+            //     {
+            //         cerr << node << " "  << _graph.get_sequence(_graph.get_handle(node)) << endl;
+            //     }
+            //     cerr << endl;
+            //     cerr << "new region: ";
+            //     for (auto node : region.second)
+            //     {
+            //         cerr << node << " "  << _graph.get_sequence(_graph.get_handle(node)) << endl;
+            //         // cerr << node << " ";
+            //     }
+            //     cerr << endl;
+            // // cerr << "region: " << region.first.back() << " " << region.second.back() << endl; 
+            // }
+
         }
         if (right_of_rightmost >1)
         {
+            // cerr << "_gbwt_changelog ids: " << endl;;
+            // for (auto region : _gbwt_changelog)
+            // {
+            //     cerr << "original node series:" << endl;
+            //     for (auto node : region.first)
+            //     {
+            //         cerr << node ;
+            //     }
+            //     cerr << endl;
+            //     cerr << "updated node series:" << endl;
+            //     for (auto node : region.second)
+            //     {
+            //         cerr << node ;
+            //     }
+            //     cerr << endl;
+            // }
+            // cerr << "end _gbwt_changelog ids. " << endl;;
+
             int original_handle_seq_len = _graph.get_sequence(leftmost_handle).size();
 
+            // cerr << "before adding changes:" << endl;
+            // for (auto region : _gbwt_changelog)
+            // {
+            //     cerr << "region original: ";
+            //     for (auto node : region.first)
+            //     {
+            //         cerr << node << " "  << _graph.get_sequence(_graph.get_handle(node)) << endl;
+            //     }
+            //     cerr << endl;
+            //     cerr << "new region: ";
+            //     for (auto node : region.second)
+            //     {
+            //         cerr << node << " "  << _graph.get_sequence(_graph.get_handle(node)) << endl;
+            //         // cerr << node << " ";
+            //     }
+            //     cerr << endl;
+            //     // cerr << "region: " << region.first.back() << " " << region.second.back() << endl; 
+            // }
             // if (_graph.get_sequence(rightmost_handle).size() == 1)
             // {
             //     cerr << "snarl " << region.first << " " << region.second << " righttmost is of size 1" << endl;
             // }
 
+            // cerr << "original node id: " << _graph.get_id(rightmost_handle) << endl;
             pair<handle_t, handle_t> new_rightmosts = _graph.divide_handle(rightmost_handle, _graph.get_sequence(rightmost_handle).size()/2);
+            // cerr << "0" << endl;
+            // cerr << "new rightmosts left id: " << _graph.get_id(new_rightmosts.first) << " " << _graph.get_sequence(new_rightmosts.first) << endl;
+            // cerr << "new rightmosts right id: " << _graph.get_id(new_rightmosts.second) << " " << _graph.get_sequence(new_rightmosts.second) << endl;
             // gotta move the original node id to the rightmost of the divided handles, 
             // rather than the leftmost:
             handle_t dummy_handle = _graph.create_handle("A");
@@ -130,49 +189,107 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             _graph.destroy_handle(dummy_handle);
             overwrite_node_id(_graph.get_id(new_rightmosts.first), new_node_id);
             overwrite_node_id(_graph.get_id(new_rightmosts.second), region.second);
+            // cerr << "1" << endl;
+            // cerr << "new rightmosts left id: " << _graph.get_id(_graph.get_handle(new_node_id)) << " " << _graph.get_sequence(_graph.get_handle(new_node_id)) << endl;
+            // cerr << "new rightmosts right id: " << _graph.get_id(_graph.get_handle(region.second)) << " " << _graph.get_sequence(_graph.get_handle(region.second)) << endl;
             new_rightmost = new_node_id; 
             // if seq is length one, mark the empty handle as to-remove after the separated regions are done with.
             if (original_handle_seq_len == 1)
             {
-                nodes_to_remove.push_back(new_node_id);
+                nodes_to_remove.emplace(new_node_id);
             }
             // encode the change in gbwt path in the gbwt.
             gbwt::vector_type original_gbwt_path;
             original_gbwt_path.emplace_back(gbwt::Node::encode(region.second, false));
             gbwt::vector_type new_gbwt_path;
+            // cerr << "_graph.get_id(new_rightmosts.second): " << _graph.get_id(new_rightmosts.second) << endl;
+            // cerr << "gbwt encoding of _graph.get_id(new_rightmosts.second): " << gbwt::Node::encode(_graph.get_id(new_rightmosts.second), false) << endl;
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_rightmosts.first), false));
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_rightmosts.second), false));
-            _gbwt_changelog.emplace_back(original_gbwt_path, new_gbwt_path);
+            // cerr << "original_gbwt_path: " << endl;
+        //     for (auto id : original_gbwt_path)
+        //     {
+        //         cerr << id << " ";
+        //     }
+        //     cerr << endl;
+        //     cerr << "end original_gbwt_path: " << endl;
+
+        //     cerr << "new_gbwt_path: " << endl;
+        //     for (auto id : new_gbwt_path)
+        //     {
+        //         cerr << id << " ";
+        //     }
+        //     cerr << endl;
+        //     cerr << "end new_gbwt_path: " << endl;
+        //     _gbwt_changelog.emplace_back(original_gbwt_path, new_gbwt_path);
+            
+        //     cerr << "_gbwt_changelog ids: " << endl;;
+        //     for (auto region : _gbwt_changelog)
+        //     {
+        //         cerr << "original node series:" << endl;
+        //         for (auto node : region.first)
+        //         {
+        //             cerr << node << " ";
+        //         }
+        //         cerr << endl;
+        //         cerr << "updated node series:" << endl;
+        //         for (auto node : region.second)
+        //         {
+        //             cerr << node << " ";
+        //         }
+        //         cerr << endl;
+        //     }
+        //     cerr << "end _gbwt_changelog ids. " << endl;;
+
+
+        //     cerr << "contents of _gbwt_changelog" << endl; 
+        //     for (auto region : _gbwt_changelog)
+        //     {
+        //         cerr << "region original: ";
+        //         for (auto node : region.first)
+        //         {
+        //             cerr << node << " "  << _graph.get_sequence(_graph.get_handle(node)) << endl;
+        //         }
+        //         cerr << endl;
+        //         cerr << "new region: ";
+        //         for (auto node : region.second)
+        //         {
+        //             cerr << node << " "  << _graph.get_sequence(_graph.get_handle(node)) << endl;
+        //             // cerr << node << " ";
+        //         }
+        //         cerr << endl;
+        //         // cerr << "region: " << region.first.back() << " " << region.second.back() << endl; 
+        //     }
         }
 
 
-        cerr << "here is the sequences neighboring and in the new leftmost and rightmost " << endl;
-        cerr << "new rightmost id: " << new_rightmost << endl;
-        cerr << "seq in new_rightmost " << _graph.get_sequence(_graph.get_handle(new_rightmost)) << endl; 
-        // look around the rightmost_handle
-        cerr << "left of rightmost" << endl;
-        _graph.follow_edges(_graph.get_handle(new_rightmost), true, [&](const handle_t handle) 
-        {
-            cerr << _graph.get_id(handle) << _graph.get_sequence(handle) << endl;
-        });
-        cerr << "right of rightmost" << endl;
-        _graph.follow_edges(_graph.get_handle(new_rightmost), false, [&](const handle_t handle) 
-        {
-            cerr << _graph.get_id(handle) << _graph.get_sequence(handle) << endl;
-        });
-        cerr << "seq in new_leftmost " << _graph.get_sequence(_graph.get_handle(new_leftmost)) << endl; 
-        cerr << "new leftmost id: " << new_rightmost << endl;
-        // look around the leftmost_handle
-        cerr << "left of leftmost" << endl;
-        _graph.follow_edges(_graph.get_handle(new_leftmost), true, [&](const handle_t handle) 
-        {
-            cerr << _graph.get_id(handle) << _graph.get_sequence(handle) << endl;
-        });
-        cerr << "right of leftmost" << endl;
-        _graph.follow_edges(_graph.get_handle(new_leftmost), false, [&](const handle_t handle) 
-        {
-            cerr << _graph.get_id(handle) << _graph.get_sequence(handle) << endl;
-        });
+        // cerr << "here is the sequences neighboring and in the new leftmost and rightmost " << endl;
+        // cerr << "new rightmost id: " << new_rightmost << endl;
+        // cerr << "seq in new_rightmost " << _graph.get_sequence(_graph.get_handle(new_rightmost)) << endl; 
+        // // look around the rightmost_handle
+        // cerr << "left of rightmost" << endl;
+        // _graph.follow_edges(_graph.get_handle(new_rightmost), true, [&](const handle_t handle) 
+        // {
+        //     cerr << _graph.get_id(handle) << _graph.get_sequence(handle) << endl;
+        // });
+        // cerr << "right of rightmost" << endl;
+        // _graph.follow_edges(_graph.get_handle(new_rightmost), false, [&](const handle_t handle) 
+        // {
+        //     cerr << _graph.get_id(handle) << _graph.get_sequence(handle) << endl;
+        // });
+        // cerr << "seq in new_leftmost " << _graph.get_sequence(_graph.get_handle(new_leftmost)) << endl; 
+        // cerr << "new leftmost id: " << new_rightmost << endl;
+        // // look around the leftmost_handle
+        // cerr << "left of leftmost" << endl;
+        // _graph.follow_edges(_graph.get_handle(new_leftmost), true, [&](const handle_t handle) 
+        // {
+        //     cerr << _graph.get_id(handle) << _graph.get_sequence(handle) << endl;
+        // });
+        // cerr << "right of leftmost" << endl;
+        // _graph.follow_edges(_graph.get_handle(new_leftmost), false, [&](const handle_t handle) 
+        // {
+        //     cerr << _graph.get_id(handle) << _graph.get_sequence(handle) << endl;
+        // });
 
         new_normalize_regions.push_back(make_pair(new_leftmost, new_rightmost));
 

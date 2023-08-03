@@ -14,7 +14,7 @@ class SnarlNormalizer {
   public:
     virtual ~SnarlNormalizer() = default;
 
-    SnarlNormalizer(MutablePathDeletableHandleGraph &graph, const gbwt::GBWT &gbwt, const gbwtgraph::GBWTGraph & gbwt_graph,
+    SnarlNormalizer(MutablePathDeletableHandleGraph &graph, const gbwt::GBWT &gbwt, const gbwtgraph::GBWTGraph & gbwt_graph, const std::set<nid_t> & nodes_to_delete,
                     const int max_handle_size, 
                     const int max_region_size,
                     const int max_snarl_spacing,
@@ -25,6 +25,7 @@ class SnarlNormalizer {
                     const bool disable_gbwt_update = false,
                     const bool debug_print = false);
 
+    std::vector<vg::RebuildJob::mapping_type> parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions);
 
     virtual tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> normalize_snarls(const vector<const Snarl *>& snarl_roots);
 
@@ -48,6 +49,7 @@ class SnarlNormalizer {
     // GBWTPathFinder approach.
     const gbwt::GBWT &_gbwt;
     const gbwtgraph::GBWTGraph &_gbwt_graph;
+    const std::set<nid_t> &_nodes_to_delete;
     // const gbwtgraph::GBWTGraph _gbwt_graph = gbwtgraph::GBWTGraph(_gbwt, _graph);
     // const gbwtgraph::GBWTGraph &_gbwt_graph = gbwtgraph::GBWTGraph(_gbwt, _graph);
     // vector<pair<vector<std::uint32_t>, vector<std::uint32_t>>> _gbwt_changelog; //todo: delete this
@@ -67,6 +69,9 @@ class SnarlNormalizer {
     int _unskipped_snarl_num = 0;
     unordered_set<pair<id_t, id_t>> _skipped_snarls;
     unordered_set<pair<id_t, id_t>> _unskipped_snarls;
+    //left bool signifies that an "A" is added to the left of the current snarl being
+    //normalized. Same for the right bool with an "A" to the right.
+    pair<bool, bool> _sequence_added_because_empty_node = make_pair(false, false);
 //     vector<int> skipped_snarl_sizes.push_back(snarl_size); //todo: remove this later for efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped).
 //     
     // vector<int> unskipped_snarl_sizes.push_back(snarl_size); //todo: remove for increased efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped). 
@@ -92,8 +97,6 @@ class SnarlNormalizer {
     const bool _debug_print; // for printing info that isn't necessarily something gone wrong.
     const int _threads;
     const string _alignment_algorithm;
-
-    void parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions);
 
     void print_parallel_statistics();
 
@@ -127,6 +130,8 @@ class SnarlNormalizer {
     pair<handle_t, handle_t> integrate_snarl(SubHandleGraph &old_snarl, const HandleGraph &new_snarl,
                          vector<pair<step_handle_t, step_handle_t>>& embedded_paths,
                          const id_t source_id, const id_t sink_id, const bool backwards);
+
+    handle_t replace_node_using_sequence(const id_t old_node_id, const string new_node_sequence);
 
     handle_t overwrite_node_id(const id_t old_node_id, const id_t new_node_id);
 

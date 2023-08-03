@@ -46,9 +46,6 @@ SnarlSequenceFinder::SnarlSequenceFinder(const PathHandleGraph & graph,
 // TODO:    the snarl.
 /**
  * Finds all haplotypes in gbwt associated with snarl.
- * @param snarl The subhandlegraph of the snarl to be normalized.
- * @param source_id The source of the snarl.
- * @param sink_id The sink of the snarl.
  * @return A 3-tuple containing 1) a vector of haps stretching from source to sink, in 
  * vector<handle_t> format; 2) a second vector containing all other haps in snarl; 
  * 3) a vector of all node_ids oberved by the method.
