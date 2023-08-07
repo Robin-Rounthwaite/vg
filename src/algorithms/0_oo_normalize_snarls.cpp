@@ -83,7 +83,9 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: I could also at least re-derive the SubHandleGraph if I needed to.
     // vector< pair< vg::VG, pair<id_t,id_t> > > normalized_snarls;
     vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool >> normalized_snarls;
-#pragma omp parallel for
+    
+    omp_set_num_threads(_threads);
+    #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
         cerr << "starting snarl region " << region.first << " " << region.second << endl; 
