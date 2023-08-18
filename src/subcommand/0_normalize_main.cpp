@@ -6,8 +6,11 @@
 #include <unistd.h>
 
 #include <gbwtgraph/gbwtgraph.h>
+#include <bdsg/snarl_distance_index.hpp>
 #include "../gbwt_helper.hpp"
 #include "../gbwtgraph_helper.hpp"
+#include "../integrated_snarl_finder.hpp"
+#include "../snarl_distance_index.hpp"
 
 #include "subcommand.hpp"
 
@@ -56,14 +59,14 @@ using namespace vg::subcommand;
 //   gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream);
   
 //   // gbwtgraph::GBWTGraph gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
-//   // algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
+//   // vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
 //   // *graph, *gbwt, gbwt_graph, max_handle_size, max_alignment_size);
   
 //   // gbwtgraph::GBWTGraph gbwt_graph = gbwtgraph::GBWTGraph(*gbwt, *graph);
 //   // save_gbwtgraph(gbwt_graph, gbwt_file+".gg");
 //   // unique_ptr<gbwtgraph::GBWTGraph> gbwt_graph_p;
 //   // gbwt_graph_p = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_file+".gg");
-//   // algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
+//   // vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
 //   // *graph, *gbwt, *gbwt_graph_p, max_handle_size, max_alignment_size);
 
 //   unique_ptr<gbwtgraph::GBWTGraph> gbwt_graph;
@@ -84,7 +87,7 @@ using namespace vg::subcommand;
 //   }
 
 
-//   algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
+//   vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
 //     *graph, *gbwt, *gbwt_graph, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", disable_gbwt_update, debug_print);
 
 //   tuple<gbwtgraph::GBWTGraph, std::vector<vg::RebuildJob::mapping_type>, gbwt::GBWT> gbwt_update_items = normalizer.normalize_snarls(snarl_roots);
@@ -168,7 +171,8 @@ void help_normalize(char **argv) {
       << "options:" << endl
       << "    -g, --gbwt       gbwt corresponding to input graph." << endl
       << "    -r, --gbwt_graph       (optional) the gbwt_graph corresponding to the input graph and gbwt. If not supplied, will be temporarily generated." << endl
-      << "    -s, --snarls       snarls file corresponding to hashgraph. Must include trivial snarls (i.e. made with vg snarls -T)."
+      << "    -d, --distance_index       distance index corresponding to input graph." << endl
+      << "    -s, --snarls       snarls file corresponding to input graph. Must include trivial snarls (i.e. made with vg snarls -T)."
       << endl
       << "    -o, --output_gbwt   name for the gbwt corresponding to the normalized graph. Default is normalized.gbwt."
       << "    -n, --normalize_region        Directly normalizes the graph between nodes -a and -b. Note: code assumes that the regions between a and b is only reachable from nodes within the region."
@@ -244,7 +248,7 @@ void help_normalize(char **argv) {
       << endl
       << "    -q, --disable_gbwt_update      skips the (sometimes lengthy) gbwt editing process after normalization. Note that there is no way to generate a new, haplotype-based gbwt based on a normalized graph without exporting the updated gbwt at this stage."
       << endl
-      << "    -d, --debug_print      prints the location of every snarl/region being normalized. It also announces certain special cases - of particular note, when a snarl has increased in size after normalization."
+      << "    -P, --debug_print      prints the location of every snarl/region being normalized. It also announces certain special cases - of particular note, when a snarl has increased in size after normalization."
       << endl
       << "    -h, --help      print this help info." << endl;
 }
@@ -260,6 +264,7 @@ int main_normalize(int argc, char **argv) {
       INT_MAX; // default cutoff used to be 200 threads in a snarl.
   string gbwt_file;
   string gbwt_graph_file;
+  string distance_index_file;
   string snarls;
   string output_gbwt_file = "normalized.gbwt";
   bool normalize_region = false;
@@ -298,6 +303,7 @@ int main_normalize(int argc, char **argv) {
         {{"help", no_argument, 0, 'h'},
          {"gbwt", required_argument, 0, 'g'},
          {"gbwt_graph", required_argument, 0, 'r'},
+         {"distance_index", required_argument, 0, 'd'},
          {"snarls", required_argument, 0, 's'},
          {"output_gbwt", required_argument, 0, 'o'},
          {"normalize_region", required_argument, 0, 'n'},
@@ -324,11 +330,11 @@ int main_normalize(int argc, char **argv) {
          {"alignment_algorithm", required_argument, 0, 'A'},
          {"output_msa", no_argument, 0, 'O'},
          {"disable_gbwt_update", no_argument, 0, 'q'},
-         {"debug_print", no_argument, 0, 'd'},
+         {"debug_print", no_argument, 0, 'P'},
          {0, 0, 0, 0}};
 
     int option_index = 0;
-    c = getopt_long(argc, argv, "hg:r:s:o:na:b:B:pm:i:jl:xy:c:v:k:i:t:EC:S:A:Oqd", long_options,
+    c = getopt_long(argc, argv, "hg:r:d:s:o:na:b:B:pm:i:jl:xy:c:v:k:i:t:EC:S:A:OqP", long_options,
                     &option_index);
 
     // Detect the end of the options.
@@ -343,6 +349,10 @@ int main_normalize(int argc, char **argv) {
 
     case 'r':
       gbwt_graph_file = optarg;
+      break;
+
+    case 'd':
+      distance_index_file = optarg;
       break;
 
     case 's':
@@ -460,7 +470,7 @@ int main_normalize(int argc, char **argv) {
       disable_gbwt_update = true;
       break;
 
-    case 'd':
+    case 'P':
       debug_print = true;
       break;
 
@@ -539,91 +549,325 @@ int main_normalize(int argc, char **argv) {
       gbwt_graph->set_gbwt(*gbwt);
     }
 
-    // snarl_stream:
-    std::ifstream snarl_stream;
-    string snarl_file = snarls;
-    snarl_stream.open(snarl_file);
-    if (!snarl_stream && !output_msa) {
-      cerr << "error:[vg normalize] Cannot open Snarls file " << snarl_file
-            << endl;
-      exit(1);
-    }
-    cerr << "before snarl manager is created..." << endl;
-    //todo: remove "new"?
-    SnarlManager *snarl_manager = new SnarlManager(snarl_stream);
-    cerr << "snarl manager created." << endl;
+    std::set<nid_t> nodes_to_delete;
+    std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_update_info;
+    std::vector<std::pair<gbwtgraph::nid_t, gbwtgraph::nid_t>> parallel_normalize_regions;
 
-    // snarl_roots 
-    // Depending on user specifications, we may want to normalize some specified snarls:
-    vector<const Snarl *> snarl_roots;
-
-    if (start_snarl_num != 0 || end_snarl_num != 0)
+    //todo: make cluster_snarls a real option. Still needs testing with making parallel
+    //regions. Also note in documentation that this will require using the slow-to-load
+    //(>6 hrs for full genome) snarlmanager rather than the new faster distanceindex. For
+    //now, I'll bypass this option by default
+    bool cluster_snarls = false;
+    cerr << "got to cluster_snarls" << endl;
+    if (cluster_snarls)
     {
-      cerr << "normalizing user-specified snarls" << endl;
-      //prepare to normalize user-specified snarls:
-      //check that start and end are valid:
-      if (start_snarl_num >= end_snarl_num)
-      {
-        cerr << "error:[vg normalize] start_snarl_num >= end_snarl_num."  << endl;
+      // snarl_stream:
+      std::ifstream snarl_stream;
+      string snarl_file = snarls;
+      snarl_stream.open(snarl_file);
+      if (!snarl_stream && !output_msa) {
+        cerr << "error:[vg normalize] Cannot open Snarls file " << snarl_file
+              << endl;
         exit(1);
       }
-      else if (end_snarl_num > snarl_roots.size())
+      cerr << "before snarl manager is created..." << endl;
+      //todo: remove "new"?
+      SnarlManager *snarl_manager = new SnarlManager(snarl_stream);
+      cerr << "snarl manager created." << endl;
+
+      // snarl_roots 
+      // Depending on user specifications, we may want to normalize some specified snarls:
+      vector<const Snarl *> snarls;
+
+      if (start_snarl_num != 0 || end_snarl_num != 0)
       {
-        cerr << "WARNING:[vg normalize] end_snarl_num greater than snarl_roots.size(). Will normalize starting at start_snarl_num and ending at last snarl in snarl_roots." << endl;
+        cerr << "normalizing user-specified snarls" << endl;
+        //prepare to normalize user-specified snarls:
+        //check that start and end are valid:
+        if (start_snarl_num >= end_snarl_num)
+        {
+          cerr << "error:[vg normalize] start_snarl_num >= end_snarl_num."  << endl;
+          exit(1);
+        }
+        else if (end_snarl_num > snarls.size())
+        {
+          cerr << "WARNING:[vg normalize] end_snarl_num greater than snarls.size(). Will normalize starting at start_snarl_num and ending at last snarl in snarls." << endl;
+        }
+        
+        snarls = snarl_manager->top_level_snarls();
+        vector<const Snarl *> chosen_snarls(snarls.begin() + start_snarl_num, snarls.begin() + end_snarl_num); 
+        //todo: check that the following line properly overwrites snarls with a copy of chosen_snarls. 
+        snarls = chosen_snarls;
+        cerr << "of snarl selection that is " << chosen_snarls.size() << " long, first snarl selected has source: " << (*chosen_snarls.front()).start().node_id() << " and sink: " << (*chosen_snarls.front()).end().node_id() << endl; 
+      }
+      // or only normalize snarls that are fully contained by at least one region of a bed file:
+      else if (bed_file.size() > 0)
+      {
+        cerr << "normalizing bed specified snarls" << endl;
+        //todo: add bedfile functionality.
+        bdsg::PositionOverlay position_graph = bdsg::PositionOverlay(graph.get());
+        vector<Region> bed_regions;
+        //todo: non-hardcode bed region
+        parse_bed_regions(bed_file, bed_regions);
+        // cerr << "bed regions close to the interesting snarl at node 1,184,818-1,184,851: " << endl; // todo: if I ever want to actually measure this, I would want a way to swap chrom positions into node ids. 
+        // int debug_count = 0;
+        // for (auto bed : bed_regions) 
+        // {
+        //   if (debug_count <= 10)
+        //   {
+        //     cerr << "example region: " << bed.start << " " << bed.end << endl;
+        //   }
+        //   debug_count++;
+        //   if (bed.start <= 1184851 && 1184818 <= bed.end){
+        //     cerr << "interesting bed region of: " << bed.start << ", " << bed.end << endl;
+        //   }
+        // }
+        // cerr << "Number of regions in the bedfile we will use to filter out undesired snarls: " << bed_regions.size() << " " << bed_regions.front().start << " " << bed_regions.front().end << " " << bed_regions.front().seq << " " << endl;
+        cerr << "Number of regions in the bedfile we will use to filter out undesired snarls: " << bed_regions.size() << endl;
+        //todo: check that contain_endpoints bool does what I think it does. I think I want contain_endpoints=true.
+        visit_contained_snarls(&position_graph, bed_regions, *snarl_manager, true, [&](const Snarl* snarl, step_handle_t start_step, step_handle_t end_step, int64_t start_int, int64_t end_int, bool, const Region* region)
+        {
+          snarls.push_back(snarl);
+        });
+      }
+      // otherwise, normalize all snarls: (except if we have the region specified by -a and -b, in which case leave snarls empty.)
+      else if (!normalize_region)
+      {
+        cerr << "normalizing all snarls" << endl;
+        snarls = snarl_manager->top_level_snarls();
       }
       
-      snarl_roots = snarl_manager->top_level_snarls();
-      vector<const Snarl *> chosen_snarls(snarl_roots.begin() + start_snarl_num, snarl_roots.begin() + end_snarl_num); 
-      //todo: check that the following line properly overwrites snarl_roots with a copy of chosen_snarls. 
-      snarl_roots = chosen_snarls;
-      cerr << "of snarl selection that is " << chosen_snarls.size() << " long, first snarl selected has source: " << (*chosen_snarls.front()).start().node_id() << " and sink: " << (*chosen_snarls.front()).end().node_id() << endl; 
-    }
-    // or only normalize snarls that are fully contained by at least one region of a bed file:
-    else if (bed_file.size() > 0)
-    {
-      cerr << "normalizing bed specified snarls" << endl;
-      //todo: add bedfile functionality.
-      bdsg::PositionOverlay position_graph = bdsg::PositionOverlay(graph.get());
-      vector<Region> bed_regions;
-      //todo: non-hardcode bed region
-      parse_bed_regions(bed_file, bed_regions);
-      // cerr << "bed regions close to the interesting snarl at node 1,184,818-1,184,851: " << endl; // todo: if I ever want to actually measure this, I would want a way to swap chrom positions into node ids. 
-      // int debug_count = 0;
-      // for (auto bed : bed_regions) 
-      // {
-      //   if (debug_count <= 10)
-      //   {
-      //     cerr << "example region: " << bed.start << " " << bed.end << endl;
-      //   }
-      //   debug_count++;
-      //   if (bed.start <= 1184851 && 1184818 <= bed.end){
-      //     cerr << "interesting bed region of: " << bed.start << ", " << bed.end << endl;
-      //   }
-      // }
-      // cerr << "Number of regions in the bedfile we will use to filter out undesired snarls: " << bed_regions.size() << " " << bed_regions.front().start << " " << bed_regions.front().end << " " << bed_regions.front().seq << " " << endl;
-      cerr << "Number of regions in the bedfile we will use to filter out undesired snarls: " << bed_regions.size() << endl;
-      //todo: check that contain_endpoints bool does what I think it does. I think I want contain_endpoints=true.
-      visit_contained_snarls(&position_graph, bed_regions, *snarl_manager, true, [&](const Snarl* snarl, step_handle_t start_step, step_handle_t end_step, int64_t start_int, int64_t end_int, bool, const Region* region)
+      vector<pair<vg::id_t, vg::id_t>> snarl_roots;
+      for (const vg::Snarl* snarl : snarls)
       {
-        snarl_roots.push_back(snarl);
-      });
-    }
-    // otherwise, normalize all snarls: (except if we have the region specified by -a and -b, in which case leave snarl_roots empty.)
-    else if (!normalize_region)
-    {
-      cerr << "normalizing all snarls" << endl;
-      snarl_roots = snarl_manager->top_level_snarls();
-    }
-    cerr << "number of snarls in targeted normalize regions: " << snarl_roots.size() << endl;
-    
+        if (snarl->start().backward())
+        {
+          snarl_roots.push_back(make_pair(snarl->end().node_id(), snarl->start().node_id()));
+        }
+        else
+        {
+          snarl_roots.push_back(make_pair(snarl->start().node_id(), snarl->end().node_id()));
+        }
+      }
 
-    /////////// normalize graph /////////////////
-    //todo: remove irrelevant testing code for get_parallel_normalize_regions.cpp
-    algorithms::NormalizeRegionFinder region_finder = algorithms::NormalizeRegionFinder(*graph, max_region_size, max_snarl_spacing);
-    std::vector<std::pair<gbwtgraph::nid_t, gbwtgraph::nid_t>> parallel_normalize_regions;
-    std::set<nid_t> nodes_to_delete;
-    std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_update_info = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, nodes_to_delete);
-    
+      cerr << "number of snarls in targeted normalize regions: " << snarls.size() << endl;
+      
+
+      /////////// normalize graph /////////////////
+      //todo: remove irrelevant testing code for get_parallel_normalize_regions.cpp
+      vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_snarl_spacing);
+      parallel_regions_gbwt_update_info = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, nodes_to_delete);
+      cerr << "got to parallel norm regions made " << endl;
+    }    
+    else
+    {
+      //we are going to use the v2 distance index, which is faster but doesn't allow for easy batching of multiple snarls into each normlization alignment. 
+      auto distance_index = vg::io::VPKG::load_one<SnarlDistanceIndex>(distance_index_file);
+
+      vector<pair<vg::id_t, vg::id_t>> snarl_roots;
+      vg::IntegratedSnarlFinder snarl_finder(*graph);
+      
+      cerr << "before traversal" << endl;
+      distance_index->traverse_decomposition( 
+      [&] (const bdsg::net_handle_t& snarl) {
+          handle_t outward_source_handle = distance_index->get_handle(distance_index->get_bound(snarl, false, false), &*graph);
+          handle_t outward_sink_handle = distance_index->get_handle(distance_index->get_bound(snarl, true, false), &*graph);
+          handle_t inward_source_handle = distance_index->get_handle(distance_index->get_bound(snarl, false, true), &*graph);
+          handle_t inward_sink_handle = distance_index->get_handle(distance_index->get_bound(snarl, true, true), &*graph);
+          
+          nid_t source_id = distance_index->node_id(distance_index->get_bound(snarl, false, false));
+          handle_t default_source_handle = graph->get_handle(source_id);
+          vector<handle_t> default_source_handle_go_lefts;
+          graph->follow_edges( default_source_handle, true, [&](handle_t left_handle) {
+            default_source_handle_go_lefts.push_back(left_handle);
+          });
+          if (default_source_handle_go_lefts.size() != 0)
+          {
+            cerr << "default_source_handle id: " << graph->get_id(default_source_handle) << " default_source_handle go_left id: " << graph->get_id(default_source_handle_go_lefts.front()) << endl;
+            cerr << "default_source_handle orientation: " << graph->get_is_reverse(default_source_handle) << "default_source_handle sequence: " << graph->get_sequence(default_source_handle) << endl;
+          }
+          else
+          {
+            cerr << "default_source_handle_go_lefts.size() == 0" << endl;
+          }
+          vector<handle_t> default_source_handle_go_rights;
+          graph->follow_edges( default_source_handle, false, [&](handle_t right_handle) {
+            default_source_handle_go_rights.push_back(right_handle);
+          });
+          if (default_source_handle_go_rights.size() != 0)
+          {
+            cerr << "default_source_handle id: " << graph->get_id(default_source_handle) << " default_source_handle go_right id: " << graph->get_id(default_source_handle_go_rights.front()) << endl;
+            cerr << "default_source_handle orientation: " << graph->get_is_reverse(default_source_handle) << "default_source_handle sequence: " << graph->get_sequence(default_source_handle) << endl;
+          }
+          else
+          {
+            cerr << "default_source_handle_go_rights.size() == 0" << endl;
+          }
+
+          nid_t sink_id = distance_index->node_id(distance_index->get_bound(snarl, true, false));
+          handle_t default_sink_handle = graph->get_handle(sink_id);
+          vector<handle_t> default_sink_handle_go_lefts;
+          graph->follow_edges( default_sink_handle, true, [&](handle_t left_handle) {
+            default_sink_handle_go_lefts.push_back(left_handle);
+          });
+          if (default_sink_handle_go_lefts.size() != 0)
+          {
+            cerr << "default_sink_handle id: " << graph->get_id(default_sink_handle) << " default_sink_handle go_left id: " << graph->get_id(default_sink_handle_go_lefts.front()) << endl;
+            cerr << "default_sink_handle orientation: " << graph->get_is_reverse(default_sink_handle) << "default_sink_handle sequence: " << graph->get_sequence(default_sink_handle) << endl;
+          }
+          else
+          {
+            cerr << "default_sink_handle_go_lefts.size() == 0" << endl;
+          }
+          vector<handle_t> default_sink_handle_go_rights;
+          graph->follow_edges( default_sink_handle, false, [&](handle_t right_handle) {
+            default_sink_handle_go_rights.push_back(right_handle);
+          });
+          if (default_sink_handle_go_rights.size() != 0)
+          {
+            cerr << "default_sink_handle id: " << graph->get_id(default_sink_handle) << " default_sink_handle go_right id: " << graph->get_id(default_sink_handle_go_rights.front()) << endl;
+            cerr << "default_sink_handle orientation: " << graph->get_is_reverse(default_sink_handle) << "default_sink_handle sequence: " << graph->get_sequence(default_sink_handle) << endl;
+          }
+          else
+          {
+            cerr << "default_sink_handle_go_rights.size() == 0" << endl;
+          }
+
+
+          vector<handle_t> outward_source_handle_go_lefts;
+          graph->follow_edges( outward_source_handle, true, [&](handle_t left_handle) {
+            outward_source_handle_go_lefts.push_back(left_handle);
+          });
+          if (outward_source_handle_go_lefts.size() != 0)
+          {
+            cerr << "outward_source_handle id: " << graph->get_id(outward_source_handle) << " outward_source_handle go_left id: " << graph->get_id(outward_source_handle_go_lefts.front()) << endl;
+            cerr << "outward_source_handle orientation: " << graph->get_is_reverse(outward_source_handle) << "outward_source_handle sequence: " << graph->get_sequence(outward_source_handle) << endl;
+          }
+          else
+          {
+            cerr << "outward_source_handle_go_lefts.size() == 0" << endl;
+          }
+          
+          vector<handle_t> outward_source_handle_go_rights;
+          graph->follow_edges( outward_source_handle, false, [&](handle_t right_handle) {
+            outward_source_handle_go_rights.push_back(right_handle);
+          });
+          if (outward_source_handle_go_rights.size() != 0)
+          {
+            cerr << "outward_source_handle id: " << graph->get_id(outward_source_handle) << " outward_source_handle go_right id: " << graph->get_id(outward_source_handle_go_rights.front()) << endl;
+            cerr << "outward_source_handle orientation: " << graph->get_is_reverse(outward_source_handle) << "outward_source_handle sequence: " << graph->get_sequence(outward_source_handle) << endl;
+          }
+          else
+          {
+            cerr << "outward_source_handle_go_rights.size() == 0" << endl;
+          }
+          
+          vector<handle_t> outward_sink_handle_go_lefts;
+          graph->follow_edges( outward_sink_handle, true, [&](handle_t left_handle) {
+            outward_sink_handle_go_lefts.push_back(left_handle);
+          });
+          if (outward_sink_handle_go_lefts.size() != 0)
+          {
+            cerr << "outward_sink_handle id: " << graph->get_id(outward_sink_handle) << " outward_sink_handle go_left id: " << graph->get_id(outward_sink_handle_go_lefts.front()) << endl;
+            cerr << "outward_sink_handle orientation: " << graph->get_is_reverse(outward_sink_handle) << "outward_sink_handle sequence: " << graph->get_sequence(outward_sink_handle) << endl;
+          }
+          else
+          {
+            cerr << "outward_sink_handle_go_lefts.size() == 0" << endl;
+          }
+          
+          vector<handle_t> outward_sink_handle_go_rights;
+          graph->follow_edges( outward_sink_handle, false, [&](handle_t right_handle) {
+            outward_sink_handle_go_rights.push_back(right_handle);
+          });
+          if (outward_sink_handle_go_rights.size() != 0)
+          {
+            cerr << "outward_sink_handle id: " << graph->get_id(outward_sink_handle) << " outward_sink_handle go_right id: " << graph->get_id(outward_sink_handle_go_rights.front()) << endl;
+            cerr << "outward_sink_handle orientation: " << graph->get_is_reverse(outward_sink_handle) << "outward_sink_handle sequence: " << graph->get_sequence(outward_sink_handle) << endl;
+          }
+          else
+          {
+            cerr << "outward_sink_handle_go_rights.size() == 0" << endl;
+          }
+          
+          vector<handle_t> inward_source_handle_go_lefts;
+          graph->follow_edges( inward_source_handle, true, [&](handle_t left_handle) {
+            inward_source_handle_go_lefts.push_back(left_handle);
+          });
+          if (inward_source_handle_go_lefts.size() != 0)
+          {
+            cerr << "inward_source_handle id: " << graph->get_id(inward_source_handle) << " inward_source_handle go_left id: " << graph->get_id(inward_source_handle_go_lefts.front()) << endl;
+            cerr << "inward_source_handle orientation: " << graph->get_is_reverse(inward_source_handle) << "inward_source_handle sequence: " << graph->get_sequence(inward_source_handle) << endl;
+          }
+          else
+          {
+            cerr << "inward_source_handle_go_lefts.size() == 0" << endl;
+          }
+          
+          vector<handle_t> inward_source_handle_go_rights;
+          graph->follow_edges( inward_source_handle, false, [&](handle_t right_handle) {
+            inward_source_handle_go_rights.push_back(right_handle);
+          });
+          if (inward_source_handle_go_rights.size() != 0)
+          {
+            cerr << "inward_source_handle id: " << graph->get_id(inward_source_handle) << " inward_source_handle go_right id: " << graph->get_id(inward_source_handle_go_rights.front()) << endl;
+            cerr << "inward_source_handle orientation: " << graph->get_is_reverse(inward_source_handle) << "inward_source_handle sequence: " << graph->get_sequence(inward_source_handle) << endl;
+          }
+          else
+          {
+            cerr << "inward_source_handle_go_rights.size() == 0" << endl;
+          }
+          
+          vector<handle_t> inward_sink_handle_go_lefts;
+          graph->follow_edges( inward_sink_handle, true, [&](handle_t left_handle) {
+            inward_sink_handle_go_lefts.push_back(left_handle);
+          });
+          if (inward_sink_handle_go_lefts.size() != 0)
+          {
+            cerr << "inward_sink_handle id: " << graph->get_id(inward_sink_handle) << " inward_sink_handle go_left id: " << graph->get_id(inward_sink_handle_go_lefts.front()) << endl;
+            cerr << "inward_sink_handle orientation: " << graph->get_is_reverse(inward_sink_handle) << "inward_sink_handle sequence: " << graph->get_sequence(inward_sink_handle) << endl;
+          }
+          else
+          {
+            cerr << "inward_sink_handle_go_lefts.size() == 0" << endl;
+          }
+          
+          vector<handle_t> inward_sink_handle_go_rights;
+          graph->follow_edges( inward_sink_handle, false, [&](handle_t right_handle) {
+            inward_sink_handle_go_rights.push_back(right_handle);
+          });
+          if (inward_sink_handle_go_rights.size() != 0)
+          {
+            cerr << "inward_sink_handle id: " << graph->get_id(inward_sink_handle) << " inward_sink_handle go_right id: " << graph->get_id(inward_sink_handle_go_rights.front()) << endl;
+            cerr << "inward_sink_handle orientation: " << graph->get_is_reverse(inward_sink_handle) << "inward_sink_handle sequence: " << graph->get_sequence(inward_sink_handle) << endl;
+          }
+          else
+          {
+            cerr << "inward_sink_handle_go_rights.size() == 0" << endl;
+          }
+          
+          bool is_reverse = graph->get_is_reverse(outward_source_handle);
+          cerr << "is_reverse: " << is_reverse << endl;
+          nid_t start_id = distance_index->node_id(distance_index->get_bound(snarl, false, false));
+          nid_t end_id = distance_index->node_id(distance_index->get_bound(snarl, true, false));
+          cerr << "found a snarl in distance index with start, end: " << start_id << ", " << end_id << endl;
+          snarl_roots.push_back(make_pair(start_id, end_id));
+      return true;
+      },
+      [&](const bdsg::net_handle_t& chain) {return true;},
+      [&] (const bdsg::net_handle_t& node) {return true;});
+      cerr << "after traversal" << endl;
+
+      // // Create the chaining space based on it
+      // IntegratedSnarlFinder snarl_finder(graph);
+      // SnarlDistanceIndex distance_index;
+      // fill_in_distance_index(&distance_index, &graph, &snarl_finder);
+      // if (show_progress) {
+      //     std::cerr << "Built distance index" << std::endl;
+      // }
+    }
+
+
     // cerr << "contents of parallel_regions_gbwt_update_info" << endl; 
     // for (auto region : parallel_regions_gbwt_update_info)
     // {
@@ -662,7 +906,7 @@ int main_normalize(int argc, char **argv) {
 
     // normalize
     cerr << "running normalize" << endl;
-    algorithms::SnarlNormalizer normalizer = algorithms::SnarlNormalizer(
+    vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
       *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, nodes_to_delete, max_handle_size, max_region_size, max_snarl_spacing, threads, max_alignment_size, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
     
     if (output_msa)
@@ -678,6 +922,11 @@ int main_normalize(int argc, char **argv) {
     else
     {
       // perform the normalization.
+      cerr << "parallel normalize regions: " << endl;
+      for (auto reg : parallel_normalize_regions)
+      {
+        cerr << reg.first << " " << reg.second << endl;
+      }
       std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
 
       //todo:remove to-delete nodes.
@@ -694,7 +943,7 @@ int main_normalize(int argc, char **argv) {
         exit(1);
       }
       graph.reset();
-      snarl_roots.clear();
+      parallel_normalize_regions.clear();
 
       // apply_gbwt_changelog
       if (!disable_gbwt_update)
@@ -741,7 +990,7 @@ int main_normalize(int argc, char **argv) {
       exit(1);
     }
 
-    algorithms::SnarlAnalyzer sizes = algorithms::SnarlAnalyzer(
+    vg::algorithms::SnarlAnalyzer sizes = vg::algorithms::SnarlAnalyzer(
         *graph, snarl_stream, snarl_sizes_skip_source_sink);
 
     sizes.output_snarl_sizes(snarl_sizes);
@@ -762,7 +1011,7 @@ int main_normalize(int argc, char **argv) {
       get_input_file(optind, argc, argv, [&](istream &in) {
         graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);
       });
-      algorithms::print_handles_in_snarl(*graph, leftmost_id, rightmost_id, max_search_dist);
+      vg::algorithms::print_handles_in_snarl(*graph, leftmost_id, rightmost_id, max_search_dist);
     }
   }
 
@@ -805,20 +1054,20 @@ int main_normalize(int argc, char **argv) {
     vector<const Snarl *> snarl_roots;
 
 
-    SubHandleGraph snarl = algorithms::SnarlNormalizer::extract_subgraph(*graph, leftmost_id, rightmost_id);
+    SubHandleGraph snarl = vg::algorithms::SnarlNormalizer::extract_subgraph(*graph, leftmost_id, rightmost_id);
 
     // gbwt_haps is of format:
     // 0: a set of all the haplotypes which stretch from source to sink, in string format.
     //   - it's a set, so doesn't contain duplicates
     // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
-    algorithms::SnarlSequenceFinder sequence_finder = algorithms::SnarlSequenceFinder(*graph, snarl, *gbwt_graph, leftmost_id, rightmost_id, false);
+    vg::algorithms::SnarlSequenceFinder sequence_finder = vg::algorithms::SnarlSequenceFinder(*graph, snarl, *gbwt_graph, leftmost_id, rightmost_id, false);
     tuple<vector<vector<gbwtgraph::handle_t>>, vector<vector<gbwtgraph::handle_t>>, unordered_set<handlegraph::nid_t>> gbwt_haps = sequence_finder.find_gbwt_haps();
     // cerr << get<1>(gbwt_haps).size() << " " << get<2>(gbwt_haps).size() << " " << get<3>(gbwt_haps).size() << " " << endl;
     cerr << " " << get<0>(gbwt_haps).size() << " " <<  get<1>(gbwt_haps).size() << " " << get<2>(gbwt_haps).size()  << endl;
 
     cerr << "about to print strings:" << endl;
-    unordered_set<string> hap_strings = algorithms::SnarlNormalizer::format_handle_haplotypes_to_strings(*graph, *gbwt_graph, get<0>(gbwt_haps));
+    unordered_set<string> hap_strings = vg::algorithms::SnarlNormalizer::format_handle_haplotypes_to_strings(*graph, *gbwt_graph, get<0>(gbwt_haps));
     for (auto string : hap_strings)
     {
       cerr << string << endl;
@@ -919,7 +1168,7 @@ int main_normalize(int argc, char **argv) {
     // cerr << "reality check: does gbwt_graph have nodes? Min node: " << gbwt_graph->min_node_id() << " max: " << gbwt_graph->max_node_id() << endl;
     // handle_t test = gbwt_graph->get_handle(gbwt_graph->max_node_id());
     
-    SubHandleGraph full_graph_subgraph = algorithms::SnarlNormalizer::extract_subgraph(*graph, gbwt_graph->min_node_id(), gbwt_graph->max_node_id());
+    SubHandleGraph full_graph_subgraph = vg::algorithms::SnarlNormalizer::extract_subgraph(*graph, gbwt_graph->min_node_id(), gbwt_graph->max_node_id());
     // SubHandleGraph empty_snarl(&(*graph));
     if (!handlealgs::is_acyclic(&(*graph))) {
                 cerr << "WARNING: graph is cyclic. Robin is currently figuring out if that's an issue or not." << endl;
@@ -930,7 +1179,7 @@ int main_normalize(int argc, char **argv) {
     //   - it's a set, so doesn't contain duplicates
     // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
-    algorithms::SnarlSequenceFinder sequence_finder = algorithms::SnarlSequenceFinder(*graph, full_graph_subgraph, *gbwt_graph, gbwt_graph->min_node_id(), gbwt_graph->max_node_id(), false);
+    vg::algorithms::SnarlSequenceFinder sequence_finder = vg::algorithms::SnarlSequenceFinder(*graph, full_graph_subgraph, *gbwt_graph, gbwt_graph->min_node_id(), gbwt_graph->max_node_id(), false);
     tuple<vector<vector<gbwtgraph::handle_t>>, vector<vector<gbwtgraph::handle_t>>, unordered_set<handlegraph::nid_t>> gbwt_haps = sequence_finder.find_gbwt_haps();
 
 

@@ -24,7 +24,7 @@ NormalizeRegionFinder::NormalizeRegionFinder(MutablePathDeletableHandleGraph &gr
 /// parallelized normalization.
 /// @return A tuple of arguments to pass to gbwt_update_items if you want an updated gbwt
 /// to match the parallel normalize regions. Tuple: (_gbwt_graph, _gbwt_changelog, _gbwt)
-std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<const Snarl *> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, set<id_t>& nodes_to_remove)
+std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, set<id_t>& nodes_to_remove)
 {
     vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
     vector<pair<id_t, id_t>> split_normalize_regions = split_sources_and_sinks(normalize_regions, nodes_to_remove);
@@ -36,7 +36,7 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_no
 /// Functions called by get_parallel_normalize_regions:
 ////////////////////////////////////////////////////////////
 
-vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vector<const Snarl *> &snarl_roots) 
+vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots) 
 {
         //todo: uncomment below if I want? Should be equivalent, but slightly more efficient than the general case. I'm currently using it for testing.
         //if batch size is 1, just return the nontrivial roots from snarl_roots.
@@ -46,7 +46,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vect
         // }
 
     //otherwise, cluster snarls.
-    vector<vector<const Snarl *> > snarl_clusters = cluster_snarls(snarl_roots);
+    vector<vector<pair<vg::id_t, vg::id_t>> > snarl_clusters = cluster_snarls(snarl_roots);
     vector<pair<id_t, id_t>> regions = convert_snarl_clusters_to_regions(snarl_clusters);
     return regions;
 }
@@ -302,30 +302,19 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
 ////////////////////////////////////////////////////////////
 
 
-vector<vector<const Snarl *> > NormalizeRegionFinder::cluster_snarls(const vector<const Snarl *> &snarl_roots) {    
-    vector<vector<const Snarl *> > snarl_clusters;
+vector< vector<pair<vg::id_t, vg::id_t>> > NormalizeRegionFinder::cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots) {    
+    vector< vector<pair<vg::id_t, vg::id_t>> > snarl_clusters;
     auto cur_snarl = snarl_roots.begin();
     int trivial_count = 0;
-    vector<const Snarl*> first_cluster;
+    vector<pair<vg::id_t, vg::id_t>> first_cluster;
     snarl_clusters.push_back(first_cluster);
 
     while (cur_snarl != snarl_roots.end())
     {
         //todo: Find out if this graph extraction is highly inefficient. If so, remove the graph_extraction I perform here, or else integrate it into the 
         //todo:     overall normalizer in a way that prevents me from having to extract it twice (if that's efficient).
-        auto deptr_snarl = **cur_snarl;
-        id_t leftmost_id, rightmost_id;
-        if (deptr_snarl.start().backward())
-        {
-            leftmost_id = deptr_snarl.end().node_id();
-            rightmost_id = deptr_snarl.start().node_id();
-        }
-        else
-        {
-            leftmost_id = deptr_snarl.start().node_id();
-            rightmost_id = deptr_snarl.end().node_id();
-        }            
-        SubHandleGraph snarl_graph = extract_subgraph(_graph, leftmost_id, rightmost_id);
+        
+        SubHandleGraph snarl_graph = extract_subgraph(_graph, cur_snarl->first, cur_snarl->second);
         bool cyclic = !handlealgs::is_acyclic(&snarl_graph);
 
         // If we are considering extending a snarl cluster, first make sure that we 
@@ -334,8 +323,8 @@ vector<vector<const Snarl *> > NormalizeRegionFinder::cluster_snarls(const vecto
         // start new cluster, and trim the previous one of any trailing trivial snarls.
         if (snarl_clusters.back().size() != 0)
         {
-            const Snarl prev_snarl = *snarl_clusters.back().back();
-            if (snarl_clusters.back().size() == _max_region_size || !snarls_adjacent(prev_snarl, **cur_snarl) || trivial_count > _max_snarl_spacing || cyclic)
+            pair<id_t, id_t> prev_snarl = snarl_clusters.back().back();
+            if (snarl_clusters.back().size() == _max_region_size || !snarls_adjacent(prev_snarl, *cur_snarl) || trivial_count > _max_snarl_spacing || cyclic)
             {
                 //If we're here, we've reached the end condition for this cluster.
                 //Trim the tirivial snarls from the end of the cluster:
@@ -346,7 +335,7 @@ vector<vector<const Snarl *> > NormalizeRegionFinder::cluster_snarls(const vecto
                 trivial_count = 0;
 
                 //start new cluster
-                vector<const Snarl*> new_cluster;
+                vector<pair<id_t, id_t>> new_cluster;
                 snarl_clusters.push_back(new_cluster);
             }
 
@@ -360,7 +349,7 @@ vector<vector<const Snarl *> > NormalizeRegionFinder::cluster_snarls(const vecto
             continue;
         }
         
-        bool trivial = is_trivial(**cur_snarl);
+        bool trivial = is_trivial(*cur_snarl);
         // if we have a snarl that isn't trivial, add it to the latest cluster.
         if (!trivial)
         {
@@ -387,57 +376,65 @@ vector<vector<const Snarl *> > NormalizeRegionFinder::cluster_snarls(const vecto
 }
 
 
-vector<pair<id_t, id_t>> NormalizeRegionFinder::convert_snarl_clusters_to_regions(const vector<vector<const Snarl *> >& clusters) {
+vector<pair<id_t, id_t>> NormalizeRegionFinder::convert_snarl_clusters_to_regions(const vector<vector<pair<vg::id_t, vg::id_t>> >& clusters) {
     vector<pair<id_t, id_t>> normalize_regions;
-    for (auto cluster : clusters )
+    for (auto cluster : clusters)
     {
-        pair<id_t, id_t> cur_region; 
-        if (cluster.front()->start().backward())
-        {
-            cur_region.first = cluster.front()->end().node_id();
-            cur_region.second = cluster.front()->start().node_id();
-        } 
-        else
-        {
-            cur_region.first = cluster.front()->start().node_id();
-            cur_region.second = cluster.front()->end().node_id();
-        }
-        for (int i = 1; i != cluster.size(); i++)
-        {
-            //find which part of the cur_region to replace with this snarl:
-            if (cur_region.first == cluster[i]->end().node_id())
-            {
-                cur_region.first = cluster[i]->start().node_id();
-            }
-            else if (cur_region.first == cluster[i]->start().node_id())
-            {
-                cur_region.first = cluster[i]->end().node_id();
-            }
-            else if (cur_region.second == cluster[i]->end().node_id())
-            {
-                cur_region.second = cluster[i]->start().node_id();
-            }
-            else if (cur_region.second == cluster[i]->start().node_id())
-            {
-                cur_region.second = cluster[i]->end().node_id();
-            }
-            else
-            {
-                // the current snarl is not adjacent to the previous snarl; we have left 
-                // the snarl chain. 
-                // This is supposed to be guaranteed not to happen, because of the way 
-                // get_normalize_regions generates clusters. Raise an error.
-                cerr << "error:[vg normalize] snarl cluster is not within only a single"<< 
-                " connected component. There is likely a bug in whatever passed clusters"<<
-                " to convert_snarl_clusters_to_regions." << endl;
-                exit(1);
-            }
-            
-        }
-        normalize_regions.push_back(cur_region);
-
+        pair<id_t, id_t> normalize_region;
+        normalize_region.first == cluster.front().first;
+        normalize_region.second == cluster.front().second;
+        normalize_regions.push_back(normalize_region);
     }
     return normalize_regions;
+
+    // for (auto cluster : clusters )
+    // {
+    //     pair<id_t, id_t> cur_region = cluster.front(); 
+    //     // if (cluster.front()->start().backward())
+    //     // {
+    //     //     cur_region.first = cluster.front()->end().node_id();
+    //     //     cur_region.second = cluster.front()->start().node_id();
+    //     // } 
+    //     // else
+    //     // {
+    //     //     cur_region.first = cluster.front()->start().node_id();
+    //     //     cur_region.second = cluster.front()->end().node_id();
+    //     // }
+    //     for (int i = 1; i != cluster.size(); i++)
+    //     {
+    //         //find which part of the cur_region to replace with this snarl:
+    //         if (cur_region.first == cluster[i].second())
+    //         {
+    //             cur_region.first = cluster[i].first();
+    //         }
+    //         else if (cur_region.first == cluster[i].first())
+    //         {
+    //             cur_region.first = cluster[i].second();
+    //         }
+    //         else if (cur_region.second == cluster[i].second())
+    //         {
+    //             cur_region.second = cluster[i].first();
+    //         }
+    //         else if (cur_region.second == cluster[i].first())
+    //         {
+    //             cur_region.second = cluster[i].second();
+    //         }
+    //         else
+    //         {
+    //             // the current snarl is not adjacent to the previous snarl; we have left 
+    //             // the snarl chain. 
+    //             // This is supposed to be guaranteed not to happen, because of the way 
+    //             // get_normalize_regions generates clusters. Raise an error.
+    //             cerr << "error:[vg normalize] snarl cluster is not within only a single"<< 
+    //             " connected component. There is likely a bug in whatever passed clusters"<<
+    //             " to convert_snarl_clusters_to_regions." << endl;
+    //             exit(1);
+    //         }
+            
+    //     }
+    //     normalize_regions.push_back(cur_region);
+
+    // }
 }
 
 ////////////////////////////////////////////////////////////
@@ -530,57 +527,31 @@ SubHandleGraph NormalizeRegionFinder::extract_subgraph(const HandleGraph &graph,
 }
 
 //snarls_adjacent used to identify if two snarls overlap at one of their boundary nodes.
-bool NormalizeRegionFinder::snarls_adjacent(const Snarl& snarl_1, const Snarl& snarl_2) 
+bool NormalizeRegionFinder::snarls_adjacent(const pair<id_t, id_t>& snarl_1, const pair<id_t, id_t>& snarl_2) 
 {
-    //does snarl_2 overlap at the start handle of snarl_1?
-    handle_t start_h = _graph.get_handle(snarl_1.start().node_id());
-    bool overlap = _graph.follow_edges(start_h, snarl_1.start().backward(), [&](handle_t potential_end){
-        if (snarl_2.start().node_id() == snarl_1.start().node_id() || snarl_2.end().node_id() == snarl_1.start().node_id())
-        {
-            return true;
-        }
-        return false;
-    });
-    if (overlap) // to pass the result of the follow_edges to the return value of the snarls_adjacent:
-    {
-        return true;
-    }
-    //does snarl_2 overlap at the end handle of snarl_1?
-    handle_t end_h = _graph.get_handle(snarl_1.end().node_id());
-    overlap = _graph.follow_edges(end_h, !snarl_1.end().backward(), [&](handle_t potential_end){
-        if (snarl_2.start().node_id() == snarl_1.end().node_id() || snarl_2.end().node_id() == snarl_1.end().node_id())
-        {
-            return true;
-        }
-        return false;
-    });
-    if (overlap) // to pass the result of the follow_edges to the return value of the snarls_adjacent:
-    {
-        return true;
-    }
-
-    return false;
+    return (snarl_1.second == snarl_2.first || snarl_2.second == snarl_1.first);
 }
 
-bool NormalizeRegionFinder::is_trivial(const Snarl& snarl) {
-    vector<id_t> nodes_adjacent_to_source;
-    handle_t first_h = _graph.get_handle(snarl.start().node_id());
 
-    _graph.follow_edges(first_h, snarl.start().backward(), [&](handle_t next)
+bool NormalizeRegionFinder::is_trivial(const pair<id_t, id_t>& snarl) {
+    vector<id_t> nodes_adjacent_to_source;
+    handle_t first_h = _graph.get_handle(snarl.first);
+
+    _graph.follow_edges(first_h, false, [&](handle_t next)
     {
         nodes_adjacent_to_source.push_back(_graph.get_id(next));
     });
 
     if (nodes_adjacent_to_source.size() == 1)
     {
-        if (nodes_adjacent_to_source.back() == snarl.end().node_id())
+        if (nodes_adjacent_to_source.back() == snarl.second)
         {
             return true;
         }
         else
         {
-            cerr << "error:[vg normalize] snarl with start" << snarl.start().node_id();
-            cerr << " and end " << snarl.end().node_id();
+            cerr << "error:[vg normalize] snarl with start" << snarl.first;
+            cerr << " and end " << snarl.second;
             cerr << " is performing unexpectedly. The start has only one internal-to-snarl";
             cerr << " neighbor, and it is not the end node. Malformed snarl input?" << endl;
             exit(1);

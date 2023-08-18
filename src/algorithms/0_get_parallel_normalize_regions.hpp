@@ -24,10 +24,10 @@ class NormalizeRegionFinder {
     // arguments parallel_normalize_regions and nodes_to_remove are empty vectors 
     // that are filled by the function.
     // Returns the changes that need to be made ot the gbwt to account for split nodes.
-    std::vector<vg::RebuildJob::mapping_type> get_parallel_normalize_regions(const vector<const Snarl *> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, set<id_t>& nodes_to_remove);
+    std::vector<vg::RebuildJob::mapping_type> get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, set<id_t>& nodes_to_remove);
 
     /// function called by get_parallel_normalize_regions:
-    vector<pair<id_t, id_t>> get_normalize_regions(const vector<const Snarl *> &snarl_roots);
+    vector<pair<id_t, id_t>> get_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots);
 
   protected:
 
@@ -43,9 +43,9 @@ class NormalizeRegionFinder {
     vector<pair<id_t, id_t>> split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, set<id_t>& nodes_to_remove);
 
     /// functions called by get_normalize_regions.
-    vector<vector<const Snarl *> > cluster_snarls(const vector<const Snarl *> &snarl_roots);
+    vector< vector<pair<vg::id_t, vg::id_t>> > cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots);
 
-    vector<pair<id_t, id_t>> convert_snarl_clusters_to_regions(const vector<vector<const Snarl *> >& clusters);
+    vector<pair<id_t, id_t>> convert_snarl_clusters_to_regions(const vector<vector<pair<vg::id_t, vg::id_t>> >& clusters);
 
     /// Functions used in cluster_snarls:
     // function used in cluster_snarls, and copied from SnarlNormalizer.
@@ -54,9 +54,9 @@ class NormalizeRegionFinder {
                                                  const id_t rightmost_id);
 
     // Another function used in cluster_snarls:
-    bool snarls_adjacent(const Snarl& snarl_1, const Snarl& snarl_2);
+    bool snarls_adjacent(const pair<id_t, id_t>& snarl_1, const pair<id_t, id_t>& snarl_2);
 
-    bool is_trivial(const Snarl& snarl);
+    bool is_trivial(const pair<id_t, id_t>& snarl);
     
     ///Functions used in split_sources_and_sinks:
     handle_t overwrite_node_id(const id_t old_node_id, const id_t new_node_id);
