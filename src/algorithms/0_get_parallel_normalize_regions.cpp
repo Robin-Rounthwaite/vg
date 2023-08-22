@@ -26,8 +26,31 @@ NormalizeRegionFinder::NormalizeRegionFinder(MutablePathDeletableHandleGraph &gr
 /// to match the parallel normalize regions. Tuple: (_gbwt_graph, _gbwt_changelog, _gbwt)
 std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, set<id_t>& nodes_to_remove)
 {
-    vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
-    vector<pair<id_t, id_t>> split_normalize_regions = split_sources_and_sinks(normalize_regions, nodes_to_remove);
+    //note: right now snarl_roots is identical to what would normally be the output of single-snarl get_normalize_regions. 
+    //todo: make a snarl clusterer based on distance_index.
+    // vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
+    // cerr << "normalize_regions: " << endl;
+    // for (auto root : normalize_regions)
+    // {
+    //     cerr << root.first << " " << root.second << endl;
+    // }
+
+
+    parallel_normalize_regions = split_sources_and_sinks(snarl_roots, nodes_to_remove);
+    // for (auto change : _gbwt_changelog) 
+    // {
+    //     cerr << "change.first "<< endl;
+    //     for (auto str : change.first)
+    //     {
+    //         cerr << str << endl;
+    //     }
+
+    //     cerr << "change.second "<< endl;
+    //     for (auto str : change.second)
+    //     {
+    //         cerr << str << endl;
+    //     }
+    // }
     return _gbwt_changelog;
 }
 
@@ -47,7 +70,16 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vect
 
     //otherwise, cluster snarls.
     vector<vector<pair<vg::id_t, vg::id_t>> > snarl_clusters = cluster_snarls(snarl_roots);
-    vector<pair<id_t, id_t>> regions = convert_snarl_clusters_to_regions(snarl_clusters);
+    // cerr << "snarl clusters: " << endl;
+    // for (auto cluster : snarl_clusters)
+    // {
+    //     cerr << "one cluster: " << endl;
+    //     for (auto root : cluster)
+    //     {
+    //         cerr << root.first << " " << root.second << endl;
+    //     }
+    // }
+    vector<pair<id_t, id_t>> regions = convert_snarl_clusters_to_regions(snarl_clusters); //todo: MAKE THIS NOT BROKEN! right now, it assumes the snarls are ordered in the cluster from left to right.
     return regions;
 }
 
@@ -111,6 +143,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             gbwt::vector_type new_gbwt_path;
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_leftmosts.first), false));
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_leftmosts.second), false));
+            // cerr << "replacing original leftmost " << region.first << " with " << _graph.get_id(new_leftmosts.first) << " " << _graph.get_id(new_leftmosts.second) << endl;
             _gbwt_changelog.emplace_back(original_gbwt_path, new_gbwt_path);
             // cerr << "contents of _gbwt_changelog" << endl; 
             // for (auto region : _gbwt_changelog)
@@ -118,13 +151,13 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             //     cerr << "region original: ";
             //     for (auto node : region.first)
             //     {
-            //         cerr << node << " "  << _graph.get_sequence(_graph.get_handle(node)) << endl;
+            //         cerr << node << " "; //<< _graph.get_sequence(_graph.get_handle(node)) << endl;
             //     }
             //     cerr << endl;
             //     cerr << "new region: ";
             //     for (auto node : region.second)
             //     {
-            //         cerr << node << " "  << _graph.get_sequence(_graph.get_handle(node)) << endl;
+            //         cerr << node << " "; //<< _graph.get_sequence(_graph.get_handle(node)) << endl;
             //         // cerr << node << " ";
             //     }
             //     cerr << endl;
@@ -375,14 +408,14 @@ vector< vector<pair<vg::id_t, vg::id_t>> > NormalizeRegionFinder::cluster_snarls
     return snarl_clusters;
 }
 
-
+//todo: instead of either of these problematic hacky-ways of turning (poor) clusters to regions (which in the most recent implementation doesn't take into account snarls put in the lcuster in reverse order), try doing something based on the distance_index itself.
 vector<pair<id_t, id_t>> NormalizeRegionFinder::convert_snarl_clusters_to_regions(const vector<vector<pair<vg::id_t, vg::id_t>> >& clusters) {
     vector<pair<id_t, id_t>> normalize_regions;
     for (auto cluster : clusters)
     {
         pair<id_t, id_t> normalize_region;
-        normalize_region.first == cluster.front().first;
-        normalize_region.second == cluster.front().second;
+        normalize_region.first = cluster.front().first;
+        normalize_region.second = cluster.back().second;
         normalize_regions.push_back(normalize_region);
     }
     return normalize_regions;

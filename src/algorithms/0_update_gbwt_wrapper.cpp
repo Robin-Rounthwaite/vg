@@ -39,21 +39,36 @@ namespace vg {
 namespace algorithms {
 
 
+/// @brief Given a changelog of pair<node_ids before changes, node_ids after changes>,
+/// will record the changes in the gbwt. The graph must have identical haplotype content
+/// before/after. (so the graph changes may only cause disconnects between sequences that
+/// were never explicitly connected by haplotypes).
+/// @param gbwt_graph 
+/// @param gbwt_changelog //todo: figure out if encoded in gbwt nodes or if in normal graph nodes.
+/// @param gbwt 
+/// @param threads 
+/// @param debug_print 
+/// @return 
 gbwt::GBWT apply_gbwt_changelog(const gbwtgraph::GBWTGraph &gbwt_graph, const std::vector<vg::RebuildJob::mapping_type>& gbwt_changelog, const gbwt::GBWT& gbwt, const int& threads, const bool& debug_print)
 {
-    // is the changelog in _graph ids? Or gbwt ids? If gbwt ids, use the gbwt weakly_connected_components. If it's the graph, I need to compute the connected components before changing it.
-    // Uh, but actually the gbwt algorithm is gonna be expecting gbwt ids. So basically, use the gbwt info.
-    
     // vector<unordered_set<nid_t>> components = gbwtgraph::weakly_connected_components(&_gbwt_graph);
+    cerr << "weakly_connected_components" << endl;
     vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&gbwt_graph);
+    // cerr << "size of components: " << components.size() << endl;
+    // cerr << "gbwt_graph.has_node(1): " << gbwt_graph.has_node(1) << endl;
+    gbwt_graph.has_node(1);
     // vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&_graph); // this was using the handlegraph algorithm, but I think we want the gbwt's view of the connected components.
 
+    cerr << "get_node_to_job" << endl;
     std::unordered_map<nid_t, size_t> node_to_job = get_node_to_job(components);
 
+    cerr << "divide_changelog_into_jobs" << endl;
     std::vector<RebuildJob> jobs = divide_changelog_into_jobs(node_to_job, components, gbwt_changelog); 
 
+    cerr << "set_update_gbwt_parameters" << endl;
     RebuildParameters rebuild_parameters = set_update_gbwt_parameters(threads, debug_print);
     
+    cerr << "rebuild_gbwt" << endl;
     gbwt::GBWT output_gbwt = rebuild_gbwt(gbwt, jobs, node_to_job, rebuild_parameters);
     //todo: remove temporary non-parallelized rebuild_gbwt.
     // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
@@ -86,14 +101,19 @@ std::vector<RebuildJob> divide_changelog_into_jobs(const std::unordered_map<nid_
     {
         // RebuildJob job;
         // cerr << "change.first.front() " << change.first.front() << endl;
-        // cerr << "change.first.front() in node_id form. " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(change.first.front())) << endl;
+        // // cerr << "change.first.front() in node_id form. " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(change.first.front())) << endl;
         // cerr << "The node id from gbwt::Node::id: " << gbwt::Node::id(change.first.front()) << endl;
-        // cerr << "does ndoe_to_job have the id when in change.first.front() in node_id form? " << node_to_job.at(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(change.first.front()))) << endl;
-        // cerr << "node_to_job.contains(change.first.front())" << node_to_job.contains(change.first.front()) << endl;
+        // // cerr << "does ndoe_to_job have the id when in change.first.front() in node_id form? " << node_to_job.at(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(change.first.front()))) << endl;
+        // cerr << "node_to_job.contains(change.first.front()) " << !(node_to_job.find(change.first.front()) == node_to_job.end()) << endl;
+        // cerr << "contents of node_to_job, of size " << node_to_job.size() << endl;
+        // for (auto it = node_to_job.begin(); it != node_to_job.end(); it++)
+        // {
+        //     cerr << it->first << " " << it->second << endl;
+        // }
         RebuildJob& cur_job = jobs[node_to_job.at(gbwt::Node::id(change.first.front()))];
+        // RebuildJob& cur_job = jobs[node_to_job.at(change.first.front())];
         cur_job.mappings.push_back(change); //todo: make sure that I'm still correct in placing the gbwt::node in here, not the node id. I'm pretty sure I'm right.
         cur_job.total_size++;
-        // cerr << "uh oh" << endl;
     }
     // cerr << "jobs[0].size() " << jobs[0].mappings.size() << endl;
     return jobs;

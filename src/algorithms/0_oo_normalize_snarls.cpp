@@ -390,6 +390,14 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
     }
     else if (_nodes_to_delete.find(region.second) == _nodes_to_delete.end())
     {
+        cerr << "here is the node to delete: " << region.second << endl;
+        cerr << "here is the _nodes_to_delete.size(): " << _nodes_to_delete.size() << endl;
+        cerr << "here is the _nodes_to_delete: " <<endl;
+        for (auto node : _nodes_to_delete)
+        {
+            cerr << node << " ";
+        }
+        cerr << endl;
         cerr << "ERROR: found a node_to_delete that isn't of length zero. This shouldn't happen." << endl;
         exit(1);
     }
