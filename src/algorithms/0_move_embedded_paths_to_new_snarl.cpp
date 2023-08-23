@@ -167,8 +167,38 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     step_handle_t cur_step = old_path.first;
     string path_name = _graph.get_path_name(_graph.get_path_handle_of_step(old_path.first)); // used for unit tests at bottom.
     vector<handle_t> old_path_location;
-    while (cur_step != old_path.second)
+    cerr << "about to walk steps down the path" << endl;
+    cerr << "path id: " << _graph.get_path_name(_graph.get_path_handle_of_step(cur_step)) << endl;
+    cerr << "_graph.get_previous_step(old_path.second) " << "step id: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) << endl;
+    if (_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) != 15)
     {
+        cerr << "old_path.second " << "step id: " << _graph.get_id(_graph.get_handle_of_step(old_path.second)) << " as_integers(old_path.second) " << as_integers(old_path.second)[0] << " " << as_integers(old_path.second)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(old_path.second)) << endl;
+        cerr << "how many steps on old_path.second? " << _graph.get_step_count(_graph.get_handle_of_step(old_path.second)) << endl;
+        cerr << " as_integers(_graph.get_previous_step(old_path.second)) " << as_integers(_graph.get_previous_step(old_path.second))[0] << " " << as_integers(_graph.get_previous_step(old_path.second))[1] << endl;
+        cerr << " as_integers(_graph.get_previous_step(_graph.get_previous_step(old_path.second))) " << as_integers(_graph.get_previous_step(_graph.get_previous_step(old_path.second)))[0] << " " << as_integers(_graph.get_previous_step(_graph.get_previous_step(old_path.second)))[1] << endl;
+
+        cerr << " as_integers(_graph.get_next_step(old_path.second)) " << as_integers(_graph.get_next_step(old_path.second))[0] << " " << as_integers(_graph.get_next_step(old_path.second))[1] << endl;
+        cerr << " as_integers(_graph.get_next_step(_graph.get_next_step(old_path.second))) " << as_integers(_graph.get_next_step(_graph.get_next_step(old_path.second)))[0] << " " << as_integers(_graph.get_next_step(_graph.get_next_step(old_path.second)))[1] << endl;
+        cerr << " as_integers(_graph.get_next_step(_graph.get_next_step(_graph.get_next_step(old_path.second)))) " << as_integers(_graph.get_next_step(_graph.get_next_step(_graph.get_next_step(old_path.second))))[0] << " " << as_integers(_graph.get_next_step(_graph.get_next_step(_graph.get_next_step(old_path.second))))[1] << endl;
+    }
+    while (cur_step != old_path.second) //todo: find out if this is supposed to be broken. Sometimes I get a step_handle_t for cur_step that is pointing at same node id in same orientation as old_path.second, but is considered nonequivalent.
+    // while (_graph.get_handle_of_step(old_path.second) != _graph.get_handle_of_step(cur_step)) //note: doesn't work
+    {
+        cerr << "manual check that cur_step != old_path.second:" << endl;
+        if (_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) != 15)
+        {
+            cerr << "concerning the old_path.second: " << as_integers(old_path.second)[0] << " " << as_integers(old_path.second)[1] << endl;
+            cerr << "concerning the cur_step: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
+            cerr << "ids equal? " << (_graph.get_id(_graph.get_handle_of_step(old_path.second)) == _graph.get_id(_graph.get_handle_of_step(cur_step))) << endl;
+            cerr << "sequences equal? " << (_graph.get_sequence(_graph.get_handle_of_step(old_path.second)) == _graph.get_sequence(_graph.get_handle_of_step(cur_step))) << endl;
+            cerr << "handles equal? " << (_graph.get_handle_of_step(old_path.second) == _graph.get_handle_of_step(cur_step)) << endl;
+            cerr << "path names equal? " << (_graph.get_path_name(_graph.get_path_handle_of_step(old_path.second)) == _graph.get_path_name(_graph.get_path_handle_of_step(cur_step))) << endl;
+            cerr << "paths equal? " << (_graph.get_path_handle_of_step(old_path.second) == _graph.get_path_handle_of_step(cur_step)) << endl;
+            cerr << "how many steps on old_path.second? " << _graph.get_step_count(_graph.get_handle_of_step(old_path.second)) << " what about cur_step? " << _graph.get_step_count(_graph.get_handle_of_step(cur_step)) << endl;
+            cerr << "path handles equal? " << (old_path.second == cur_step) << endl;
+        }
+        cerr << "step taken" << endl;
+        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(cur_step)) << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(cur_step)) << endl; 
         // cerr << "orientation of cur_step: " << _graph.apply_orientation
         path_str += _graph.get_sequence(_graph.get_handle_of_step(cur_step));
         //todo: note following line of for loop is for debug purposes. delete?

@@ -171,6 +171,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
         cerr << "finished snarl region " << region.first << " " << region.second << endl; 
         normalized_snarls.push_back(make_tuple(snarl, new_snarl, haplotypes_and_embedded_paths.second, region.first, region.second, false));
+        // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, haplotypes_and_embedded_paths.second, region.first, region.second, false);
+
     }
 
     cerr << "between for loops " << endl;
@@ -343,7 +345,7 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
     // Convert the haplotypes from vector<handle_t> format to string format.
     get<0>(haplotypes) = format_handle_haplotypes_to_strings(_graph, _gbwt_graph, get<0>(gbwt_haplotypes));
 
-    cerr << "hap original text: " << *get<0>(haplotypes).begin() << endl;
+    // cerr << "hap original text: " << *get<0>(haplotypes).begin() << endl;
     // check to see if the leftmost or rightmost node is empty. If so, treat the blank
     // node as containing a character "A". (this is important for dealing with how
     // get_parallel_normalize_regions sometimes adds a blank node when isolating adjacent
@@ -363,8 +365,17 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
             _sequence_added_because_empty_node.first = true;
         }
     }
-    else if (_nodes_to_delete.find(region.first) == _nodes_to_delete.end())
+    else if (_nodes_to_delete.find(region.first) != _nodes_to_delete.end())
     {
+        cerr << "earlier error of the two. " << endl;
+        cerr << "here is the node to delete: " << region.second << endl;
+        cerr << "here is the _nodes_to_delete.size(): " << _nodes_to_delete.size() << endl;
+        cerr << "here is the _nodes_to_delete: " <<endl;
+        for (auto node : _nodes_to_delete)
+        {
+            cerr << node << " ";
+        }
+        cerr << endl;
         cerr << "ERROR: found a node_to_delete that isn't of length zero. This shouldn't happen." << endl;
         exit(1);
     }
@@ -388,7 +399,7 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
             _sequence_added_because_empty_node.second = true;
         }
     }
-    else if (_nodes_to_delete.find(region.second) == _nodes_to_delete.end())
+    else if (_nodes_to_delete.find(region.second) != _nodes_to_delete.end())
     {
         cerr << "here is the node to delete: " << region.second << endl;
         cerr << "here is the _nodes_to_delete.size(): " << _nodes_to_delete.size() << endl;
@@ -1624,20 +1635,21 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
 
     // integrate the handles from to_insert_snarl into the _graph, and keep track of their
     // identities by adding them to new_snarl_topo_order.
+    cerr << " about to go through to_insert_snarl_topo_order: " << endl;
     for (handle_t to_insert_snarl_handle : to_insert_snarl_topo_order) {
         // //todo: debug_statement:
-        // cerr << "About to insert snarl handle from normalized graph of id, seq: "
-        //      << to_insert_snarl.get_id(to_insert_snarl_handle) << " "
-        //      << to_insert_snarl.get_sequence(to_insert_snarl_handle) << endl;
+        cerr << "About to insert snarl handle from normalized graph of id, seq: "
+             << to_insert_snarl.get_id(to_insert_snarl_handle) << " "
+             << to_insert_snarl.get_sequence(to_insert_snarl_handle) << endl;
 
         handle_t graph_handle =
             _graph.create_handle(to_insert_snarl.get_sequence(to_insert_snarl_handle));
-        // cerr << "here is the new snarl handle: " 
-        //      << _graph.get_id(graph_handle) << " "
-        //      << _graph.get_sequence(graph_handle) << endl;
+        cerr << "here is the new snarl handle: " 
+             << _graph.get_id(graph_handle) << " "
+             << _graph.get_sequence(graph_handle) << endl;
         new_snarl_topo_order.push_back(graph_handle);
     }
-    // cerr << "finished inserting the snarls from to_insert_snarl into normalized graph." << endl;
+    cerr << "finished inserting the snarls from to_insert_snarl into normalized graph." << endl;
 
     // Connect the newly made handles in the _graph together the way they were connected
     // in to_insert_snarl:

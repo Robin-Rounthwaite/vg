@@ -257,7 +257,7 @@ int main_normalize(int argc, char **argv) {
 
     // =======running normalize=======
     cerr << "=======running normalize=======" << endl;
-    string alignment_algorithm="spoa"; bool disable_gbwt_update=false; bool debug_print=false; //todo: remove these options or else ensure they are implemented correctly.
+    string alignment_algorithm="sPOA"; bool disable_gbwt_update=false; bool debug_print=false; //todo: remove these options or else ensure they are implemented correctly.
     vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
       *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, nodes_to_delete, max_handle_size, max_snarls_per_region, max_snarl_spacing, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
 
