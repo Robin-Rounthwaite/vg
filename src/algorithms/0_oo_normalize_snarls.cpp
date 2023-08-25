@@ -73,16 +73,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: add back the exhaustive path finder option?
     assert(_path_finder=="GBWT");
 
-    cerr << "following the first path all through the unnormalized graph." << endl;
-    vector<step_handle_t> steps = _graph.steps_of_handle(_graph.get_handle(1));
-    step_handle_t cur_step = steps.back();
-    while (cur_step != _graph.path_end(_graph.get_path_handle_of_step(cur_step)))
-    {
-        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(cur_step));
-        cerr << " path_handle id: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
-        cur_step = _graph.get_next_step(cur_step);
-    }
-
     //normalized snarls will contain all the normalized snarls before inserting them into the graph.
     // This is because inserting the snarls in a parallel fashion is difficult. 
     // (and would probably involve locking individual subgraphs using an adaptation of 
@@ -98,7 +88,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
-        cerr << "starting snarl region " << region.first << " " << region.second << endl; 
         SubHandleGraph snarl = extract_subgraph(_graph, region.first, region.second);
 
         //get original snarl size for comparison stats
@@ -186,54 +175,18 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         //make sure all the handles are the proper size of <=_maximum_handle_size.
         force_maximum_handle_size(new_snarl);
 
-        cerr << "finished snarl region " << region.first << " " << region.second << endl; 
         normalized_snarls.push_back(make_tuple(snarl, new_snarl, haplotypes_and_embedded_paths.second, region.first, region.second, false));
         // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, haplotypes_and_embedded_paths.second, region.first, region.second, false);
 
     }
 
-    cerr << "between for loops " << endl;
-
     //integrate all the normalized snarls formed in the parallel loop above.
     for (auto snarl : normalized_snarls)
     {
-        cerr << "inside insertion of snarls. " << endl;
-        cerr << "ids in graph: ";
-        _graph.for_each_handle([&](handle_t handle){
-            cerr << _graph.get_id(handle) << " ";
-        });
-        cerr << endl;
-        cerr << "current snarl is: " << get<3>(snarl) << " " << get<4>(snarl) << endl;
-        cerr << "current path_handle ids: " << as_integers(cur_step)[0] << " " << as_integers(get<2>(snarl).back().first)[1] << " " << as_integers(cur_step)[0] << " " << as_integers(get<2>(snarl).back().second)[1] << endl;
-        cerr << "current path region is: " << _graph.get_id(_graph.get_handle_of_step(get<2>(snarl).back().first)) << " " << _graph.get_id(_graph.get_handle_of_step(get<2>(snarl).back().second)) << endl;
-        vector<step_handle_t> steps = _graph.steps_of_handle(_graph.get_handle(1));
-        step_handle_t cur_step = steps.back();
-        while (cur_step != _graph.path_end(_graph.get_path_handle_of_step(cur_step)))
-        {
-            cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(cur_step));
-            cerr << " path_handle id: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
-            cur_step = _graph.get_next_step(cur_step);
-        }
-        // cerr << "original left right" << get<3>(snarl) << " " << get<4>(snarl) << endl;
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
-        // delete_blanks_on_flanks(new_left_right);
-        // cerr << "new left right" << _graph.get_id(new_left_right.first) << " " << _graph.get_id(new_left_right.second) << endl;
-        // _unskipped_snarls.emplace(make_pair(get<3>(snarl), get<4>(snarl)));
-    }
-
-    cerr << "about to go through full path." << endl;
-    vector<step_handle_t> final_debug_steps = _graph.steps_of_handle(_graph.get_handle(1));
-    step_handle_t final_debug_step = final_debug_steps.back();
-    final_debug_step = _graph.path_begin(_graph.get_path_handle_of_step(final_debug_step));
-    while (final_debug_step != _graph.path_end(_graph.get_path_handle_of_step(final_debug_step)))
-    {
-        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(final_debug_step));
-        cerr << " path_handle id: " << as_integers(final_debug_step)[0] << " " << as_integers(final_debug_step)[1] << endl;
-        final_debug_step = _graph.get_next_step(final_debug_step);
     }
 
     print_parallel_statistics();
-    cerr << "size of _gbwt_changelog: " << _gbwt_changelog.size() << endl;
     return _gbwt_changelog;
 }
 
@@ -1638,19 +1591,6 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     vector<pair<step_handle_t, step_handle_t>>& embedded_paths, 
     const id_t source_id, const id_t sink_id, const bool backwards) {
     
-    for (auto path : embedded_paths) 
-    {
-        step_handle_t cur_step = path.first;
-        cerr << "1" << endl;
-        while (cur_step != _graph.path_end(_graph.get_path_handle_of_step(cur_step)))
-        {
-            cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(cur_step));
-            cerr << " path_handle id: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
-            cur_step = _graph.get_next_step(cur_step);
-        }
-    }
-
-
     // cerr << "integrate_snarl" << endl;
 
     //todo: debug_statement
@@ -1696,35 +1636,21 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     // paralogous nodes between to_insert_snarl and the new snarl inserted in _graph.
     vector<handle_t> new_snarl_topo_order;
 
-    for (auto path : embedded_paths) 
-    {
-        step_handle_t cur_step = path.first;
-        cerr << "2" << endl;
-        while (cur_step != _graph.path_end(_graph.get_path_handle_of_step(cur_step)))
-        {
-            cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(cur_step));
-            cerr << " path_handle id: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
-            cur_step = _graph.get_next_step(cur_step);
-        }
-    }
-
     // integrate the handles from to_insert_snarl into the _graph, and keep track of their
     // identities by adding them to new_snarl_topo_order.
-    cerr << " about to go through to_insert_snarl_topo_order: " << endl;
     for (handle_t to_insert_snarl_handle : to_insert_snarl_topo_order) {
-        // //todo: debug_statement:
-        cerr << "About to insert snarl handle from normalized graph of id, seq: "
-             << to_insert_snarl.get_id(to_insert_snarl_handle) << " "
-             << to_insert_snarl.get_sequence(to_insert_snarl_handle) << endl;
+        // cerr << "About to insert snarl handle from normalized graph of id, seq: "
+        //      << to_insert_snarl.get_id(to_insert_snarl_handle) << " "
+        //      << to_insert_snarl.get_sequence(to_insert_snarl_handle) << endl;
 
         handle_t graph_handle =
             _graph.create_handle(to_insert_snarl.get_sequence(to_insert_snarl_handle));
-        cerr << "here is the new snarl handle: " 
-             << _graph.get_id(graph_handle) << " "
-             << _graph.get_sequence(graph_handle) << endl;
+        // cerr << "here is the new snarl handle: " 
+        //      << _graph.get_id(graph_handle) << " "
+        //      << _graph.get_sequence(graph_handle) << endl;
         new_snarl_topo_order.push_back(graph_handle);
     }
-    cerr << "finished inserting the snarls from to_insert_snarl into normalized graph." << endl;
+    // cerr << "finished inserting the snarls from to_insert_snarl into normalized graph." << endl;
 
     // Connect the newly made handles in the _graph together the way they were connected
     // in to_insert_snarl:
@@ -1742,18 +1668,6 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
             });
     }
 
-    for (auto path : embedded_paths) 
-    {
-        step_handle_t cur_step = path.first;
-        cerr << "3" << endl;
-        while (cur_step != _graph.path_end(_graph.get_path_handle_of_step(cur_step)))
-        {
-            cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(cur_step));
-            cerr << " path_handle id: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
-            cur_step = _graph.get_next_step(cur_step);
-        }
-    }
-    
     // save the source and sink values of new_snarl_topo_order, since topological order is
     // not necessarily preserved by move_path_to_snarl. Is temporary b/c we need to
     // replace the handles with ones with the right id_t label for source and sink later
@@ -1797,74 +1711,19 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
         });
     }
 
-    for (auto path : embedded_paths) 
-    {
-        step_handle_t cur_step = path.first;
-        cerr << "4" << endl;
-        while (cur_step != _graph.path_end(_graph.get_path_handle_of_step(cur_step)))
-        {
-            cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(cur_step));
-            cerr << " path_handle id: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
-            cur_step = _graph.get_next_step(cur_step);
-        }
-    }
     // For each path of interest, move it onto the new_snarl.
     for (int i = 0; i != embedded_paths.size(); i++)
     {
-        // //todo: debug_statement
-        // cerr << "the new sink id: " << temp_snarl_rightmost_id << endl;
-        // //todo: debug_statement
-        // move_path_to_snarl(path, new_snarl_topo_order, temp_snarl_rightmost_id,
-        //                    temp_snarl_leftmost_id, sink_id, source_id);
-        // move_path_to_snarl(path, new_snarl_topo_order, temp_snarl_leftmost_id,
-        //                    temp_snarl_rightmost_id, source_id, sink_id, backwards);
-        // cerr << "is path backwards? " << backwards << endl;
-        // cerr << "path first: " << _graph.get_id(_graph.get_handle_of_step(path.first)) << " step after path first: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_next_step(path.first))) << " path second: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) << endl;
-        // cerr << "source: " << source_id << " sink: " << sink_id << endl;
-        // pair<bool, bool> path_spans_left_right;
-        // path_spans_left_right.first = (!backwards && _graph.get_id(_graph.get_handle_of_step(path.first)) == source_id) || (backwards && _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) == source_id);
-        // path_spans_left_right.second = (!backwards && _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) == sink_id) || (backwards && _graph.get_id(_graph.get_handle_of_step(path.first)) == sink_id);
-        // cerr << "first: " << path_spans_left_right.first << "second: " << path_spans_left_right.second << endl;
         pair<bool, bool> path_spans_left_right;
-        cerr << "current snarl is: " << source_id << " " << sink_id << endl;
-        cerr << "concerning the embedded_paths[i].first: " << as_integers(embedded_paths[i].first)[0] << " " << as_integers(embedded_paths[i].first)[1] << endl;
-        cerr << "concerning the embedded_paths[i].second: " << as_integers(embedded_paths[i].second)[0] << " " << as_integers(embedded_paths[i].second)[1] << endl;
-        // cerr << "previous step of first id? " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(embedded_paths[i].first))) << endl;
-        cerr << "next step of first id? " << _graph.get_id(_graph.get_handle_of_step(_graph.get_next_step(embedded_paths[i].first))) << endl;
-        cerr << "first id? " << _graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) << endl;
-        cerr << "second id? " << _graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) << endl;
-        // cerr << "sequences equal? " << (_graph.get_sequence(_graph.get_handle_of_step(embedded_paths[i].second)) == _graph.get_sequence(_graph.get_handle_of_step(embedded_paths[i].first))) << endl;
-        // cerr << "handles equal? " << (_graph.get_handle_of_step(embedded_paths[i].second) == _graph.get_handle_of_step(embedded_paths[i].first)) << endl;
-        // cerr << "path names equal? " << (_graph.get_path_name(_graph.get_path_handle_of_step(embedded_paths[i].second)) == _graph.get_path_name(_graph.get_path_handle_of_step(embedded_paths[i].first))) << endl;
-        // cerr << "paths equal? " << (_graph.get_path_handle_of_step(embedded_paths[i].second) == _graph.get_path_handle_of_step(embedded_paths[i].first)) << endl;
-        // cerr << "how many steps on embedded_paths[i].second? " << _graph.get_step_count(_graph.get_handle_of_step(embedded_paths[i].second)) << " what about embedded_paths[i].first? " << _graph.get_step_count(_graph.get_handle_of_step(embedded_paths[i].first)) << endl;
-        // cerr << "path handles equal? " << (embedded_paths[i].second == embedded_paths[i].first) << endl;
-
-        cerr << "right of embedded_paths[i].first " << _graph.get_id(_graph.get_handle_of_step(_graph.get_next_step(embedded_paths[i].first))) << endl;
-        cerr << "left of embedded_paths[i].second " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(embedded_paths[i].second))) << endl;
         path_spans_left_right.first = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) == source_id);
         path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) == sink_id); // not get_previous_step because stop_inclusive=true for extract haplotype paths.
 
         embedded_paths[i] = move_path_to_new_snarl(embedded_paths[i], temp_snarl_leftmost_id, temp_snarl_rightmost_id, path_spans_left_right, !backwards, make_pair(source_id, sink_id));
     }
 
-    for (auto path : embedded_paths) 
-    {
-        step_handle_t cur_step = path.first;
-        cerr << "4.1" << endl;
-        while (cur_step != _graph.path_end(_graph.get_path_handle_of_step(cur_step)))
-        {
-            cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(cur_step));
-            cerr << " path_handle id: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
-            cur_step = _graph.get_next_step(cur_step);
-        }
-    }
-
     // Destroy the old snarl.
     old_snarl.for_each_handle([&](const handle_t handle) 
     {
-        // //todo: debug_statement these are the handles in old_snarl:
-        // cerr << "destroying old_snarl handle: " << old_snarl.get_id(handle) << " with sequence: " << old_snarl.get_sequence(handle) << endl;
         _graph.destroy_handle(handle);
     });
 
@@ -1891,17 +1750,6 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
         new_rightmost_handle = overwrite_node_id(temp_snarl_rightmost_id, source_id);
     }    
     pair<handle_t, handle_t> new_left_right = make_pair(new_leftmost_handle, new_rightmost_handle);
-    for (auto path : embedded_paths) 
-    {
-        step_handle_t cur_step = path.first;
-        cerr << "5" << endl;
-        while (cur_step != _graph.path_end(_graph.get_path_handle_of_step(cur_step)))
-        {
-            cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(cur_step));
-            cerr << " path_handle id: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
-            cur_step = _graph.get_next_step(cur_step);
-        }
-    }
 
     return new_left_right;
 }

@@ -149,15 +149,6 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
 * Or returns None if the proposed "valid_starting_index" didn't pan out to give a good
 * path in following handles.
 */
-    cerr << "inside of move_path_to_new_snarl" << endl;
-    cerr << "inside 1" << endl;
-    step_handle_t debug_step = old_path.first;
-    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
-    {
-        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
-        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
-        debug_step = _graph.get_next_step(debug_step);
-    }
 
     // if path doesn't span both source and sink, I need to address that. But for the
     // first iteration of this algorithm, I'll dodge that question.
@@ -215,14 +206,6 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
         //todo: note following line of for loop is for debug purposes. delete?
         old_path_location.push_back(_graph.get_handle_of_step(cur_step));
         cur_step = _graph.get_next_step(cur_step);
-    }
-    cerr << "inside 2" << endl;
-    debug_step = old_path.first;
-    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
-    {
-        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
-        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
-        debug_step = _graph.get_next_step(debug_step);
     }
 
 
@@ -286,14 +269,6 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
         }
     }
 
-    cerr << "inside 3" << endl;
-    debug_step = old_path.first;
-    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
-    {
-        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
-        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
-        debug_step = _graph.get_next_step(debug_step);
-    }
 
 
 
@@ -325,23 +300,7 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     // cerr << "and new path: " << new_path_series << " " << new_path_str  << endl;
     
     pair<step_handle_t, step_handle_t> new_path = _graph.rewrite_segment(old_path.first, _graph.get_next_step(old_path.second), new_path_location);
-    cerr << "inside 4" << endl;
-    debug_step = old_path.first;
-    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
-    {
-        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
-        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
-        debug_step = _graph.get_next_step(debug_step);
-    }
 
-    cerr << "inside 4" << endl;
-    debug_step = new_path.first;
-    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
-    {
-        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
-        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
-        debug_step = _graph.get_next_step(debug_step);
-    }
 
 
 
@@ -392,23 +351,7 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     }
     
     // cerr << "************END-UNIT_TEST for move_path_to_new_snarl.************"<< endl;
-    cerr << "inside 5" << endl;
-    debug_step = old_path.first;
-    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
-    {
-        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
-        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
-        debug_step = _graph.get_next_step(debug_step);
-    }
 
-    cerr << "inside 5" << endl;
-    debug_step = new_path.first;
-    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
-    {
-        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
-        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
-        debug_step = _graph.get_next_step(debug_step);
-    }
 
 
     cerr << "leaving move_embedded_paths" << endl;
