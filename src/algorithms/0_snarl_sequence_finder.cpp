@@ -656,16 +656,19 @@ SnarlSequenceFinder::find_haplotypes_not_at_source(unordered_set<id_t> &touched_
 //      path is fully contained within the snarl, these step_handles will the be the
 //      leftmost and rightmost handles in the path.
 // Arguments:
-//      _graph: a pathhandlegraph containing the snarl with embedded paths.
-//      source_id: the source of the snarl of interest.
-//      sink_id: the sink of the snarl of interest.
+//      stop_inclusive:  ensures that the step_handle_t doesn't follow the standard
+//          convention of going one past the furthest handle on the path that we want to
+//          look at. Instead, it points to the furthest handle itself That way we don't get
+//          steps pointing to nodes outside the region of this current normalization, so we
+//          don't risk edits from other snarls messing up that step. 
+
 // Returns:
 //      a vector containing all the embedded paths in the snarl, in pair< step_handle_t,
 //      step_handle_t > > format. Pair.first is the first step in the path's range of
 //      interest, and pair.second is the step *after* the last step in the path's range of
 //      interest (can be the null step at end of path).
 vector<pair<step_handle_t, step_handle_t>>
-SnarlSequenceFinder::find_embedded_paths() {
+SnarlSequenceFinder::find_embedded_paths(const bool stop_inclusive /*=false*/) {
 
     // key is path_handle, value is a step in that path from which to extend.
     unordered_map<path_handle_t, step_handle_t> paths_found;
@@ -808,6 +811,14 @@ SnarlSequenceFinder::find_embedded_paths() {
     // cerr << "tested " << path_names.size() << " paths in UNIT_TEST." << endl;
     // cerr << "************END-UNIT_TEST for find_embedded_paths. Tested " << path_names.size() << " paths in UNIT_TEST.************"<< endl;
 
+    //for parallelization, set the stop_inclusive
+    if (stop_inclusive)
+    {
+        for (auto path = paths_in_snarl.begin(); path != paths_in_snarl.end(); path++)
+        {
+            path->second = _graph.get_previous_step(path->second);
+        }
+    }
 
     return paths_in_snarl;
 }

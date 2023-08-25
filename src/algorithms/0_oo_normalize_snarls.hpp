@@ -108,7 +108,7 @@ class SnarlNormalizer {
     bool test_haplotypes(const tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>>& haplotypes, const pair<id_t, id_t>& region, const int original_snarl_size);
 
     pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> >
-      extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region);
+      extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region, const bool stop_inclusive=false);
 
     // tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region);
 

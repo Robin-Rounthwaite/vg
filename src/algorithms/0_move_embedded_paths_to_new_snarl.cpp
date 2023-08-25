@@ -143,12 +143,22 @@ vector<handle_t> SnarlNormalizer::extend_possible_paths(vector<pair<vector<handl
  */
 pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const pair<step_handle_t, step_handle_t>  old_path, const id_t leftmost_id, const id_t rightmost_id, const pair<bool, bool> path_spans_left_right, const bool path_directed_left_to_right, const pair<id_t, id_t> main_graph_source_and_sink)
 {
-    /*
+/*
 * This should return the series of handles, from left to right if path_left_to_right==true (else vice-versa), that the path should move to.
 * 
 * Or returns None if the proposed "valid_starting_index" didn't pan out to give a good
 * path in following handles.
 */
+    cerr << "inside of move_path_to_new_snarl" << endl;
+    cerr << "inside 1" << endl;
+    step_handle_t debug_step = old_path.first;
+    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
+    {
+        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
+        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
+        debug_step = _graph.get_next_step(debug_step);
+    }
+
     // if path doesn't span both source and sink, I need to address that. But for the
     // first iteration of this algorithm, I'll dodge that question.
     // todo: address paths that don't span both source and sink.
@@ -167,44 +177,55 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     step_handle_t cur_step = old_path.first;
     string path_name = _graph.get_path_name(_graph.get_path_handle_of_step(old_path.first)); // used for unit tests at bottom.
     vector<handle_t> old_path_location;
-    cerr << "about to walk steps down the path" << endl;
-    cerr << "path id: " << _graph.get_path_name(_graph.get_path_handle_of_step(cur_step)) << endl;
-    cerr << "_graph.get_previous_step(old_path.second) " << "step id: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) << endl;
-    if (_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) != 15)
-    {
-        cerr << "old_path.second " << "step id: " << _graph.get_id(_graph.get_handle_of_step(old_path.second)) << " as_integers(old_path.second) " << as_integers(old_path.second)[0] << " " << as_integers(old_path.second)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(old_path.second)) << endl;
-        cerr << "how many steps on old_path.second? " << _graph.get_step_count(_graph.get_handle_of_step(old_path.second)) << endl;
-        cerr << " as_integers(_graph.get_previous_step(old_path.second)) " << as_integers(_graph.get_previous_step(old_path.second))[0] << " " << as_integers(_graph.get_previous_step(old_path.second))[1] << endl;
-        cerr << " as_integers(_graph.get_previous_step(_graph.get_previous_step(old_path.second))) " << as_integers(_graph.get_previous_step(_graph.get_previous_step(old_path.second)))[0] << " " << as_integers(_graph.get_previous_step(_graph.get_previous_step(old_path.second)))[1] << endl;
+    // cerr << "about to walk steps down the path" << endl;
+    // cerr << "path id: " << _graph.get_path_name(_graph.get_path_handle_of_step(cur_step)) << endl;
+    // cerr << "_graph.get_previous_step(old_path.second) " << "step id: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) << endl;
+    // if (_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) != 15)
+    // {
+    //     cerr << "old_path.second " << "step id: " << _graph.get_id(_graph.get_handle_of_step(old_path.second)) << " as_integers(old_path.second) " << as_integers(old_path.second)[0] << " " << as_integers(old_path.second)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(old_path.second)) << endl;
+    //     cerr << "how many steps on old_path.second? " << _graph.get_step_count(_graph.get_handle_of_step(old_path.second)) << endl;
+    //     cerr << " as_integers(_graph.get_previous_step(old_path.second)) " << as_integers(_graph.get_previous_step(old_path.second))[0] << " " << as_integers(_graph.get_previous_step(old_path.second))[1] << endl;
+    //     cerr << " as_integers(_graph.get_next_step(_graph.get_previous_step(old_path.second))) " << as_integers(_graph.get_next_step(_graph.get_previous_step(old_path.second)))[0] << " " << as_integers(_graph.get_next_step(_graph.get_previous_step(old_path.second)))[1] << endl;
+    //     cerr << " as_integers(_graph.get_previous_step(_graph.get_previous_step(old_path.second))) " << as_integers(_graph.get_previous_step(_graph.get_previous_step(old_path.second)))[0] << " " << as_integers(_graph.get_previous_step(_graph.get_previous_step(old_path.second)))[1] << endl;
 
-        cerr << " as_integers(_graph.get_next_step(old_path.second)) " << as_integers(_graph.get_next_step(old_path.second))[0] << " " << as_integers(_graph.get_next_step(old_path.second))[1] << endl;
-        cerr << " as_integers(_graph.get_next_step(_graph.get_next_step(old_path.second))) " << as_integers(_graph.get_next_step(_graph.get_next_step(old_path.second)))[0] << " " << as_integers(_graph.get_next_step(_graph.get_next_step(old_path.second)))[1] << endl;
-        cerr << " as_integers(_graph.get_next_step(_graph.get_next_step(_graph.get_next_step(old_path.second)))) " << as_integers(_graph.get_next_step(_graph.get_next_step(_graph.get_next_step(old_path.second))))[0] << " " << as_integers(_graph.get_next_step(_graph.get_next_step(_graph.get_next_step(old_path.second))))[1] << endl;
-    }
-    while (cur_step != old_path.second) //todo: find out if this is supposed to be broken. Sometimes I get a step_handle_t for cur_step that is pointing at same node id in same orientation as old_path.second, but is considered nonequivalent.
+    //     cerr << " as_integers(_graph.get_next_step(old_path.second)) " << as_integers(_graph.get_next_step(old_path.second))[0] << " " << as_integers(_graph.get_next_step(old_path.second))[1] << endl;
+    //     cerr << " as_integers(_graph.get_next_step(_graph.get_next_step(old_path.second))) " << as_integers(_graph.get_next_step(_graph.get_next_step(old_path.second)))[0] << " " << as_integers(_graph.get_next_step(_graph.get_next_step(old_path.second)))[1] << endl;
+    //     cerr << " as_integers(_graph.get_next_step(_graph.get_next_step(_graph.get_next_step(old_path.second)))) " << as_integers(_graph.get_next_step(_graph.get_next_step(_graph.get_next_step(old_path.second))))[0] << " " << as_integers(_graph.get_next_step(_graph.get_next_step(_graph.get_next_step(old_path.second))))[1] << endl;
+    // }
+    while (cur_step != _graph.get_next_step(old_path.second)) //note: I use get_next_step because stop_inclusive=true is used earlier w/r/to extract_haplotypes.
     // while (_graph.get_handle_of_step(old_path.second) != _graph.get_handle_of_step(cur_step)) //note: doesn't work
     {
-        cerr << "manual check that cur_step != old_path.second:" << endl;
-        if (_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) != 15)
-        {
-            cerr << "concerning the old_path.second: " << as_integers(old_path.second)[0] << " " << as_integers(old_path.second)[1] << endl;
-            cerr << "concerning the cur_step: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
-            cerr << "ids equal? " << (_graph.get_id(_graph.get_handle_of_step(old_path.second)) == _graph.get_id(_graph.get_handle_of_step(cur_step))) << endl;
-            cerr << "sequences equal? " << (_graph.get_sequence(_graph.get_handle_of_step(old_path.second)) == _graph.get_sequence(_graph.get_handle_of_step(cur_step))) << endl;
-            cerr << "handles equal? " << (_graph.get_handle_of_step(old_path.second) == _graph.get_handle_of_step(cur_step)) << endl;
-            cerr << "path names equal? " << (_graph.get_path_name(_graph.get_path_handle_of_step(old_path.second)) == _graph.get_path_name(_graph.get_path_handle_of_step(cur_step))) << endl;
-            cerr << "paths equal? " << (_graph.get_path_handle_of_step(old_path.second) == _graph.get_path_handle_of_step(cur_step)) << endl;
-            cerr << "how many steps on old_path.second? " << _graph.get_step_count(_graph.get_handle_of_step(old_path.second)) << " what about cur_step? " << _graph.get_step_count(_graph.get_handle_of_step(cur_step)) << endl;
-            cerr << "path handles equal? " << (old_path.second == cur_step) << endl;
-        }
-        cerr << "step taken" << endl;
-        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(cur_step)) << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(cur_step)) << endl; 
+        // cerr << "manual check that cur_step != old_path.second:" << endl;
+        // if (_graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) != 15)
+        // {
+        //     cerr << "concerning the old_path.second: " << as_integers(old_path.second)[0] << " " << as_integers(old_path.second)[1] << endl;
+        //     cerr << "concerning the cur_step: " << as_integers(cur_step)[0] << " " << as_integers(cur_step)[1] << endl;
+        //     cerr << "ids equal? " << (_graph.get_id(_graph.get_handle_of_step(old_path.second)) == _graph.get_id(_graph.get_handle_of_step(cur_step))) << endl;
+        //     cerr << "sequences equal? " << (_graph.get_sequence(_graph.get_handle_of_step(old_path.second)) == _graph.get_sequence(_graph.get_handle_of_step(cur_step))) << endl;
+        //     cerr << "handles equal? " << (_graph.get_handle_of_step(old_path.second) == _graph.get_handle_of_step(cur_step)) << endl;
+        //     cerr << "path names equal? " << (_graph.get_path_name(_graph.get_path_handle_of_step(old_path.second)) == _graph.get_path_name(_graph.get_path_handle_of_step(cur_step))) << endl;
+        //     cerr << "paths equal? " << (_graph.get_path_handle_of_step(old_path.second) == _graph.get_path_handle_of_step(cur_step)) << endl;
+        //     cerr << "how many steps on old_path.second? " << _graph.get_step_count(_graph.get_handle_of_step(old_path.second)) << " what about cur_step? " << _graph.get_step_count(_graph.get_handle_of_step(cur_step)) << endl;
+        //     cerr << "path handles equal? " << (old_path.second == cur_step) << endl;
+        // }
+        // cerr << "step taken" << endl;
+        // cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(cur_step)) << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(cur_step)) << endl; 
         // cerr << "orientation of cur_step: " << _graph.apply_orientation
         path_str += _graph.get_sequence(_graph.get_handle_of_step(cur_step));
         //todo: note following line of for loop is for debug purposes. delete?
         old_path_location.push_back(_graph.get_handle_of_step(cur_step));
         cur_step = _graph.get_next_step(cur_step);
     }
+    cerr << "inside 2" << endl;
+    debug_step = old_path.first;
+    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
+    {
+        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
+        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
+        debug_step = _graph.get_next_step(debug_step);
+    }
+
+
 
     // cerr << "path string as originally extracted: " << path_str << endl;
     handle_t leftmost_handle = _graph.get_handle(leftmost_id);
@@ -265,6 +286,19 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
         }
     }
 
+    cerr << "inside 3" << endl;
+    debug_step = old_path.first;
+    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
+    {
+        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
+        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
+        debug_step = _graph.get_next_step(debug_step);
+    }
+
+
+
+
+
     // cerr << "rewriting path " << _graph.get_path_name(_graph.get_path_handle_of_step(old_path.first)) << endl;
     // step_handle_t cur_old_step = old_path.first;
     // string old_path_series;
@@ -290,7 +324,26 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     // cerr << "request to rewrite segment with old_path: " << old_path_series << " " << old_path_str  << endl;
     // cerr << "and new path: " << new_path_series << " " << new_path_str  << endl;
     
-    pair<step_handle_t, step_handle_t> new_path = _graph.rewrite_segment(old_path.first, old_path.second, new_path_location);
+    pair<step_handle_t, step_handle_t> new_path = _graph.rewrite_segment(old_path.first, _graph.get_next_step(old_path.second), new_path_location);
+    cerr << "inside 4" << endl;
+    debug_step = old_path.first;
+    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
+    {
+        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
+        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
+        debug_step = _graph.get_next_step(debug_step);
+    }
+
+    cerr << "inside 4" << endl;
+    debug_step = new_path.first;
+    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
+    {
+        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
+        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
+        debug_step = _graph.get_next_step(debug_step);
+    }
+
+
 
     // Test that the new path exists.
     if (new_path_location.size() == 0)
@@ -339,6 +392,26 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     }
     
     // cerr << "************END-UNIT_TEST for move_path_to_new_snarl.************"<< endl;
+    cerr << "inside 5" << endl;
+    debug_step = old_path.first;
+    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
+    {
+        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
+        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
+        debug_step = _graph.get_next_step(debug_step);
+    }
+
+    cerr << "inside 5" << endl;
+    debug_step = new_path.first;
+    while (debug_step != _graph.path_end(_graph.get_path_handle_of_step(debug_step)))
+    {
+        cerr << "id of step: " << _graph.get_id(_graph.get_handle_of_step(debug_step));
+        cerr << " path_handle id: " << as_integers(debug_step)[0] << " " << as_integers(debug_step)[1] << endl;
+        debug_step = _graph.get_next_step(debug_step);
+    }
+
+
+    cerr << "leaving move_embedded_paths" << endl;
 
     return new_path;
 }

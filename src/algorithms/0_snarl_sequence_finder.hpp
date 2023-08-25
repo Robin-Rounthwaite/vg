@@ -18,8 +18,8 @@ class SnarlSequenceFinder {
     find_gbwt_haps();
 
     pair<unordered_set<string>, unordered_set<handle_t>> find_exhaustive_paths();
-    
-    vector<pair<step_handle_t, step_handle_t>> find_embedded_paths();
+
+    vector<pair<step_handle_t, step_handle_t>> find_embedded_paths(const bool stop_inclusive=false);
 
   protected:
     // member variables:
