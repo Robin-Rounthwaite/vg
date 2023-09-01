@@ -84,10 +84,33 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     // vector< pair< vg::VG, pair<id_t,id_t> > > normalized_snarls;
     vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool >> normalized_snarls;
     
+
+    //todo: debug_code
+    _debug_print=true;
+    split_normalize_regions.clear();
+    split_normalize_regions.push_back(make_pair(157206, 157209));
+    split_normalize_regions.push_back(make_pair(157209, 157212));
+    split_normalize_regions.push_back(make_pair(157212, 157215));
+
+    //todo: debug_code
+    cerr << "before debug_steps_1." << endl;
+    std::vector<handlegraph::step_handle_t> debug_steps_1 = _graph.steps_of_handle(_graph.get_handle(157212));
+    for (auto step : debug_steps_1)
+    {
+        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
+        cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+    }
+    cerr << "after debug_steps_1." << endl;
+
+
     omp_set_num_threads(_threads);
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
+        if (_debug_print)
+        {
+            cerr << "about to extract_subgraph" << endl;
+        }
         SubHandleGraph snarl = extract_subgraph(_graph, region.first, region.second);
 
         //get original snarl size for comparison stats
@@ -98,7 +121,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
         // check that snarl is normalizable:
         bool passes_normalize_tests = test_snarl(snarl, region, original_snarl_size);
-        if (passes_normalize_tests == false) { cerr <<  "failed normalize tests" << endl; continue; }
+        if (passes_normalize_tests == false) { /*cerr <<  "failed normalize tests" << endl;*/ continue; }
 
         // extract threads.
         // haplotypes is of format:
@@ -110,19 +133,44 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         // tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes; // = haplotypes_and_embedded_paths.first;
         // vector<pair<step_handle_t, step_handle_t>> embedded_paths; // = haplotypes_and_embedded_paths.second;
 
+        if (_debug_print)
+        {
+            cerr << "about to extract_subgraph" << endl;
+        }
         // stop_inclusive ensures that the step_handle_t doesn't follow the standard
         // convention of going one past the furthest handle on the path that we want to
         // look at. Instead, it points to the furthest handle itself That way we don't get
         // steps pointing to nodes outside the region of this current normalization, so we
         // don't risk edits from other snarls messing up that step. 
         bool stop_inclusive = true;
+        cerr << "************region: " << region.first << " " << region.second << endl;
         pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> >
             haplotypes_and_embedded_paths = extract_haplotypes(snarl, region, stop_inclusive);
+        //todo: debug_code for seeing path starts.
+        for (int i = 0; i != (haplotypes_and_embedded_paths.second).size(); i++)
+        {
+            cerr << "checking that each path has a left_right." << endl;
+            cerr << "path name: " << _graph.get_path_name(_graph.get_path_handle_of_step(haplotypes_and_embedded_paths.second[i].first)) << endl;
+            cerr << "left and right ids: " << _graph.get_id(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].first)) << " " << _graph.get_id(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].second)) << endl;
+            pair<bool, bool> path_spans_left_right;
+            path_spans_left_right.first = (_graph.get_id(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].first)) == region.first);
+            path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].second)) == region.second); // not get_previous_step because stop_inclusive=true for extract haplotype paths.
+            cerr << "path spans left and right: " << path_spans_left_right.first << " " << path_spans_left_right.second << endl;
 
+        }
+
+        if (_debug_print)
+        {
+            cerr << "about to test haplotypes" << endl;
+        }
         // further checks that snarl is normalizable:
         bool passes_haplotype_tests = test_haplotypes(haplotypes_and_embedded_paths.first, region, original_snarl_size);
         if (passes_haplotype_tests == false) { cerr <<  "failed haplotype tests" << endl; continue; }
 
+        if (_debug_print)
+        {
+            cerr << "about to align haplotypes" << endl;
+        }
         // align haplotypes to form new snarl:
         VG new_snarl;
         if (_alignment_algorithm == "TCoffee")
@@ -175,15 +223,94 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         //make sure all the handles are the proper size of <=_maximum_handle_size.
         force_maximum_handle_size(new_snarl);
 
+        if (_debug_print)
+        {
+            cerr << "about to store the normalized snarl for later." << endl;
+        }
         normalized_snarls.push_back(make_tuple(snarl, new_snarl, haplotypes_and_embedded_paths.second, region.first, region.second, false));
         // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, haplotypes_and_embedded_paths.second, region.first, region.second, false);
+        
+        // if ((normalized_snarls.size())%100 == 0)
+        // {
+        //     cerr << "number of total snarls that are getting normalized: " << normalized_snarls.size() << endl;
+        // }
+
+        //todo: debug_code
+        cerr << "before debug_steps_2." << endl;
+        std::vector<handlegraph::step_handle_t> debug_steps_2 = _graph.steps_of_handle(_graph.get_handle(157212));
+        for (auto step : debug_steps_2)
+        {
+            cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
+            cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+        }
+        cerr << "after debug_steps_2." << endl;
+
+
+        //todo: debug_code for seeing path starts.
+        cerr << "************region after one loop of the parallelized for loop: " << region.first << " " << region.second << endl;
+        for (int i = 0; i != (haplotypes_and_embedded_paths.second).size(); i++)
+        {
+            cerr << "checking that each path has a left_right." << endl;
+            cerr << "path name: " << _graph.get_path_name(_graph.get_path_handle_of_step(haplotypes_and_embedded_paths.second[i].first)) << endl;
+            cerr << "left and right ids: " << _graph.get_id(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].first)) << " " << _graph.get_id(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].second)) << endl;
+            pair<bool, bool> path_spans_left_right;
+            path_spans_left_right.first = (_graph.get_id(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].first)) == region.first);
+            path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].second)) == region.second); // not get_previous_step because stop_inclusive=true for extract haplotype paths.
+            cerr << "path spans left and right: " << path_spans_left_right.first << " " << path_spans_left_right.second << endl;
+            cerr << "haplotypes_and_embedded_paths.second[i].first id: " << _graph.get_id(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].first)) << " as_integers(haplotypes_and_embedded_paths.second[i].first) " << as_integers(haplotypes_and_embedded_paths.second[i].first)[0] << " " << as_integers(haplotypes_and_embedded_paths.second[i].first)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(haplotypes_and_embedded_paths.second[i].first)) << endl;
+
+        }
+
+
 
     }
 
     //integrate all the normalized snarls formed in the parallel loop above.
     for (auto snarl : normalized_snarls)
     {
+        //todo: debug_code for seeing path starts.
+        cerr << "************region in the integration loop: " << get<3>(snarl) << " " << get<4>(snarl) << endl;
+        for (int i = 0; i != (get<2>(snarl)).size(); i++)
+        {
+            cerr << "checking that each path has a left_right." << endl;
+            cerr << "path name: " << _graph.get_path_name(_graph.get_path_handle_of_step(get<2>(snarl)[i].first)) << endl;
+            cerr << "left and right ids: " << _graph.get_id(_graph.get_handle_of_step(get<2>(snarl)[i].first)) << " " << _graph.get_id(_graph.get_handle_of_step(get<2>(snarl)[i].second)) << endl;
+            pair<bool, bool> path_spans_left_right;
+            path_spans_left_right.first = (_graph.get_id(_graph.get_handle_of_step(get<2>(snarl)[i].first)) == get<3>(snarl));
+            path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(get<2>(snarl)[i].second)) == get<4>(snarl)); // not get_previous_step because stop_inclusive=true for extract haplotype paths.
+            cerr << "path spans left and right: " << path_spans_left_right.first << " " << path_spans_left_right.second << endl;
+            cerr << "get<2>(snarl)[i].first id: " << _graph.get_id(_graph.get_handle_of_step(get<2>(snarl)[i].first)) << " as_integers(get<2>(snarl)[i].first) " << as_integers(get<2>(snarl)[i].first)[0] << " " << as_integers(get<2>(snarl)[i].first)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(get<2>(snarl)[i].first)) << endl;
+
+        }
+
+        
+        if (_debug_print)
+        {
+            cerr << "======================about to integrate snarl " << get<3>(snarl) << " " << get<4>(snarl) << "======================" << endl;
+        }
+
+        //todo: debug_code
+        cerr << "before debug_steps_3." << endl;
+        std::vector<handlegraph::step_handle_t> debug_steps_3 = _graph.steps_of_handle(_graph.get_handle(157212));
+        for (auto step : debug_steps_3)
+        {
+            cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
+            cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+        }
+        cerr << "after debug_steps_3." << endl;
+        
+        cerr << "integrate snarl is called." << endl;
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
+        cerr << "integrate snarl is finished being called." << endl;
+        
+        cerr << "before debug_steps_4." << endl;
+        std::vector<handlegraph::step_handle_t> debug_steps_4 = _graph.steps_of_handle(_graph.get_handle(157212));
+        for (auto step : debug_steps_4)
+        {
+            cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
+            cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+        }
+        cerr << "after debug_steps_4." << endl;
     }
 
     print_parallel_statistics();
@@ -241,6 +368,7 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
         const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)));
         if (debug_state.empty())
         {
+            // cerr << "debug state is empty." << endl;
             all_handles_in_gbwt = false;
             return;
         }
@@ -249,6 +377,7 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
     {
         _sizes_of_snarls_skipped_because_gbwt_misses_handles.push_back(snarl_size);
         _snarls_skipped_because_gbwt_misses_handles.push_back(region);
+        // cerr << "!all handles in gbwt!" << "number of snarls skipped for this reason is: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl;
         return false;
     }
 
@@ -410,7 +539,7 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
         cerr << "ERROR: found a node_to_delete that isn't of length zero. This shouldn't happen." << endl;
         exit(1);
     }
-    cerr << "hap new text: " << *get<0>(haplotypes).begin() << endl;
+    // cerr << "hap new text: " << *get<0>(haplotypes).begin() << endl;
 
 
     //todo: possibly remove the duplicate storage of gbwt info in source_to_sink_gbwt_paths, by finding a way to only pass the gbwt info to the "log_gbwt_changes" function. (currently, get<0>haplotypes will also include any source-to-sink paths embedded in the graph.)
@@ -1711,21 +1840,74 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
         });
     }
 
-    // For each path of interest, move it onto the new_snarl.
+    // cerr << "before debug_steps_3_5." << endl;
+    // std::vector<handlegraph::step_handle_t> debug_steps_3_5 = _graph.steps_of_handle(_graph.get_handle(157212));
+    // for (auto step : debug_steps_3_5)
+    // {
+    //     cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
+    //     cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+    // }
+    // cerr << "after debug_steps_3_5." << endl;
+
+    cerr << "before embedded paths move" << endl;
+
+    //todo: debug_code for seeing path starts.
     for (int i = 0; i != embedded_paths.size(); i++)
     {
+        cerr << "checking that each path has a left_right." << endl;
+        cerr << "path name: " << _graph.get_path_name(_graph.get_path_handle_of_step(embedded_paths[i].first)) << endl;
+        cerr << "left and right ids: " << _graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) << " " << _graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) << endl;
         pair<bool, bool> path_spans_left_right;
         path_spans_left_right.first = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) == source_id);
         path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) == sink_id); // not get_previous_step because stop_inclusive=true for extract haplotype paths.
+        cerr << "path spans left and right: " << path_spans_left_right.first << " " << path_spans_left_right.second << endl;
 
-        embedded_paths[i] = move_path_to_new_snarl(embedded_paths[i], temp_snarl_leftmost_id, temp_snarl_rightmost_id, path_spans_left_right, !backwards, make_pair(source_id, sink_id));
     }
+    //todo: uncomment this for when I run normalize on region-segregated normalized snarls. It only has bugs when the regions are not separated.
+    // // For each path of interest, move it onto the new_snarl.
+    // for (int i = 0; i != embedded_paths.size(); i++)
+    // {
+    //     pair<bool, bool> path_spans_left_right;
+    //     path_spans_left_right.first = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) == source_id);
+    //     path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) == sink_id); // not get_previous_step because stop_inclusive=true for extract haplotype paths.
+
+    //     embedded_paths[i] = move_path_to_new_snarl(embedded_paths[i], temp_snarl_leftmost_id, temp_snarl_rightmost_id, path_spans_left_right, !backwards, make_pair(source_id, sink_id));
+    // }
+    // cerr << "after embedded paths move" << endl;
+
+    // cerr << "before debug_steps_3_6." << endl;
+    // std::vector<handlegraph::step_handle_t> debug_steps_3_6 = _graph.steps_of_handle(_graph.get_handle(157212));
+    // for (auto step : debug_steps_3_6)
+    // {
+    //     cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
+    //     cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+    // }
+    // cerr << "after debug_steps_3_6." << endl;
+
 
     // Destroy the old snarl.
     old_snarl.for_each_handle([&](const handle_t handle) 
     {
         _graph.destroy_handle(handle);
     });
+
+    cerr << "[SPECIAL ID: the un-overwritten node id of temp_snarl_leftmost_id " << temp_snarl_leftmost_id << "] before debug_steps_3_7." << endl;
+    std::vector<handlegraph::step_handle_t> debug_steps_3_7 = _graph.steps_of_handle(_graph.get_handle(temp_snarl_leftmost_id));
+    for (auto step : debug_steps_3_7)
+    {
+        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
+        cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+    }
+    cerr << "[SPECIAL ID: the un-overwritten node id of temp_snarl_leftmost_id " << temp_snarl_leftmost_id << "] after debug_steps_3_7." << endl;
+
+    cerr << "[SPECIAL ID: the un-overwritten node id of temp_snarl_rightmost_id " << temp_snarl_rightmost_id << "] before debug_steps_3_7_5." << endl;
+    std::vector<handlegraph::step_handle_t> debug_steps_3_7_5 = _graph.steps_of_handle(_graph.get_handle(temp_snarl_rightmost_id));
+    for (auto step : debug_steps_3_7_5)
+    {
+        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
+        cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+    }
+    cerr << "[SPECIAL ID: the un-overwritten node id of temp_snarl_rightmost_id " << temp_snarl_rightmost_id << "] after debug_steps_3_7_5." << endl;
 
     // Replace the source and sink handles with ones that have the original source/sink id
     // (for compatibility with future iterations on neighboring top-level snarls using the
@@ -1735,20 +1917,29 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     handle_t new_rightmost_handle;
     if (!backwards) 
     {
-        // cerr << "!backwards" << endl;
-        // cerr << "overwriting node id " << temp_snarl_leftmost_id <<  " with " << source_id << " (which is source_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_leftmost_id)) << endl;
+        cerr << "!backwards" << endl;
+        cerr << "overwriting node id " << temp_snarl_leftmost_id <<  " with " << source_id << " (which is source_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_leftmost_id)) << endl;
         new_leftmost_handle = overwrite_node_id(temp_snarl_leftmost_id, source_id);
-        // cerr << "overwriting node id " << temp_snarl_rightmost_id <<  " with " << sink_id << " (which is sink_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_rightmost_id)) << endl;
+        cerr << "overwriting node id " << temp_snarl_rightmost_id <<  " with " << sink_id << " (which is sink_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_rightmost_id)) << endl;
         new_rightmost_handle = overwrite_node_id(temp_snarl_rightmost_id, sink_id);
     }
     else
     {
-        // cerr << "backwards" << endl;
-        // cerr << "overwriting node id " << temp_snarl_leftmost_id <<  " with " << sink_id << " (which is sink_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_leftmost_id)) << endl;
+        cerr << "backwards" << endl;
+        cerr << "overwriting node id " << temp_snarl_leftmost_id <<  " with " << sink_id << " (which is sink_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_leftmost_id)) << endl;
         new_leftmost_handle = overwrite_node_id(temp_snarl_leftmost_id, sink_id);
-        // cerr << "overwriting node id " << temp_snarl_rightmost_id <<  " with " << source_id << " (which is source_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_rightmost_id)) << endl;
+        cerr << "overwriting node id " << temp_snarl_rightmost_id <<  " with " << source_id << " (which is source_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_rightmost_id)) << endl;
         new_rightmost_handle = overwrite_node_id(temp_snarl_rightmost_id, source_id);
-    }    
+    }  
+    // cerr << "before debug_steps_3_8." << endl;
+    // std::vector<handlegraph::step_handle_t> debug_steps_3_8 = _graph.steps_of_handle(_graph.get_handle(157212));
+    // for (auto step : debug_steps_3_8)
+    // {
+    //     cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
+    //     cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+    // }
+    // cerr << "after debug_steps_3_8." << endl;
+
     pair<handle_t, handle_t> new_left_right = make_pair(new_leftmost_handle, new_rightmost_handle);
 
     return new_left_right;

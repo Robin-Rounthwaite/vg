@@ -94,7 +94,7 @@ class SnarlNormalizer {
     const int _max_snarl_spacing;
     const string _path_finder;
     const bool _disable_gbwt_update;
-    const bool _debug_print; // for printing info that isn't necessarily something gone wrong.
+    /*const*/ bool _debug_print; // for printing info that isn't necessarily something gone wrong. Note: not const so that I can easily toggle it within the code.
     const int _threads;
     const string _alignment_algorithm;
 

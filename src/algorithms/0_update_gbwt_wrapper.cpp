@@ -51,6 +51,11 @@ namespace algorithms {
 /// @return 
 gbwt::GBWT apply_gbwt_changelog(const gbwtgraph::GBWTGraph &gbwt_graph, const std::vector<vg::RebuildJob::mapping_type>& gbwt_changelog, const gbwt::GBWT& gbwt, const int& threads, const bool& debug_print)
 {
+    vg::RebuildJob::mapping_type first_change = gbwt_changelog.front();
+    std::vector<vg::RebuildJob::mapping_type> debug_changelog;
+    debug_changelog.push_back(first_change);
+    cerr << "hanging change in apply_gbwt_changelog: " << first_change.first.back() << " " << first_change.second.back() << endl;
+
     // vector<unordered_set<nid_t>> components = gbwtgraph::weakly_connected_components(&_gbwt_graph);
     cerr << "weakly_connected_components" << endl;
     vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&gbwt_graph);
@@ -63,7 +68,8 @@ gbwt::GBWT apply_gbwt_changelog(const gbwtgraph::GBWTGraph &gbwt_graph, const st
     std::unordered_map<nid_t, size_t> node_to_job = get_node_to_job(components);
 
     cerr << "divide_changelog_into_jobs" << endl;
-    std::vector<RebuildJob> jobs = divide_changelog_into_jobs(node_to_job, components, gbwt_changelog); 
+    std::vector<RebuildJob> jobs = divide_changelog_into_jobs(node_to_job, components, debug_changelog); 
+    // std::vector<RebuildJob> jobs = divide_changelog_into_jobs(node_to_job, components, gbwt_changelog); 
 
     cerr << "set_update_gbwt_parameters" << endl;
     RebuildParameters rebuild_parameters = set_update_gbwt_parameters(threads, debug_print);
@@ -122,8 +128,9 @@ std::vector<RebuildJob> divide_changelog_into_jobs(const std::unordered_map<nid_
 RebuildParameters set_update_gbwt_parameters(const int& threads, const bool& debug_print)
 {
     RebuildParameters parameters;
-    parameters.num_jobs = threads; //todo: add option for this to constructor.
-    parameters.show_progress = debug_print;
+    parameters.num_jobs = threads;
+    parameters.show_progress = true; //todo: remove thisi line, uncomment below.
+    // parameters.show_progress = debug_print;
     return parameters;
     //todo: implement Jouni's advice for the batch_size and sample_interval. Advice:
     /*

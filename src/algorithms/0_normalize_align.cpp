@@ -13,13 +13,13 @@ namespace algorithms{
 bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, VG& output_subgraph, const bool output_msa/*=false*/) {
     // bool run_successful = true;
     // uint8_t ***msa_seq = NULL;
-    cerr << "size of source_to_sink_haplotypes " << source_to_sink_haplotypes.size() << endl;
-    cerr << "size of each hap in source_to_sink_haplotypes: " << endl;
-    for (auto hap : source_to_sink_haplotypes)
-    {
-        cerr << hap.size() << endl;
-        cerr << hap << endl;
-    }
+    // cerr << "size of source_to_sink_haplotypes " << source_to_sink_haplotypes.size() << endl;
+    // cerr << "size of each hap in source_to_sink_haplotypes: " << endl;
+    // for (auto hap : source_to_sink_haplotypes)
+    // {
+    //     cerr << hap.size() << endl;
+    //     cerr << hap << endl;
+    // }
     
     // replace the source and sink chars with X, to force match at source and sink.
     //todo: if copying out the set takes significant time, try using unordered_set::extract() here. (https://stackoverflow.com/questions/42519867/efficiently-moving-contents-of-stdunordered-set-to-stdvector)
@@ -384,27 +384,27 @@ bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>&
         msa_output.push_back(two_char_hap);
     }
 
-    // cerr << "about to about to hap" << endl;
-    // cerr << msa_output.size() << endl;
-    //todo: remove output_msa=true;
-    if (output_msa || true)
-    {
-        //then print the msa straight to cout.
-        for (auto hap : msa_output)
-        {
-            cerr << hap << endl;
-        }
-    }
+    // // cerr << "about to about to hap" << endl;
+    // // cerr << msa_output.size() << endl;
+    // //todo: remove output_msa=true;
+    // if (output_msa || true)
+    // {
+    //     //then print the msa straight to cout.
+    //     for (auto hap : msa_output)
+    //     {
+    //         cerr << hap << endl;
+    //     }
+    // }
 
     MSAConverter myMSAConverter = MSAConverter();
     myMSAConverter.load_alignments_from_vector(msa_output);
     output_subgraph = myMSAConverter.make_graph();
 
-    cerr << "node/sequence in output_subgraphs:" << endl;
-    output_subgraph.for_each_handle([&] (handle_t handle) {
-        cerr << output_subgraph.get_id(handle) << " " << output_subgraph.get_sequence(handle) << endl;
-    });  
-    cerr << "done" << endl;
+    // cerr << "node/sequence in output_subgraphs:" << endl;
+    // output_subgraph.for_each_handle([&] (handle_t handle) {
+    //     cerr << output_subgraph.get_id(handle) << " " << output_subgraph.get_sequence(handle) << endl;
+    // });  
+    // cerr << "done" << endl;
 
     output_subgraph.clear_paths();
     // cerr << "Hi! Testing." << endl;
