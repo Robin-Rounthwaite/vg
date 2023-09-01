@@ -160,19 +160,8 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
         // cerr << "PATH DOESN'T SPAN SOURCE AND SINK! THIS IS CURRENTLY UNSUPPORTED. SNARL WILL BE NORMALIZED, BUT PATH WON'T BE INCLUDED." << endl;
         // cerr << "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" << endl;
         pair<step_handle_t, step_handle_t> no_path;
-        cerr << "no path." << endl;
         return no_path;
     }
-
-    //todo: debug_code
-    cerr << "before debug_steps." << endl;
-    std::vector<handlegraph::step_handle_t> debug_steps = _graph.steps_of_handle(_graph.get_handle(157212));
-    for (auto step : debug_steps)
-    {
-        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
-        cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
-    }
-    cerr << "after debug_steps." << endl;
 
     // get the path_string from the handles in the old_path:
     string path_str;
@@ -266,27 +255,7 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     //todo!
 
     vector<pair<vector<handle_t>, int>> possible_path_starts = find_possible_path_starts(leftmost_handle, rightmost_handle, path_spans_left_right);
-    // cerr << "size of possible_path_starts: " << possible_path_starts.size() << endl;
     vector<handle_t> new_path_location = extend_possible_paths(possible_path_starts, path_str, leftmost_handle, rightmost_handle, path_spans_left_right, main_graph_source_and_sink);
-    // cerr << "size of new_path_location: " << new_path_location.size() << endl;
-    cerr << " possible path starts is: " << endl;
-    for (auto start : possible_path_starts)
-    {
-        cerr << "start int: " << start.second << endl;
-        cerr << "start handle vector: ";
-        for (handle_t handle : start.first)
-        {
-            cerr << _graph.get_id(handle) << " ";
-        }
-        cerr << endl;
-    }
-
-    cerr << "new_path_location: ";
-    for (handle_t handle : new_path_location)
-    {
-        cerr << _graph.get_id(handle) << " ";
-    }
-    cerr << endl;
 
     // flip the order of the handles if the path moves right-to-left.
     if (!path_directed_left_to_right)
@@ -294,65 +263,12 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
         std::reverse(new_path_location.begin(), new_path_location.end());
         for (int i = 0; i != new_path_location.size(); i++)
         {
-            // new_path_location[i] = _graph.app(new_path_location[i]);
-            // cerr << "path_name: " << path_name << endl;
-            // cerr << "handle_id: " << _graph.get_id(new_path_location[i]) << endl;
-            // cerr << "handle seq: " << _graph.get_sequence(new_path_location[i]) << endl;
-            // cerr << "is the handle reversed?: " << _graph.get_is_reverse(new_path_location[i]) << endl;
-            // if (path_name != "CBS432.chrXIV")
-            // {
+
                 new_path_location[i] = _graph.flip(new_path_location[i]);
-            // }
-            // cerr << "is the handle reversed?: " << _graph.get_is_reverse(new_path_location[i]) << endl;
-            // cerr << "is the handle at old_path in this pos reversed? " << _graph.get_is_reverse(old_path_location[i]) << endl;
         }
     }
 
 
-
-
-
-    //todo debug
-    cerr << "&&&&&&&&&&&&&&&&&&&&" << endl;
-    cerr << "rewriting path " << _graph.get_path_name(_graph.get_path_handle_of_step(old_path.first)) << endl;
-    step_handle_t cur_old_step = old_path.first;
-    string old_path_series;
-    string old_path_str;
-    while (cur_old_step != _graph.get_next_step(old_path.second))
-    {
-        cerr << "cur_old_step id: " << _graph.get_id(_graph.get_handle_of_step(cur_old_step)) << endl;
-        cerr << "next cur_old_step id: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_next_step(cur_old_step))) << endl;
-        cerr << "adding to old_path_series: " << _graph.get_id(_graph.get_handle_of_step(cur_old_step)) << endl;
-        old_path_series += " " + _graph.get_id(_graph.get_handle_of_step(cur_old_step));
-        old_path_str += " " + _graph.get_sequence(_graph.get_handle_of_step(cur_old_step));
-        // I wonder if I'm messing up the path sequence because get_sequence is always left->right, but the real path seq should be right->left on some handles.
-        cur_old_step = _graph.get_next_step(cur_old_step);
-    }
-    string new_path_series;
-    string new_path_str;
-    for (handle_t handle : new_path_location)
-    {
-        cerr << "cur_new_step id: " << _graph.get_id(handle) << endl;
-        cerr << "adding to new_path_series: " << _graph.get_id(handle) << endl;
-        new_path_series += " " + _graph.get_id(handle);
-        new_path_str += " " + _graph.get_sequence(handle);
-        // I wonder if I'm messing up the path sequence because get_sequence is always left->right, but the real path seq should be right->left on some handles.
-    }
-
-    cerr << "request to rewrite segment with old_path: " << old_path_series << " " << old_path_str  << endl;
-    cerr << "and new path: " << new_path_series << " " << new_path_str  << endl;
-    cerr << "&&&&&&&&&&&&&&&&&&&&" << endl;
-    
-    cerr << "following old_path for a while." << endl;
-    step_handle_t debug_cur_step_0 = old_path.first;
-    while (debug_cur_step_0 != _graph.get_next_step(old_path.second))
-    {
-        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(debug_cur_step_0)) << " as_integers(debug_cur_step_0) " << as_integers(debug_cur_step_0)[0] << " " << as_integers(debug_cur_step_0)[1] << " debug_cur_step_0 seq: " << _graph.get_sequence(_graph.get_handle_of_step(debug_cur_step_0)) << endl;
-        debug_cur_step_0 = _graph.get_next_step(debug_cur_step_0);
-    }
-
-    cerr << "REWRITING SEGMENT: " << endl;
-    cerr << " old_path.first " << _graph.get_id(_graph.get_handle_of_step(old_path.first)) << " old_path.second " << _graph.get_id(_graph.get_handle_of_step(old_path.second))  << " _graph.get_next_step(old_path.second) " << _graph.get_id(_graph.get_handle_of_step(_graph.get_next_step(old_path.second))) << " new_path_location.front() " << _graph.get_id(new_path_location.front()) << " new_path_location.back() " << _graph.get_id(new_path_location.back())  << endl;
     //todo: note that this rewrite_segment doesn't guarantee that the leftmost step_handle
     //and the rightmost step_handle of the original snarl won't be altered. (I've observed
     //them becoming swapped. As a result, I can't move paths onto the new graph when there
@@ -361,33 +277,6 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     //separation, I'd either have to change this function or change the path extraction to
     //be outside of the paralellization for loop.
     pair<step_handle_t, step_handle_t> new_path = _graph.rewrite_segment(old_path.first, _graph.get_next_step(old_path.second), new_path_location);
-
-    cerr << "following new_path for a while." << endl;
-    step_handle_t debug_cur_step = new_path.first;
-    while (debug_cur_step != new_path.second)
-    {
-        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(debug_cur_step)) << " as_integers(debug_cur_step) " << as_integers(debug_cur_step)[0] << " " << as_integers(debug_cur_step)[1] << " debug_cur_step seq: " << _graph.get_sequence(_graph.get_handle_of_step(debug_cur_step)) << endl;
-        debug_cur_step = _graph.get_next_step(debug_cur_step);
-    }
-
-    cerr << "following new_path until I stop before _graph.get_next_step(_graph.get_next_step(new_path.second))" << endl;
-    step_handle_t debug_cur_step_2 = new_path.first;
-    while (debug_cur_step_2 != _graph.get_next_step(_graph.get_next_step(new_path.second)))
-    {
-        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(debug_cur_step_2)) << " as_integers(debug_cur_step_2) " << as_integers(debug_cur_step_2)[0] << " " << as_integers(debug_cur_step_2)[1] << " debug_cur_step_2 seq: " << _graph.get_sequence(_graph.get_handle_of_step(debug_cur_step_2)) << endl;
-        debug_cur_step_2 = _graph.get_next_step(debug_cur_step_2);
-    }
-
-    cerr << "before debug_steps_4." << endl;
-    std::vector<handlegraph::step_handle_t> debug_steps_4 = _graph.steps_of_handle(_graph.get_handle(157212));
-    for (auto step : debug_steps_4)
-    {
-        cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " as_integers(step) " << as_integers(step)[0] << " " << as_integers(step)[1] << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(step)) << endl;
-        cerr << "can I get a path name out of it? " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
-    }
-    cerr << "after debug_steps_4." << endl;
-
-
 
     // Test that the new path exists.
     if (new_path_location.size() == 0)
@@ -438,9 +327,6 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     
     // cerr << "************END-UNIT_TEST for move_path_to_new_snarl.************"<< endl;
 
-
-
-    cerr << "leaving move_embedded_paths" << endl;
 
     return new_path;
 }
