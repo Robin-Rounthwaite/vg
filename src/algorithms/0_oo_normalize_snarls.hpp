@@ -131,7 +131,7 @@ class SnarlNormalizer {
                          vector<pair<step_handle_t, step_handle_t>>& embedded_paths,
                          const id_t source_id, const id_t sink_id, const bool backwards);
 
-    handle_t replace_node_using_sequence(const id_t old_node_id, const string new_node_sequence);
+    handle_t replace_node_using_sequence(const id_t old_node_id, const string new_node_sequence, MutablePathDeletableHandleGraph& graph);
 
     handle_t overwrite_node_id(const id_t old_node_id, const id_t new_node_id);
 

@@ -69,6 +69,12 @@ bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>&
                 
 
                 MSAConverter myMSAConverter = MSAConverter();
+                cerr << "before align example " << endl;
+                for (auto align : msa_output)
+                {
+                    cerr << "align example: " << align << endl;
+                }
+                cerr << "after align example " << endl;
                 myMSAConverter.load_alignments_from_vector(msa_output);
                 output_subgraph = myMSAConverter.make_graph();
                 

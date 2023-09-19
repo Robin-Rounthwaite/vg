@@ -116,6 +116,15 @@ std::vector<RebuildJob> divide_changelog_into_jobs(const std::unordered_map<nid_
         // {
         //     cerr << it->first << " " << it->second << endl;
         // }
+        try
+        {
+           jobs[node_to_job.at(gbwt::Node::id(change.first.front()))];
+        }
+        catch (...)
+        {
+            cerr << " this is the buggy node: " << change.first.front() << endl;
+            exit(1);
+        }
         RebuildJob& cur_job = jobs[node_to_job.at(gbwt::Node::id(change.first.front()))];
         // RebuildJob& cur_job = jobs[node_to_job.at(change.first.front())];
         cur_job.mappings.push_back(change); //todo: make sure that I'm still correct in placing the gbwt::node in here, not the node id. I'm pretty sure I'm right.

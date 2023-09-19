@@ -224,16 +224,16 @@ int main_normalize(int argc, char **argv) {
     [&] (const bdsg::net_handle_t& node) {return true;});
 
 
-    // cerr << "isolating regions" << endl;
-    // vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_snarls_per_region, max_snarl_spacing);
-    // std::set<vg::id_t> nodes_to_delete;
-    // std::vector<std::pair<vg::id_t, vg::id_t>> parallel_normalize_regions;
-    // cerr << "first snarl root " << snarl_roots.front().first << " " << snarl_roots.front().second << endl; 
-    // std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_update_info = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, nodes_to_delete);
-    // cerr << "first parallel_regions_gbwt_update: " << parallel_regions_gbwt_update_info.front().first << " " << parallel_regions_gbwt_update_info.front().second << endl; 
+    cerr << "isolating regions" << endl;
+    vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_snarls_per_region, max_snarl_spacing);
+    std::set<vg::id_t> nodes_to_delete;
+    std::vector<std::pair<vg::id_t, vg::id_t>> parallel_normalize_regions;
+    cerr << "first snarl root " << snarl_roots.front().first << " " << snarl_roots.front().second << endl; 
+    std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_update_info = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, nodes_to_delete);
+    cerr << "first parallel_regions_gbwt_update: " << parallel_regions_gbwt_update_info.front().first << " " << parallel_regions_gbwt_update_info.front().second << endl; 
 
-    // cerr << "updating the gbwt and gbwt_graph with the isolated regions" << endl;
-    // auto gbwt_update_start = chrono::high_resolution_clock::now();    
+    cerr << "updating the gbwt and gbwt_graph with the isolated regions" << endl;
+    auto gbwt_update_start = chrono::high_resolution_clock::now();    
 
     int gbwt_threads = threads;
     if (threads > 12)
@@ -241,18 +241,18 @@ int main_normalize(int argc, char **argv) {
       gbwt_threads = 12;
     }
 
-    // gbwt::GBWT parallel_regions_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, parallel_regions_gbwt_update_info, *gbwt, gbwt_threads, false);
+    gbwt::GBWT parallel_regions_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, parallel_regions_gbwt_update_info, *gbwt, gbwt_threads, false);
     
-    // auto gbwt_update_end = chrono::high_resolution_clock::now();    
-    // chrono::duration<double> gbwt_changelog_time = gbwt_update_end - gbwt_update_start;
-    // cerr << "Time spent generating the updated gbwt: " << gbwt_changelog_time.count() << " s" << endl;
+    auto gbwt_update_end = chrono::high_resolution_clock::now();    
+    chrono::duration<double> gbwt_changelog_time = gbwt_update_end - gbwt_update_start;
+    cerr << "Time spent generating the updated gbwt: " << gbwt_changelog_time.count() << " s" << endl;
 
-    // cerr << "generating the updated gbwt graph" << endl;
-    // // make a new gbwt_graph for the parallel_regions_gbwt.
-    // gbwtgraph::GBWTGraph parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(parallel_regions_gbwt, *graph);
+    cerr << "generating the updated gbwt graph" << endl;
+    // make a new gbwt_graph for the parallel_regions_gbwt.
+    gbwtgraph::GBWTGraph parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(parallel_regions_gbwt, *graph);
 
-    // // free some memory, since we don't need the original gbwt anymore.
-    // gbwt.reset();
+    // free some memory, since we don't need the original gbwt anymore.
+    gbwt.reset();
 
     // //todo: delete debug code
     // cerr << " parallel_regions_gbwt_graph.get_sequence(parallel_regions_gbwt_graph.get_handle(18, false)) " << parallel_regions_gbwt_graph.get_sequence(parallel_regions_gbwt_graph.get_handle(18, false)) << endl;
@@ -262,14 +262,15 @@ int main_normalize(int argc, char **argv) {
     string alignment_algorithm="sPOA"; bool disable_gbwt_update=false; bool debug_print=false; //todo: remove these options or else ensure they are implemented correctly.
 
     //todo: note: debug code.
-    std::set<vg::id_t> nodes_to_delete;
-    vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
-      *graph, *gbwt, *gbwt_graph, nodes_to_delete, max_handle_size, max_snarls_per_region, max_snarl_spacing, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
-
+    // std::set<vg::id_t> nodes_to_delete;
     // vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
-    //   *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, nodes_to_delete, max_handle_size, max_snarls_per_region, max_snarl_spacing, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
+    //   *graph, *gbwt, *gbwt_graph, nodes_to_delete, max_handle_size, max_snarls_per_region, max_snarl_spacing, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
+    // std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(snarl_roots);
 
-    std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(snarl_roots);
+    vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
+      *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, nodes_to_delete, max_handle_size, max_snarls_per_region, max_snarl_spacing, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
+
+    std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
 
     cerr << "======preparing and saving output=======" << endl;
     cerr << "saving updated graph" << endl;

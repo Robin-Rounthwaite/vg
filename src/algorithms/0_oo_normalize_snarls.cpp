@@ -70,6 +70,14 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
 /// @param split_normalize_regions 
 std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions)
 {
+    cerr << "list of all to-delete handles:" << endl;
+    for (auto deletable : _nodes_to_delete)
+    {
+        cerr << deletable << endl;
+        cerr << "sequence: " << _graph.get_sequence(_graph.get_handle(deletable)) << endl;
+    }
+    
+    exit(1);
     //todo: add back the exhaustive path finder option?
     assert(_path_finder=="GBWT");
 
@@ -96,6 +104,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
+        cerr << "region: " << region.first << " " << region.second << endl;
         if (_debug_print)
         {
             cerr << "about to extract_subgraph" << endl;
@@ -155,6 +164,11 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         }
         else if (_alignment_algorithm == "sPOA")
         {
+            cerr << " _sequence_added_because_empty_node.first: " << _sequence_added_because_empty_node.first << " _sequence_added_because_empty_node.second " << _sequence_added_because_empty_node.second << endl; 
+            for (auto hap : get<0>(haplotypes_and_embedded_paths.first))
+            {
+                cerr << "about to insert these haps: " << hap << endl;
+            }
             bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes_and_embedded_paths.first), new_snarl, false);
             if (run_successful == false)
             {
@@ -178,14 +192,16 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         {
             string new_node_seq = new_snarl.get_sequence(to_insert_snarl_defining_handles.first.back());
             id_t new_node_id = new_snarl.get_id(to_insert_snarl_defining_handles.first.back());
-            replace_node_using_sequence(new_node_id, new_node_seq.substr(1));
+            cerr << "1 contents of replace node using sequence: " << new_node_id << " " <<  new_node_seq << " " << new_node_seq.substr(1) << endl;
+            replace_node_using_sequence(new_node_id, new_node_seq.substr(1), new_snarl);
             _sequence_added_because_empty_node.first = false;
         }
         if (_sequence_added_because_empty_node.second)
         {
             string new_node_seq = new_snarl.get_sequence(to_insert_snarl_defining_handles.second.back());
             id_t new_node_id = new_snarl.get_id(to_insert_snarl_defining_handles.second.back());
-            replace_node_using_sequence(new_node_id, new_node_seq.substr(0, new_node_seq.size() - 1));
+            cerr << "2 contents of replace node using sequence: " << new_node_id << " new_node_seq: " << new_node_seq << " new_node_seq.substr(1): " << new_node_seq.substr(1) << endl;
+            replace_node_using_sequence(new_node_id, new_node_seq.substr(0, new_node_seq.size() - 1), new_snarl);
             _sequence_added_because_empty_node.second = false;
         }
         
@@ -278,8 +294,25 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
 {
     //make sure that all handles in the snarl are represented by the gbwt.
     bool all_handles_in_gbwt = true;
+    // try 
+    // {
+    //     snarl.for_each_handle([&](handle_t handle){
+    //         cerr << "handle exists: " << snarl.get_id(handle) << endl;
+    //     }, true);
+
+    // }
+    // catch (...)
+    // {
+    //     cerr << "error in for_each_handle. Here is the region: " << region.first << " " << region.second << endl;
+    // }
+    // cerr << endl;
     snarl.for_each_handle([&](handle_t handle){
+        // cerr << "handle exists in second for each handle: " << snarl.get_id(handle) << endl;
+        // cerr << "snarl.get_id(handle)" << " " << snarl.get_id(handle) << endl;
         const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)));
+        // cerr << "_gbwt_graph.get_handle(snarl.get_id(handle))" << " " << _gbwt_graph.get_handle(snarl.get_id(handle)) << endl;
+        // cerr << "_gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)))" << " " << _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle))) << endl;
+
         if (debug_state.empty())
         {
             // cerr << "debug state is empty." << endl;
@@ -399,12 +432,23 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
             cerr << "ERROR: a source or sink node for a snarl is empty in an unexpected manner (i.e., it wasn't introduced into the graph during get_parallel_normalize_regions)." << endl;
             exit(1);
         }
-
-        for (auto hap : get<0>(haplotypes))
+        // cerr << "before adding teh extra characters" << endl;
+        // for (auto hap : get<0>(haplotypes))
+        // {
+        //     cerr << hap << endl;
+        // }
+        auto old_haplotypes = get<0>(haplotypes);
+        get<0>(haplotypes).clear();
+        for (auto old_hap : old_haplotypes)
         {
-            hap = "A" + hap;
-            _sequence_added_because_empty_node.first = true;
+            get<0>(haplotypes).emplace("A" + old_hap);
+            _sequence_added_because_empty_node.second = true;
         }
+        // cerr << "aftter adding teh extra characters" << endl;
+        // for (auto hap : get<0>(haplotypes))
+        // {
+        //     cerr << hap << endl;
+        // }
     }
     else if (_nodes_to_delete.find(region.first) != _nodes_to_delete.end())
     {
@@ -428,17 +472,34 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
     if (snarl.get_sequence(snarl.get_handle(region.second)).size() == 0)
     {
         //check that this is a node we expected to find as empty.
-        if (_nodes_to_delete.find(region.second) == _nodes_to_delete.end())
-        {
-            cerr << "ERROR: a source or sink node for a snarl is empty in an unexpected manner (i.e., it wasn't introduced into the graph during get_parallel_normalize_regions)." << endl;
-            exit(1);
-        }
+        // if (_nodes_to_delete.find(region.second) == _nodes_to_delete.end())
+        // {
+        //     cerr << "ERROR: a source or sink node for a snarl is empty in an unexpected manner (i.e., it wasn't introduced into the graph during get_parallel_normalize_regions)." << endl;
+        //     exit(1);
+        // }
+        // cerr << "before adding teh extra characters" << endl;
+        // for (auto hap : get<0>(haplotypes))
+        // {
+        //     cerr << hap << endl;
+        // }
 
-        for (auto hap : get<0>(haplotypes))
+        auto old_haplotypes = get<0>(haplotypes);
+        get<0>(haplotypes).clear();
+        // for (auto it = get<0>(haplotypes).begin(); it != get<0>(haplotypes).end(); it++)
+        // {
+            
+        // }
+        for (auto old_hap : old_haplotypes)
         {
-            hap = hap + "A";
+            get<0>(haplotypes).emplace(old_hap + "A");
             _sequence_added_because_empty_node.second = true;
         }
+        // cerr << "aftter adding teh extra characters" << endl;
+        // for (auto hap : get<0>(haplotypes))
+        // {
+        //     cerr << hap << endl;
+        // }
+
     }
     else if (_nodes_to_delete.find(region.second) != _nodes_to_delete.end())
     {
@@ -1832,34 +1893,38 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
  * @return {handle_t}        : The new handle, in the same position as the original handle
  *                              in the graph, but with the new node_sequence.
  */
-handle_t SnarlNormalizer::replace_node_using_sequence(const id_t old_node_id, const string new_node_sequence)
+handle_t SnarlNormalizer::replace_node_using_sequence(const id_t old_node_id, const string new_node_sequence, MutablePathDeletableHandleGraph& graph)
 {
-    handle_t old_handle = _graph.get_handle(old_node_id);
-    handle_t new_handle = _graph.create_handle(new_node_sequence);
+    handle_t old_handle = graph.get_handle(old_node_id);
+    handle_t new_handle = graph.create_handle(new_node_sequence);
+
+    cerr << "old node id: " << old_node_id << endl;
+    cerr << "old node seq: " << graph.get_sequence(old_handle) << endl;
+    cerr << "new node sequence " << new_node_sequence << endl;
 
     // move the edges:
-    _graph.follow_edges(old_handle, true, [&](const handle_t prev_handle) 
+    graph.follow_edges(old_handle, true, [&](const handle_t prev_handle) 
     {
-        _graph.create_edge(prev_handle, new_handle);
+        graph.create_edge(prev_handle, new_handle);
     });
-    _graph.follow_edges(old_handle, false, [&](const handle_t next_handle)
+    graph.follow_edges(old_handle, false, [&](const handle_t next_handle)
     {
-        _graph.create_edge(new_handle, next_handle);
+        graph.create_edge(new_handle, next_handle);
     });
 
     // move the paths:
-    _graph.for_each_step_on_handle(old_handle, [&](step_handle_t step) 
+    graph.for_each_step_on_handle(old_handle, [&](step_handle_t step) 
     {
-        handle_t properly_oriented_old_handle = _graph.get_handle_of_step(step); 
-        if (_graph.get_is_reverse(properly_oriented_old_handle) != _graph.get_is_reverse(new_handle))
+        handle_t properly_oriented_old_handle = graph.get_handle_of_step(step); 
+        if (graph.get_is_reverse(properly_oriented_old_handle) != graph.get_is_reverse(new_handle))
         {
-            new_handle = _graph.flip(new_handle);
+            new_handle = graph.flip(new_handle);
         }
-        _graph.rewrite_segment(step, _graph.get_next_step(step), vector<handle_t>{new_handle});
+        graph.rewrite_segment(step, graph.get_next_step(step), vector<handle_t>{new_handle});
     });
 
     // delete the old_handle:
-    _graph.destroy_handle(old_handle);
+    graph.destroy_handle(old_handle);
     return new_handle;
 }
 
