@@ -51,7 +51,6 @@ namespace algorithms{
 SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const gbwt::GBWT &gbwt,
                                  const gbwtgraph::GBWTGraph &gbwt_graph,
-                                 const std::set<nid_t> & nodes_to_delete,
                                  const int max_handle_size,
                                  const int max_region_size,
                                  const int max_snarl_spacing,
@@ -61,7 +60,7 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const string alignment_algorithm, /*= "sPOA"*/
                                  const bool disable_gbwt_update, /*= false*/
                                  const bool debug_print /*= false*/)
-: _graph(graph), _gbwt(gbwt), _gbwt_graph(gbwt_graph), _nodes_to_delete(nodes_to_delete), _max_alignment_size(max_alignment_size),
+: _graph(graph), _gbwt(gbwt), _gbwt_graph(gbwt_graph), _max_alignment_size(max_alignment_size),
       _max_handle_size(max_handle_size), _max_region_size(max_region_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder),
        _alignment_algorithm(alignment_algorithm), _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
 
@@ -70,14 +69,13 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
 /// @param split_normalize_regions 
 std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions)
 {
-    cerr << "list of all to-delete handles:" << endl;
-    for (auto deletable : _nodes_to_delete)
-    {
-        cerr << deletable << endl;
-        cerr << "sequence: " << _graph.get_sequence(_graph.get_handle(deletable)) << endl;
-    }
+    // cerr << "list of all to-delete handles:" << endl;
+    // for (auto deletable : _nodes_to_delete)
+    // {
+    //     cerr << deletable << endl;
+    //     cerr << "sequence: " << _graph.get_sequence(_graph.get_handle(deletable)) << endl;
+    // }
     
-    exit(1);
     //todo: add back the exhaustive path finder option?
     assert(_path_finder=="GBWT");
 
@@ -90,7 +88,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: change to make more memory efficient? 
     //todo: I could also at least re-derive the SubHandleGraph if I needed to.
     // vector< pair< vg::VG, pair<id_t,id_t> > > normalized_snarls;
-    vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool >> normalized_snarls;
+    vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls;
     
 
     // //todo: debug_code
@@ -104,6 +102,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
+        pair<bool, bool> sequence_added_because_empty_node = make_pair(false, false);
+
         cerr << "region: " << region.first << " " << region.second << endl;
         if (_debug_print)
         {
@@ -119,17 +119,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
         // check that snarl is normalizable:
         bool passes_normalize_tests = test_snarl(snarl, region, original_snarl_size);
-        if (passes_normalize_tests == false) { /*cerr <<  "failed normalize tests" << endl;*/ continue; }
-
-        // extract threads.
-        // haplotypes is of format:
-        // 0: a set of all the haplotypes which stretch from source to sink, in string format.
-        //   - it's a set, so doesn't contain duplicates
-        // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
-        // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
-        //todo: figure out how to debug "tie" as below, to prevent copying the items in the pair, or else dealing with awful haplotypes_and_embedded_paths.first and .second.
-        // tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes; // = haplotypes_and_embedded_paths.first;
-        // vector<pair<step_handle_t, step_handle_t>> embedded_paths; // = haplotypes_and_embedded_paths.second;
+        if (passes_normalize_tests == false) { cerr <<  "failed normalize tests" << endl; continue; }
+        // if (passes_normalize_tests == false) { /*cerr <<  "failed normalize tests" << endl;*/ continue; }
 
         if (_debug_print)
         {
@@ -141,15 +132,24 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         // steps pointing to nodes outside the region of this current normalization, so we
         // don't risk edits from other snarls messing up that step. 
         bool stop_inclusive = true;
-        pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> >
-            haplotypes_and_embedded_paths = extract_haplotypes(snarl, region, stop_inclusive);
+        //declare arguments to be filled by extract_haplotypes:
+            // haplotypes is of format:
+            // 0: a set of all the haplotypes which stretch from source to sink, in string format.
+            //   - it's a set, so doesn't contain duplicates
+            // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
+            // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
+        tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes;
+        vector<pair<step_handle_t, step_handle_t>> embedded_paths;
+        vector<pair<gbwt::vector_type, string>> source_to_sink_gbwt_paths;
+        //extract the haplotypes:
+        extract_haplotypes(snarl, region, sequence_added_because_empty_node, haplotypes, embedded_paths, source_to_sink_gbwt_paths, stop_inclusive);
 
         if (_debug_print)
         {
             cerr << "about to test haplotypes" << endl;
         }
         // further checks that snarl is normalizable:
-        bool passes_haplotype_tests = test_haplotypes(haplotypes_and_embedded_paths.first, region, original_snarl_size);
+        bool passes_haplotype_tests = test_haplotypes(haplotypes, region, original_snarl_size);
         if (passes_haplotype_tests == false) { cerr <<  "failed haplotype tests" << endl; continue; }
 
         if (_debug_print)
@@ -160,16 +160,16 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         VG new_snarl;
         if (_alignment_algorithm == "TCoffee")
         {
-            new_snarl = align_source_to_sink_haplotypes(get<0>(haplotypes_and_embedded_paths.first));
+            new_snarl = align_source_to_sink_haplotypes(get<0>(haplotypes));
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            cerr << " _sequence_added_because_empty_node.first: " << _sequence_added_because_empty_node.first << " _sequence_added_because_empty_node.second " << _sequence_added_because_empty_node.second << endl; 
-            for (auto hap : get<0>(haplotypes_and_embedded_paths.first))
+            cerr << " sequence_added_because_empty_node.first: " << sequence_added_because_empty_node.first << " sequence_added_because_empty_node.second " << sequence_added_because_empty_node.second << endl; 
+            for (auto hap : get<0>(haplotypes))
             {
                 cerr << "about to insert these haps: " << hap << endl;
             }
-            bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes_and_embedded_paths.first), new_snarl, false);
+            bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes), new_snarl, false);
             if (run_successful == false)
             {
                 //note: this snippet should never run, because it's also handled by the "if (hap.size() > max_spoa_length)" condition a in test_haplotypes.
@@ -188,21 +188,21 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         //the original snarl.)
         pair<vector<handle_t>, vector<handle_t>> to_insert_snarl_defining_handles =
             debug_get_sources_and_sinks(new_snarl);
-        if (_sequence_added_because_empty_node.first)
+        if (sequence_added_because_empty_node.first)
         {
             string new_node_seq = new_snarl.get_sequence(to_insert_snarl_defining_handles.first.back());
             id_t new_node_id = new_snarl.get_id(to_insert_snarl_defining_handles.first.back());
             cerr << "1 contents of replace node using sequence: " << new_node_id << " " <<  new_node_seq << " " << new_node_seq.substr(1) << endl;
             replace_node_using_sequence(new_node_id, new_node_seq.substr(1), new_snarl);
-            _sequence_added_because_empty_node.first = false;
+            sequence_added_because_empty_node.first = false;
         }
-        if (_sequence_added_because_empty_node.second)
+        if (sequence_added_because_empty_node.second)
         {
             string new_node_seq = new_snarl.get_sequence(to_insert_snarl_defining_handles.second.back());
             id_t new_node_id = new_snarl.get_id(to_insert_snarl_defining_handles.second.back());
             cerr << "2 contents of replace node using sequence: " << new_node_id << " new_node_seq: " << new_node_seq << " new_node_seq.substr(1): " << new_node_seq.substr(1) << endl;
             replace_node_using_sequence(new_node_id, new_node_seq.substr(0, new_node_seq.size() - 1), new_snarl);
-            _sequence_added_because_empty_node.second = false;
+            sequence_added_because_empty_node.second = false;
         }
         
         // get new snarl size for comparison stats
@@ -219,8 +219,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         {
             cerr << "about to store the normalized snarl for later." << endl;
         }
-        normalized_snarls.push_back(make_tuple(snarl, new_snarl, haplotypes_and_embedded_paths.second, region.first, region.second, false));
-        // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, haplotypes_and_embedded_paths.second, region.first, region.second, false);
+        normalized_snarls.push_back(make_tuple(snarl, new_snarl, embedded_paths, region.first, region.second, false, source_to_sink_gbwt_paths));
+        // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, embedded_paths, region.first, region.second, false);
         
         // if ((normalized_snarls.size())%100 == 0)
         // {
@@ -241,6 +241,13 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
 
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
+        // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
+        SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
+
+
+
+        log_gbwt_changes(get<6>(snarl), integrated_snarl);
+
     }
 
     print_parallel_statistics();
@@ -308,14 +315,16 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
     // cerr << endl;
     snarl.for_each_handle([&](handle_t handle){
         // cerr << "handle exists in second for each handle: " << snarl.get_id(handle) << endl;
-        // cerr << "snarl.get_id(handle)" << " " << snarl.get_id(handle) << endl;
+        cerr << "snarl.get_id(handle)" << " " << snarl.get_id(handle) << endl;
         const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)));
         // cerr << "_gbwt_graph.get_handle(snarl.get_id(handle))" << " " << _gbwt_graph.get_handle(snarl.get_id(handle)) << endl;
         // cerr << "_gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)))" << " " << _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle))) << endl;
+        cerr << "does the gbwt contiain this node? " << _gbwt.contains(gbwt::Node::encode(snarl.get_id(handle), false)) << endl;
+        cerr << "does the gbwt_graph contian this node? " << _gbwt_graph.has_node(snarl.get_id(handle)) << endl;
 
         if (debug_state.empty())
         {
-            // cerr << "debug state is empty." << endl;
+            cerr << "debug state is empty." << endl;
             all_handles_in_gbwt = false;
             return;
         }
@@ -372,8 +381,12 @@ bool SnarlNormalizer::test_haplotypes(const tuple<unordered_set<string>, vector<
 }
 
 //todo: make the return value void, and instead be returned by reference in arguments passed to extract_haplotypes.
-pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> >
-    SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region, const bool stop_inclusive /*=false*/)
+void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region, 
+        pair<bool, bool>& sequence_added_because_empty_node, 
+        tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>>& haplotypes, 
+        vector<pair<step_handle_t, step_handle_t>>& embedded_paths, 
+        vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, 
+        const bool stop_inclusive/*=false*/)
 {
     bool backwards = false;
     // extract threads.
@@ -382,9 +395,7 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
     //   - it's a set, so doesn't contain duplicates
     // 1: a vector of all the other haps in the snarl (in vector<handle_t> format)
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
-    tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes;
     SnarlSequenceFinder sequence_finder = SnarlSequenceFinder(_graph, snarl, _gbwt_graph, region.first, region.second, false);
-    vector<pair<gbwt::vector_type, string>> source_to_sink_gbwt_paths;
 
     //todo: here is where the exhaustive path finder would be used, if it was working.
     tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<id_t>>
@@ -426,12 +437,12 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
     // snarls for parallelization).
     if (snarl.get_sequence(snarl.get_handle(region.first)).size() == 0)
     {
-        //check that this is a node we expected to find as empty.
-        if (_nodes_to_delete.find(region.first) == _nodes_to_delete.end())
-        {
-            cerr << "ERROR: a source or sink node for a snarl is empty in an unexpected manner (i.e., it wasn't introduced into the graph during get_parallel_normalize_regions)." << endl;
-            exit(1);
-        }
+        // //check that this is a node we expected to find as empty.
+        // if (_nodes_to_delete.find(region.first) == _nodes_to_delete.end())
+        // {
+        //     cerr << "ERROR: a source or sink node for a snarl is empty in an unexpected manner (i.e., it wasn't introduced into the graph during get_parallel_normalize_regions)." << endl;
+        //     exit(1);
+        // }
         // cerr << "before adding teh extra characters" << endl;
         // for (auto hap : get<0>(haplotypes))
         // {
@@ -442,7 +453,7 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
         for (auto old_hap : old_haplotypes)
         {
             get<0>(haplotypes).emplace("A" + old_hap);
-            _sequence_added_because_empty_node.second = true;
+            sequence_added_because_empty_node.first = true;
         }
         // cerr << "aftter adding teh extra characters" << endl;
         // for (auto hap : get<0>(haplotypes))
@@ -450,20 +461,20 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
         //     cerr << hap << endl;
         // }
     }
-    else if (_nodes_to_delete.find(region.first) != _nodes_to_delete.end())
-    {
-        cerr << "earlier error of the two. " << endl;
-        cerr << "here is the node to delete: " << region.second << endl;
-        cerr << "here is the _nodes_to_delete.size(): " << _nodes_to_delete.size() << endl;
-        cerr << "here is the _nodes_to_delete: " <<endl;
-        for (auto node : _nodes_to_delete)
-        {
-            cerr << node << " ";
-        }
-        cerr << endl;
-        cerr << "ERROR: found a node_to_delete that isn't of length zero. This shouldn't happen." << endl;
-        exit(1);
-    }
+    // else if (_nodes_to_delete.find(region.first) != _nodes_to_delete.end())
+    // {
+    //     cerr << "earlier error of the two. " << endl;
+    //     cerr << "here is the node to delete: " << region.second << endl;
+    //     cerr << "here is the _nodes_to_delete.size(): " << _nodes_to_delete.size() << endl;
+    //     cerr << "here is the _nodes_to_delete: " <<endl;
+    //     for (auto node : _nodes_to_delete)
+    //     {
+    //         cerr << node << " ";
+    //     }
+    //     cerr << endl;
+    //     cerr << "ERROR: found a node_to_delete that isn't of length zero. This shouldn't happen." << endl;
+    //     exit(1);
+    // }
 
     // check to see if the leftmost or rightmost node is empty. If so, treat the blank
     // node as containing a character "A". (this is important for dealing with how
@@ -492,7 +503,8 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
         for (auto old_hap : old_haplotypes)
         {
             get<0>(haplotypes).emplace(old_hap + "A");
-            _sequence_added_because_empty_node.second = true;
+            sequence_added_because_empty_node.second = true;
+            // _sequence_added_because_empty_node.second = true;
         }
         // cerr << "aftter adding teh extra characters" << endl;
         // for (auto hap : get<0>(haplotypes))
@@ -501,19 +513,19 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
         // }
 
     }
-    else if (_nodes_to_delete.find(region.second) != _nodes_to_delete.end())
-    {
-        cerr << "here is the node to delete: " << region.second << endl;
-        cerr << "here is the _nodes_to_delete.size(): " << _nodes_to_delete.size() << endl;
-        cerr << "here is the _nodes_to_delete: " <<endl;
-        for (auto node : _nodes_to_delete)
-        {
-            cerr << node << " ";
-        }
-        cerr << endl;
-        cerr << "ERROR: found a node_to_delete that isn't of length zero. This shouldn't happen." << endl;
-        exit(1);
-    }
+    // else if (_nodes_to_delete.find(region.second) != _nodes_to_delete.end())
+    // {
+    //     cerr << "here is the node to delete: " << region.second << endl;
+    //     cerr << "here is the _nodes_to_delete.size(): " << _nodes_to_delete.size() << endl;
+    //     cerr << "here is the _nodes_to_delete: " <<endl;
+    //     for (auto node : _nodes_to_delete)
+    //     {
+    //         cerr << node << " ";
+    //     }
+    //     cerr << endl;
+    //     cerr << "ERROR: found a node_to_delete that isn't of length zero. This shouldn't happen." << endl;
+    //     exit(1);
+    // }
     // cerr << "hap new text: " << *get<0>(haplotypes).begin() << endl;
 
 
@@ -540,8 +552,7 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
     // for parallelization), then final path handle will point to the actual handle in the
     // graph that is the furthest we want for the alignment, not one beyond. (to ensure
     // that it doesn't extend to a region that might be edited by a different snarl).
-    vector<pair<step_handle_t, step_handle_t>> embedded_paths =
-        sequence_finder.find_embedded_paths(stop_inclusive);
+    embedded_paths = sequence_finder.find_embedded_paths(stop_inclusive);
 
 
     // TODO: once haplotypes that begin/end in the middle of the snarl have been
@@ -570,8 +581,7 @@ pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>
             }
         }
     }
-    pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> > haplotypes_and_embedded_paths = make_pair(haplotypes, embedded_paths);
-    return haplotypes_and_embedded_paths;
+    return;
 }
 
 /**
@@ -1695,6 +1705,7 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     vector<pair<step_handle_t, step_handle_t>>& embedded_paths, 
     const id_t source_id, const id_t sink_id, const bool backwards) 
 {
+    
     // TODO: debug_statement: Check to make sure that newly made snarl has only one start
     // and end.
     // TODO:     (shouldn't be necessary once we've implemented alignment with

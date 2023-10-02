@@ -24,7 +24,7 @@ NormalizeRegionFinder::NormalizeRegionFinder(MutablePathDeletableHandleGraph &gr
 /// parallelized normalization.
 /// @return A tuple of arguments to pass to gbwt_update_items if you want an updated gbwt
 /// to match the parallel normalize regions. Tuple: (_gbwt_graph, _gbwt_changelog, _gbwt)
-std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, set<id_t>& nodes_to_remove)
+std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates)
 {
     //note: right now snarl_roots is identical to what would normally be the output of single-snarl get_normalize_regions. 
     //todo: make a snarl clusterer based on distance_index.
@@ -36,7 +36,7 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_no
     // }
 
 
-    parallel_normalize_regions = split_sources_and_sinks(snarl_roots, nodes_to_remove);
+    parallel_normalize_regions = split_sources_and_sinks(snarl_roots, desegregation_candidates);
     // for (auto change : _gbwt_changelog) 
     // {
     //     cerr << "change.first "<< endl;
@@ -90,8 +90,12 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vect
 ///         (i.e., the neighboring snarl gets to keep the node with the original id, and 
 ///         the current snarl gets its node ids updated.)
 /// @param normalize_regions 
+/// @param desegregation_candidates a vector of pairs. The first element of the pair is a
+/// pair of the two nodes created by handle.split(). The second element in the pair is the
+/// id_t that was the original id of the handle before splitting. This wil lbe used for
+/// de-splitting the snarl later.
 /// @return a set of sources and sinks representing each (now isolated) snarl.
-vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, set<id_t>& nodes_to_remove){
+vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates){
     vector<pair<id_t, id_t>> new_normalize_regions;
     //todo: remove debug comment:
     // snarl 1883644 1883647 righttmost is of size 1
@@ -129,14 +133,16 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             // }
             // divide handle always gives the original node id to the leftmost of the two 
             // new handles. In this case, that's what we want.
+            id_t original_leftmost = _graph.get_id(leftmost_handle);
             pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
+            desegregation_candidates.push_back(make_pair(make_pair(_graph.get_id(new_leftmosts.first), _graph.get_id(new_leftmosts.second)), original_leftmost));
             // cerr << "new leftmosts: 1: " << _graph.get_id(new_leftmosts.first) << " " << _graph.get_sequence(new_leftmosts.first) << " 2: " << _graph.get_id(new_leftmosts.second) << " " << _graph.get_sequence(new_leftmosts.second) << endl; 
             new_leftmost = _graph.get_id(new_leftmosts.second); 
-            // if seq is length one, mark the empty handle as to-remove after the separated regions are done with.
-            if (original_handle_seq_len == 1)
-            {
-                nodes_to_remove.emplace(_graph.get_id(new_leftmosts.first));
-            }
+            //// if seq is length one, mark the empty handle as to-remove after the separated regions are done with.
+            // if (original_handle_seq_len == 1)
+            // {
+            //     nodes_to_remove.emplace(_graph.get_id(new_leftmosts.first));
+            // }
             // encode the change in gbwt path in the gbwt.
             gbwt::vector_type original_gbwt_path;
             original_gbwt_path.emplace_back(gbwt::Node::encode(region.first, false));
@@ -211,7 +217,10 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             // }
 
             // cerr << "original node id: " << _graph.get_id(rightmost_handle) << endl;
+
+            id_t original_rightmost = _graph.get_id(rightmost_handle);
             pair<handle_t, handle_t> new_rightmosts = _graph.divide_handle(rightmost_handle, _graph.get_sequence(rightmost_handle).size()/2);
+            desegregation_candidates.push_back(make_pair(make_pair(_graph.get_id(new_rightmosts.first), _graph.get_id(new_rightmosts.second)), original_rightmost));
             // cerr << "0" << endl;
             // cerr << "new rightmosts left id: " << _graph.get_id(new_rightmosts.first) << " " << _graph.get_sequence(new_rightmosts.first) << endl;
             // cerr << "new rightmosts right id: " << _graph.get_id(new_rightmosts.second) << " " << _graph.get_sequence(new_rightmosts.second) << endl;
@@ -227,10 +236,10 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             // cerr << "new rightmosts right id: " << _graph.get_id(_graph.get_handle(region.second)) << " " << _graph.get_sequence(_graph.get_handle(region.second)) << endl;
             new_rightmost = new_node_id; 
             // if seq is length one, mark the empty handle as to-remove after the separated regions are done with.
-            if (original_handle_seq_len == 1)
-            {
-                nodes_to_remove.emplace(new_node_id);
-            }
+            // if (original_handle_seq_len == 1)
+            // {
+            //     nodes_to_remove.emplace(new_node_id);
+            // }
             // encode the change in gbwt path in the gbwt.
             gbwt::vector_type original_gbwt_path;
             original_gbwt_path.emplace_back(gbwt::Node::encode(region.second, false));
@@ -602,6 +611,7 @@ bool NormalizeRegionFinder::is_trivial(const pair<id_t, id_t>& snarl) {
 
 
 /**
+ * Copied from SnarlNormalizer.
  * Deletes the given handle's underlying node, and returns a new handle to a new node 
  * with the desired node_id (copied from normalize_snarls)//todo: move to an appropiate 
  *                                                          todo: place in handle library?
@@ -642,6 +652,92 @@ handle_t NormalizeRegionFinder::overwrite_node_id(const id_t old_node_id, const 
     _graph.destroy_handle(old_handle);
     return new_handle;
 }
+
+/// @brief Function used to remove the splits introduced in split_sources_and_sinks.
+///         (NOTE: this will overwrite the current _gbwt_changelog.
+/// @param desegregation_candidates every candidate in desegregation_candidates has a pair
+///         of ids that need to be merged into one id. That id is the other id in the outer pair.
+///         i.e. pair<to_merge_pair, original_id>.
+/// @return whatever needs to be updated in the gbwt.
+std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::desegregate_nodes(vector<pair<pair<id_t, id_t>, id_t>> desegregation_candidates)
+{
+    _gbwt_changelog.clear();
+    for (pair<pair<id_t, id_t>, id_t> candidate : desegregation_candidates)
+    {
+        pair<id_t, id_t> to_merge_pair = candidate.first;
+        id_t original_id = candidate.second;
+        //get edges pointing to the left of the to_merge_pair
+        vector<handle_t> left_handles;
+        _graph.follow_edges(_graph.get_handle(to_merge_pair.first), true, [&](handle_t left_handle){
+            left_handles.push_back(left_handle);
+        });
+
+        //get edges pointing to the right of the to_merge_pair.
+        vector<handle_t> right_handles;
+        _graph.follow_edges(_graph.get_handle(to_merge_pair.first), false, [&](handle_t right_handle){
+            right_handles.push_back(right_handle);
+        });
+
+        //get combined sequence of the to_merge_pair.
+        string to_merge_seq = _graph.get_sequence(_graph.get_handle(to_merge_pair.first)) + _graph.get_sequence(_graph.get_handle(to_merge_pair.second));
+
+        //get gbwt nodes of the to_merge_pair.
+        gbwt::vector_type before_merge;
+        before_merge.push_back(gbwt::Node::encode(to_merge_pair.first, false));
+        before_merge.push_back(gbwt::Node::encode(to_merge_pair.second, false));
+
+        //move paths moving over the to_merge_pair to a temporary handle:
+        handle_t temp_handle = _graph.create_handle(to_merge_seq);
+        for (handle_t left : left_handles)
+        {
+            _graph.create_edge(left, temp_handle);
+        }
+        for (handle_t right : right_handles)
+        {
+            _graph.create_edge(temp_handle, right);
+        }
+        _graph.for_each_step_on_handle(_graph.get_handle(to_merge_pair.first), [&](step_handle_t step)
+        {
+            path_handle_t path = _graph.get_path_handle_of_step(step);
+            if (!(step == _graph.path_end(path) || _graph.get_next_step(step) == _graph.path_end(path) || step == _graph.path_begin(path)))
+            {
+                //only move the path if it doesn't end partway through the node, because otherwise there's no way to anchor the end of the path to the new, bigger snarl.
+                step_handle_t prev = _graph.get_previous_step(step);
+                step_handle_t next = _graph.get_next_step(_graph.get_next_step(step));
+                vector<handle_t> new_path_location;
+                new_path_location.push_back(_graph.get_handle_of_step(prev));
+                new_path_location.push_back(temp_handle);
+                new_path_location.push_back(_graph.get_handle_of_step(next));
+
+                _graph.rewrite_segment(prev, next, new_path_location);
+            }
+        });
+
+        //delete the to_merge_pair. (note: this should delete a node with the original_id.)
+        //todo: comment out this if check if I'm confident it functions as expected.
+        if (!(to_merge_pair.first == original_id || to_merge_pair.second == original_id))
+        {
+            cerr << "original id not in to_merge_pair." << endl;
+        }
+        _graph.destroy_handle(_graph.get_handle(to_merge_pair.first));
+        _graph.destroy_handle(_graph.get_handle(to_merge_pair.second));
+
+        //create a new node with id original_id. And give it the sequence and edges of the to_merge_pair.
+        overwrite_node_id(_graph.get_id(temp_handle), original_id);
+
+        //add gbwt nodes of the merged pair
+        gbwt::vector_type after_merge;
+        after_merge.push_back(gbwt::Node::encode(original_id, false));
+
+        //record the graph edit in the _gbwt_changelog.
+        _gbwt_changelog.push_back(make_pair(before_merge, after_merge));
+    }
+
+    return _gbwt_changelog;
+
+}
+
+
 
 // /// @brief Specifically for replacing node six in tiny's example with a one base character for testing purposes.
 // std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::debug_replace_node_six()

@@ -14,8 +14,8 @@ class SnarlNormalizer {
   public:
     virtual ~SnarlNormalizer() = default;
 
-    SnarlNormalizer(MutablePathDeletableHandleGraph &graph, const gbwt::GBWT &gbwt, const gbwtgraph::GBWTGraph & gbwt_graph, const std::set<nid_t> & nodes_to_delete,
-                    const int max_handle_size, 
+    SnarlNormalizer(MutablePathDeletableHandleGraph &graph, const gbwt::GBWT &gbwt, const gbwtgraph::GBWTGraph & gbwt_graph,
+                    const int max_handle_size,
                     const int max_region_size,
                     const int max_snarl_spacing,
                     const int threads,
@@ -49,7 +49,6 @@ class SnarlNormalizer {
     // GBWTPathFinder approach.
     const gbwt::GBWT &_gbwt;
     const gbwtgraph::GBWTGraph &_gbwt_graph;
-    const std::set<nid_t> &_nodes_to_delete;
     // const gbwtgraph::GBWTGraph _gbwt_graph = gbwtgraph::GBWTGraph(_gbwt, _graph);
     // const gbwtgraph::GBWTGraph &_gbwt_graph = gbwtgraph::GBWTGraph(_gbwt, _graph);
     // vector<pair<vector<std::uint32_t>, vector<std::uint32_t>>> _gbwt_changelog; //todo: delete this
@@ -71,7 +70,7 @@ class SnarlNormalizer {
     unordered_set<pair<id_t, id_t>> _unskipped_snarls;
     //left bool signifies that an "A" is added to the left of the current snarl being
     //normalized. Same for the right bool with an "A" to the right.
-    pair<bool, bool> _sequence_added_because_empty_node = make_pair(false, false);
+    // pair<bool, bool> _sequence_added_because_empty_node = make_pair(false, false);
 //     vector<int> skipped_snarl_sizes.push_back(snarl_size); //todo: remove this later for efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped).
 //     
     // vector<int> unskipped_snarl_sizes.push_back(snarl_size); //todo: remove for increased efficiency? Or at least turn into a rolling calculation of averages. (just a rolling sum + a tracker of total number skipped). 
@@ -107,8 +106,12 @@ class SnarlNormalizer {
 
     bool test_haplotypes(const tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>>& haplotypes, const pair<id_t, id_t>& region, const int original_snarl_size);
 
-    pair< tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> , vector<pair<step_handle_t, step_handle_t>> >
-      extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region, const bool stop_inclusive=false);
+    void extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region, 
+        pair<bool, bool>& sequence_added_because_empty_node, 
+        tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>>& haplotypes, 
+        vector<pair<step_handle_t, step_handle_t>>& embedded_paths, 
+        vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, 
+        const bool stop_inclusive=false);
 
     // tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region);
 
