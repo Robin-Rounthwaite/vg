@@ -51,6 +51,31 @@ namespace algorithms {
 /// @return 
 gbwt::GBWT apply_gbwt_changelog(const gbwtgraph::GBWTGraph &gbwt_graph, const std::vector<vg::RebuildJob::mapping_type>& gbwt_changelog, const gbwt::GBWT& gbwt, const int& threads, const bool& debug_print)
 {
+    cerr << "gbwt.contains(12): " << gbwt.contains(gbwt::Node::encode(12, false)) << endl;
+    cerr << "gbwt.contains(16): " << gbwt.contains(gbwt::Node::encode(16, false)) << endl;
+    cerr << "gbwt.contains(9): " << gbwt.contains(gbwt::Node::encode(9, false)) << endl;
+    cerr << "gbwt.contains(17): " << gbwt.contains(gbwt::Node::encode(17, false)) << endl;
+    cerr << "gbwt.contains(6): " << gbwt.contains(gbwt::Node::encode(6, false)) << endl;
+    cerr << "gbwt.contains(18): " << gbwt.contains(gbwt::Node::encode(18, false)) << endl;
+    // //todo: begin debug code
+    cerr << "gbwt_changelog overview: " << endl;
+    for (auto mapping : gbwt_changelog)
+    {
+        cerr << "from: ";
+        for (auto unedited_region : mapping.first)
+        {
+            cerr << gbwt::Node::id(unedited_region) << " ";
+        }
+        cerr << endl;
+        cerr << "  to: ";
+        for (auto edited_region : mapping.second)
+        {
+            cerr << gbwt::Node::id(edited_region) << " ";
+        }
+        cerr << endl;
+    }
+    // //todo: end debug code
+
     vg::RebuildJob::mapping_type first_change = gbwt_changelog.front();
     std::vector<vg::RebuildJob::mapping_type> debug_changelog;
     debug_changelog.push_back(first_change);
@@ -77,6 +102,13 @@ gbwt::GBWT apply_gbwt_changelog(const gbwtgraph::GBWTGraph &gbwt_graph, const st
     cerr << "rebuild_gbwt" << endl;
     gbwt::GBWT output_gbwt = rebuild_gbwt(gbwt, jobs, node_to_job, rebuild_parameters);
     //todo: remove temporary non-parallelized rebuild_gbwt.
+    cerr << "output_gbwt.contains(12): " << output_gbwt.contains(gbwt::Node::encode(12, false)) << endl;
+    cerr << "output_gbwt.contains(16): " << output_gbwt.contains(gbwt::Node::encode(16, false)) << endl;
+    cerr << "output_gbwt.contains(9): " << output_gbwt.contains(gbwt::Node::encode(9, false)) << endl;
+    cerr << "output_gbwt.contains(17): " << output_gbwt.contains(gbwt::Node::encode(17, false)) << endl;
+    cerr << "output_gbwt.contains(6): " << output_gbwt.contains(gbwt::Node::encode(6, false)) << endl;
+    cerr << "output_gbwt.contains(18): " << output_gbwt.contains(gbwt::Node::encode(18, false)) << endl;
+
     // gbwt::GBWT output_gbwt = rebuild_gbwt(_gbwt, _gbwt_changelog);
     return output_gbwt;
 }

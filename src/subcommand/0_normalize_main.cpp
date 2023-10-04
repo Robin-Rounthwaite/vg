@@ -39,6 +39,84 @@ using namespace vg;
 using namespace vg::subcommand;
 
 
+
+SubHandleGraph extract_subgraph(const HandleGraph &graph,
+                                                 const vg::id_t leftmost_id,
+                                                 const vg::id_t rightmost_id) {
+    /// make a subgraph containing only nodes of interest. (e.g. a snarl)
+    // make empty subgraph
+    SubHandleGraph subgraph = SubHandleGraph(&graph);
+
+    // this bool tracks when we find the rightmost_id while extending the snarl. If we 
+    // never find it, then we must have been passed leftmost_id and rightmost_id in 
+    // reverse order. In that case, we'll throw an error.
+    bool found_rightmost = false;
+
+    unordered_set<vg::id_t> visited;  // to avoid counting the same node twice.
+    unordered_set<vg::id_t> to_visit; // nodes found that belong in the subgraph.
+
+    // initialize with leftmost_handle (because we move only to the right of leftmost_handle):
+    handle_t leftmost_handle = graph.get_handle(leftmost_id);
+    subgraph.add_handle(leftmost_handle);
+    visited.insert(graph.get_id(leftmost_handle));
+
+    // look only to the right of leftmost_handle
+    graph.follow_edges(leftmost_handle, false, [&](const handle_t handle) {
+        // mark the nodes to come as to_visit
+        if (visited.find(graph.get_id(handle)) == visited.end()) {
+            to_visit.insert(graph.get_id(handle));
+        }
+    });
+
+    /// explore the rest of the snarl:
+    while (to_visit.size() != 0) {
+        // remove cur_handle from to_visit
+        unordered_set<vg::id_t>::iterator cur_index = to_visit.begin();
+        handle_t cur_handle = graph.get_handle(*cur_index);
+
+        to_visit.erase(cur_index);
+
+        /// visit cur_handle
+        visited.insert(graph.get_id(cur_handle));
+
+        subgraph.add_handle(cur_handle);
+
+        if (graph.get_id(cur_handle) != rightmost_id) { // don't iterate past rightmost node!
+            // look for all nodes connected to cur_handle that need to be added
+            // looking to the left,
+            graph.follow_edges(cur_handle, true, [&](const handle_t handle) {
+                // mark the nodes to come as to_visit
+                if (visited.find(graph.get_id(handle)) == visited.end()) {
+                    to_visit.insert(graph.get_id(handle));
+                }
+            });
+            // looking to the right,
+            graph.follow_edges(cur_handle, false, [&](const handle_t handle) {
+                // mark the nodes to come as to_visit
+                if (visited.find(graph.get_id(handle)) == visited.end()) {
+                    to_visit.insert(graph.get_id(handle));
+                }
+            });
+        }
+        else
+        {
+            // cerr << "found the righmost node id. Here's the cur_handle: " << graph.get_id(cur_handle) << endl;
+            found_rightmost = true;
+        }
+    }
+    if (!found_rightmost)
+    {
+        // we never found rightmost! We probably were fed a rightmost_id that was actually to the left of the leftmost_id. Throw error.
+        cerr << "error:[vg normalize] in function extract_subgraph, was passed snarl with leftmost_id" << leftmost_id;
+        cerr << " and rightmost_id " << rightmost_id;
+        cerr << ". However, rightmost_id was not found to the right of leftmost_id.";
+        cerr << " Were the ids swapped?" << endl;
+        exit(1);
+    }
+    return subgraph;
+}
+
+
 void help_normalize(char **argv) {
   cerr
         << "usage: " << argv[0] << " normalize [options] <graph.vg> >[normalized.vg]"
@@ -180,7 +258,40 @@ int main_normalize(int argc, char **argv) {
       gbwt_graph->set_gbwt(*gbwt);
     }
 
+
     //todo: begin debug code
+    SubHandleGraph subgraph = extract_subgraph(*graph, 1, 15);
+    vg::algorithms::SnarlSequenceFinder seq_finder = vg::algorithms::SnarlSequenceFinder(*graph, subgraph, *gbwt_graph, 1, 15, false);
+    std::tuple<std::vector<std::vector<gbwtgraph::handle_t>>, 
+    std::vector<std::vector<gbwtgraph::handle_t>>, 
+    std::unordered_set<handlegraph::nid_t>>
+        seqs = seq_finder.find_gbwt_haps();
+        
+    unordered_set<string> haplotype_strings;
+    cerr << "ids of haplotypes:" << endl;
+    for (vector<handle_t> haplotype_handles : get<0>(seqs)) {
+        string hap;
+        for (handle_t handle : haplotype_handles) {
+            cerr << " " << gbwt_graph->get_id(handle);
+
+            // hap += _gbwt_graph.get_sequence(handle);
+            hap += gbwt_graph->get_sequence(handle);
+        }
+        cerr << endl;
+        haplotype_strings.emplace(hap);
+        cerr << "hap: " << hap << endl;
+    }
+
+    // gbwt::SearchState cur_state = gbwt_graph->get_state(gbwt_graph->get_handle(1));
+    // gbwt::SearchState last_state = gbwt_graph->get_state(gbwt_graph->get_handle(15));
+    // vector<string> paths;
+    // paths.
+    // while (cur_state != last_state)
+    // {
+    //     cur_state.
+    // }
+    // gbwt_graph->get_sequence()
+    
     cerr << "gbwt graph contents: " << endl;
     gbwt_graph->for_each_handle([&](handle_t handle){
 
@@ -269,8 +380,18 @@ int main_normalize(int argc, char **argv) {
     vector< pair< pair< vg::id_t, vg::id_t >, vg::id_t > > desegregation_candidates;
     std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, desegregation_candidates);
     cerr << "first parallel_regions_gbwt_update: " << parallel_regions_gbwt_updates.front().first << " " << parallel_regions_gbwt_updates.front().second << endl; 
+    
+    // //todo: begin debug code
+    cerr << "before gbwt update to include node 18: " << endl;
+    cerr << "does the graph contain node 18? " << graph->has_node(18) << endl;
+    cerr << "does the gbwt contain node 18? " << gbwt->contains(gbwt::Node::encode(18, false)) << endl;
 
-    cerr << "updating the gbwt and gbwt_graph with the isolated r egions" << endl;
+    // vg::io::save_handle_graph(graph.get(), std::cout);
+    // exit(1);
+    // //todo: end debug code
+
+
+    cerr << "updating the gbwt and gbwt_graph with the isolated regions" << endl;
     auto isolated_regions_gbwt_update_start = chrono::high_resolution_clock::now();    
 
     int gbwt_threads = threads;
@@ -280,8 +401,73 @@ int main_normalize(int argc, char **argv) {
     }
     cerr << "*****************************************************************" << endl;
 
+    // // //todo: begin debug code
+    // cerr << "gbwt_changelog overview: " << endl;
+    // int mapping_count = 0;
+    // for (auto& mapping : parallel_regions_gbwt_updates)
+    // {
+    //     //we are extending each mapping by one to the left and rigth to give more context. 
+    //     vg::RebuildJob::mapping_type new_mapping;
+
+    //     //first we extend the before-edited mapping
+    //     graph->follow_edges(graph->get_handle(gbwt::Node::id(mapping.first.front())), true, [&](handle_t left)
+    //     {
+    //         new_mapping.first.push_back(gbwt::Node::encode(graph->get_id(left), false));
+    //         return false;
+    //     });
+    //     for (auto original_mapping : mapping.first)
+    //     {
+    //         new_mapping.first.push_back(original_mapping);
+    //     }
+    //     graph->follow_edges(graph->get_handle(gbwt::Node::id(mapping.first.back())), false, [&](handle_t right)
+    //     {
+    //         new_mapping.first.push_back(gbwt::Node::encode(graph->get_id(right), false));
+    //         return false;
+    //     });
+
+    //     //next we extend the after-edited mapping
+    //     graph->follow_edges(graph->get_handle(gbwt::Node::id(mapping.second.front())), true, [&](handle_t left)
+    //     {
+    //         new_mapping.second.push_back(gbwt::Node::encode(graph->get_id(left), false));
+    //         return false;
+    //     });
+    //     for (auto original_mapping : mapping.second)
+    //     {
+    //         new_mapping.second.push_back(original_mapping);
+    //     }
+    //     graph->follow_edges(graph->get_handle(gbwt::Node::id(mapping.second.back())), false, [&](handle_t right)
+    //     {
+    //         new_mapping.second.push_back(gbwt::Node::encode(graph->get_id(right), false));
+    //         return false;
+    //     });
+
+    //     mapping = new_mapping;
+    //     mapping_count++;
+
+    //     // cerr << "from: ";
+    //     // for (auto unedited_region : mapping.first)
+    //     // {
+    //     //     cerr << gbwt::Node::id(unedited_region) << " ";
+    //     // }
+    //     // cerr << endl;
+    //     // cerr << "  to: ";
+    //     // for (auto edited_region : mapping.second)
+    //     // {
+    //     //     cerr << gbwt::Node::id(edited_region) << " ";
+    //     // }
+    //     // cerr << endl;
+    // }
+    // // //todo: end debug code
+
     gbwt::GBWT parallel_regions_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, parallel_regions_gbwt_updates, *gbwt, gbwt_threads, false);
-    
+
+    // //todo: begin debug code
+    cerr << "after gbwt update to include node 18: " << endl;
+    cerr << "does the graph contain node 18? " << graph->has_node(18) << endl;
+    cerr << "does the gbwt contain node 18? " << gbwt->contains(gbwt::Node::encode(18, false)) << endl;
+    // //todo: end debug code
+
+
     auto isolated_regions_gbwt_update_end = chrono::high_resolution_clock::now();    
     chrono::duration<double> gbwt_changelog_time = isolated_regions_gbwt_update_end - isolated_regions_gbwt_update_start;
     cerr << "Time spent generating the updated gbwt after isolating regions for parallelization: " << gbwt_changelog_time.count() << " s" << endl;
@@ -324,6 +510,31 @@ int main_normalize(int argc, char **argv) {
 
     // free some memory, since we don't need the original gbwt anymore.
     gbwt.reset();
+    // //todo: begin debug code
+
+    SubHandleGraph subgraph_2 = extract_subgraph(*graph, 1, 15);
+    vg::algorithms::SnarlSequenceFinder seq_finder_2 = vg::algorithms::SnarlSequenceFinder(*graph, subgraph_2, parallel_regions_gbwt_graph, 1, 15, false);
+    std::tuple<std::vector<std::vector<gbwtgraph::handle_t>>, 
+    std::vector<std::vector<gbwtgraph::handle_t>>, 
+    std::unordered_set<handlegraph::nid_t>>
+        seqs_2 = seq_finder_2.find_gbwt_haps();
+
+    // unordered_set<string> haplotype_strings;
+    cerr << "ids of haplotypes:" << endl;
+    for (vector<handle_t> haplotype_handles : get<0>(seqs_2)) {
+        string hap;
+        for (handle_t handle : haplotype_handles) {
+            cerr << " " << parallel_regions_gbwt_graph.get_id(handle);
+
+            // hap += _gbwt_graph.get_sequence(handle);
+            // hap += gbwt_graph->get_sequence(handle);
+        }
+        cerr << endl;
+        // haplotype_strings.emplace(hap);
+        // cerr << "hap: " << hap << endl;
+    }
+
+    // //todo: end debug code
 
     // //todo: delete debug code
     // cerr << " parallel_regions_gbwt_graph.get_sequence(parallel_regions_gbwt_graph.get_handle(18, false)) " << parallel_regions_gbwt_graph.get_sequence(parallel_regions_gbwt_graph.get_handle(18, false)) << endl;

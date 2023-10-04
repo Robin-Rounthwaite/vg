@@ -97,6 +97,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vect
 /// @return a set of sources and sinks representing each (now isolated) snarl.
 vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates){
     vector<pair<id_t, id_t>> new_normalize_regions;
+
     //todo: remove debug comment:
     // snarl 1883644 1883647 righttmost is of size 1
     // normalize_regions.clear();
@@ -134,6 +135,19 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             // divide handle always gives the original node id to the leftmost of the two 
             // new handles. In this case, that's what we want.
             id_t original_leftmost = _graph.get_id(leftmost_handle);
+            //get context of original leftmost for _gbwt_changelog:
+            id_t original_left_context;
+            _graph.follow_edges(leftmost_handle, true, [&](const handle_t handle) 
+            {
+                original_left_context = _graph.get_id(handle);
+                return false;
+            });
+            id_t original_right_context;
+            _graph.follow_edges(leftmost_handle, false, [&](const handle_t handle) 
+            {
+                original_right_context = _graph.get_id(handle);
+                return false;
+            });
             pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
             desegregation_candidates.push_back(make_pair(make_pair(_graph.get_id(new_leftmosts.first), _graph.get_id(new_leftmosts.second)), original_leftmost));
             // cerr << "new leftmosts: 1: " << _graph.get_id(new_leftmosts.first) << " " << _graph.get_sequence(new_leftmosts.first) << " 2: " << _graph.get_id(new_leftmosts.second) << " " << _graph.get_sequence(new_leftmosts.second) << endl; 
@@ -145,10 +159,15 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             // }
             // encode the change in gbwt path in the gbwt.
             gbwt::vector_type original_gbwt_path;
+            original_gbwt_path.emplace_back(gbwt::Node::encode(original_left_context, false));
             original_gbwt_path.emplace_back(gbwt::Node::encode(region.first, false));
+            original_gbwt_path.emplace_back(gbwt::Node::encode(original_right_context, false));
             gbwt::vector_type new_gbwt_path;
+            new_gbwt_path.emplace_back(gbwt::Node::encode(original_left_context, false));
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_leftmosts.first), false));
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_leftmosts.second), false));
+            new_gbwt_path.emplace_back(gbwt::Node::encode(original_right_context, false));
+
             // cerr << "replacing original leftmost " << region.first << " with " << _graph.get_id(new_leftmosts.first) << " " << _graph.get_id(new_leftmosts.second) << endl;
             _gbwt_changelog.emplace_back(original_gbwt_path, new_gbwt_path);
             // cerr << "contents of _gbwt_changelog" << endl; 
