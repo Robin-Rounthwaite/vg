@@ -689,14 +689,14 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::desegregate_nod
         vector<handle_t> left_handles;
         _graph.follow_edges(_graph.get_handle(to_merge_pair.first), true, [&](handle_t left_handle){
             left_handles.push_back(left_handle);
-            cerr << "tracking edge between left_handle " << _graph.get_id(left_handle) << " and current id " << original_id << endl;
+            // cerr << "tracking edge between left_handle " << _graph.get_id(left_handle) << " and current id " << original_id << endl;
         });
 
         //get edges pointing to the right of the to_merge_pair.
         vector<handle_t> right_handles;
         _graph.follow_edges(_graph.get_handle(to_merge_pair.second), false, [&](handle_t right_handle){
             right_handles.push_back(right_handle);
-            cerr << "tracking edge between right_handle " << _graph.get_id(right_handle) << " and current id " << original_id << endl;
+            // cerr << "tracking edge between right_handle " << _graph.get_id(right_handle) << " and current id " << original_id << endl;
         });
 
         //get combined sequence of the to_merge_pair.

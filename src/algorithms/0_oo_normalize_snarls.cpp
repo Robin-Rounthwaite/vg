@@ -97,29 +97,38 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     // split_normalize_regions.push_back(make_pair(157206, 157209));
     // split_normalize_regions.push_back(make_pair(157209, 157212));
     // split_normalize_regions.push_back(make_pair(157212, 157215));
+    int num_snarls_normalized = 0;
+        // Record start time
+    auto start = std::chrono::high_resolution_clock::now();
+    cerr << "starting clock for internal normalize stats." << endl;
+
 
     omp_set_num_threads(_threads);
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
-        cerr << "region: " << region.first << " " << region.second << endl;
-        if (!_graph.has_node(358816))
+
+        if (num_snarls_normalized%10000 == 0)
+        // if (num_snarls_normalized%1 == 0)
         {
-            cerr << "graph has lost node 358816." << endl;
-            exit(1);
+            auto cur_time = std::chrono::high_resolution_clock::now();
+
+            std::chrono::duration<double> elapsed = cur_time - start;
+            
+            cerr << "normalizing " << num_snarls_normalized+1 << "/" << split_normalize_regions.size() << " regions by time " << elapsed.count() << endl;
+            
         }
+        num_snarls_normalized++;
         pair<bool, bool> sequence_added_because_empty_node = make_pair(false, false);
 
-        _debug_print=true;
+        // _debug_print=true;
         // cerr << "region: " << region.first << " " << region.second << endl;
         // if (_debug_print)
         // {
         //     cerr << "about to extract_subgraph" << endl;
         // }
         // cerr << "does the graph contain node 18? " << _graph.has_node(18) << endl;
-        // cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
         SubHandleGraph snarl = extract_subgraph(_graph, region.first, region.second);
-        // cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
 
         //get original snarl size for comparison stats
         int original_snarl_size = 0;
@@ -174,11 +183,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            cerr << " sequence_added_because_empty_node.first: " << sequence_added_because_empty_node.first << " sequence_added_because_empty_node.second " << sequence_added_because_empty_node.second << endl; 
-            for (auto hap : get<0>(haplotypes))
-            {
-                cerr << "about to insert these haps: " << hap << endl;
-            }
             bool run_successful = poa_source_to_sink_haplotypes(get<0>(haplotypes), new_snarl, false);
             if (run_successful == false)
             {
@@ -237,8 +241,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         //     cerr << "number of total snarls that are getting normalized: " << normalized_snarls.size() << endl;
         // }
 
-        cerr << "END:does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
-
     }
 
     //integrate all the normalized snarls formed in the parallel loop above.
@@ -250,13 +252,10 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             cerr << "======================about to integrate snarl " << get<3>(snarl) << " " << get<4>(snarl) << "======================" << endl;
         }
 
-        cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
 
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
-        cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
         SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
-        cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
 
 
 
@@ -329,12 +328,12 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
     // cerr << endl;
     snarl.for_each_handle([&](handle_t handle){
         // cerr << "handle exists in second for each handle: " << snarl.get_id(handle) << endl;
-        cerr << "snarl.get_id(handle)" << " " << snarl.get_id(handle) << endl;
+        // cerr << "snarl.get_id(handle)" << " " << snarl.get_id(handle) << endl;
         const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)));
         // cerr << "_gbwt_graph.get_handle(snarl.get_id(handle))" << " " << _gbwt_graph.get_handle(snarl.get_id(handle)) << endl;
         // cerr << "_gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)))" << " " << _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle))) << endl;
-        cerr << "does the gbwt contain this node? " << _gbwt.contains(gbwt::Node::encode(snarl.get_id(handle), false)) << endl;
-        cerr << "does the gbwt_graph contian this node? " << _gbwt_graph.has_node(snarl.get_id(handle)) << endl;
+        // cerr << "does the gbwt contain this node? " << _gbwt.contains(gbwt::Node::encode(snarl.get_id(handle), false)) << endl;
+        // cerr << "does the gbwt_graph contian this node? " << _gbwt_graph.has_node(snarl.get_id(handle)) << endl;
 
         if (debug_state.empty())
         {

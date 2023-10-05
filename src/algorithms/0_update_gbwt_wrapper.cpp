@@ -52,8 +52,8 @@ namespace algorithms {
 gbwt::GBWT apply_gbwt_changelog(const gbwtgraph::GBWTGraph &gbwt_graph, const std::vector<vg::RebuildJob::mapping_type>& gbwt_changelog, const gbwt::GBWT& gbwt, const int& threads, const bool& debug_print)
 {
     // //todo: begin debug code
-    cerr<< "************ does gbwt graph have node 358816? " << gbwt_graph.has_node(358816) << endl;;
-    cerr << "gbwt.contains(358816): " << gbwt.contains(gbwt::Node::encode(358816, false)) << endl;
+    // cerr<< "************ does gbwt graph have node 358816? " << gbwt_graph.has_node(358816) << endl;;
+    // cerr << "gbwt.contains(358816): " << gbwt.contains(gbwt::Node::encode(358816, false)) << endl;
     // cerr << "gbwt.contains(12): " << gbwt.contains(gbwt::Node::encode(12, false)) << endl;
     // cerr << "gbwt.contains(16): " << gbwt.contains(gbwt::Node::encode(16, false)) << endl;
     // cerr << "gbwt.contains(9): " << gbwt.contains(gbwt::Node::encode(9, false)) << endl;
@@ -84,24 +84,24 @@ gbwt::GBWT apply_gbwt_changelog(const gbwtgraph::GBWTGraph &gbwt_graph, const st
     // cerr << "hanging change in apply_gbwt_changelog: " << first_change.first.back() << " " << first_change.second.back() << endl;
 
     // vector<unordered_set<nid_t>> components = gbwtgraph::weakly_connected_components(&_gbwt_graph);
-    cerr << "weakly_connected_components" << endl;
+    cerr << "\tweakly_connected_components" << endl;
     vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&gbwt_graph);
     // cerr << "size of components: " << components.size() << endl;
     // cerr << "gbwt_graph.has_node(1): " << gbwt_graph.has_node(1) << endl;
     gbwt_graph.has_node(1);
     // vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&_graph); // this was using the handlegraph algorithm, but I think we want the gbwt's view of the connected components.
 
-    cerr << "get_node_to_job" << endl;
+    cerr << "\tget_node_to_job" << endl;
     std::unordered_map<nid_t, size_t> node_to_job = get_node_to_job(components);
 
-    cerr << "divide_changelog_into_jobs" << endl;
+    cerr << "\tdivide_changelog_into_jobs" << endl;
     // std::vector<RebuildJob> jobs = divide_changelog_into_jobs(node_to_job, components, debug_changelog); 
     std::vector<RebuildJob> jobs = divide_changelog_into_jobs(node_to_job, components, gbwt_changelog); 
 
-    cerr << "set_update_gbwt_parameters" << endl;
+    cerr << "\tset_update_gbwt_parameters" << endl;
     RebuildParameters rebuild_parameters = set_update_gbwt_parameters(threads, debug_print);
     
-    cerr << "rebuild_gbwt" << endl;
+    cerr << "\trebuild_gbwt" << endl;
     gbwt::GBWT output_gbwt = rebuild_gbwt(gbwt, jobs, node_to_job, rebuild_parameters);
     // //todo: remove temporary non-parallelized rebuild_gbwt.
     // cerr << "output_gbwt.contains(12): " << output_gbwt.contains(gbwt::Node::encode(12, false)) << endl;
@@ -124,10 +124,6 @@ std::unordered_map<nid_t, size_t> get_node_to_job(const vector<unordered_set<nid
         // cerr << "i" << i << endl;
         for (nid_t node : weakly_connected_components[i])
         {
-            if (node == 358816)
-            {
-                cerr << "OI! 358816 is about to be put in node_to_job." << endl;
-            }
             // cerr << "node in i" << node << endl;
             node_to_job[node] = i;
         }
@@ -138,14 +134,14 @@ std::unordered_map<nid_t, size_t> get_node_to_job(const vector<unordered_set<nid
 std::vector<RebuildJob> divide_changelog_into_jobs(const std::unordered_map<nid_t, size_t>& node_to_job, const vector<unordered_set<nid_t>>& weakly_connected_components, const std::vector<vg::RebuildJob::mapping_type>& gbwt_changelog)
 {
     std::vector<RebuildJob> jobs(weakly_connected_components.size());
-    cerr << "jobs.size() " << jobs.size() << endl;   
-    cerr << "weakly_connected_components.size() " << weakly_connected_components.size() << endl;   
-    cerr << "jobs[0].size() " << jobs[0].mappings.size() << endl;
-    cerr << "node_to_job.at(358816) " << node_to_job.at(358816) << endl;
-    cerr << "jobs[node_to_job.at(358816)].mappings.size() " << jobs[node_to_job.at(358816)].mappings.size() << endl;
-    jobs[node_to_job.at(358816)].mappings.size();
-    cerr << "jobs[1].size() " << jobs[1].mappings.size() << endl;
-    cerr << "jobs[234234].size() " << jobs[234234].mappings.size() << endl;
+    // cerr << "jobs.size() " << jobs.size() << endl;   
+    // cerr << "weakly_connected_components.size() " << weakly_connected_components.size() << endl;   
+    // cerr << "jobs[0].size() " << jobs[0].mappings.size() << endl;
+    // cerr << "node_to_job.at(358816) " << node_to_job.at(358816) << endl;
+    // cerr << "jobs[node_to_job.at(358816)].mappings.size() " << jobs[node_to_job.at(358816)].mappings.size() << endl;
+    // jobs[node_to_job.at(358816)].mappings.size();
+    // cerr << "jobs[1].size() " << jobs[1].mappings.size() << endl;
+    // cerr << "jobs[234234].size() " << jobs[234234].mappings.size() << endl;
     for (pair<gbwt::vector_type, gbwt::vector_type> change : gbwt_changelog)
     {
         // cerr << "running jobs[node_to_job.at(358816)].mappings.size(): " <<endl;
@@ -168,7 +164,7 @@ std::vector<RebuildJob> divide_changelog_into_jobs(const std::unordered_map<nid_
         }
         catch (...)
         {
-            cerr << " this is the buggy node: " << gbwt::Node::id(change.first.front()) << endl;
+            cerr << "ERROR: in update_gbwt, jobs doesn't have an entry for a certain node. this is the buggy node: " << gbwt::Node::id(change.first.front()) << endl;
             exit(1);
         }
         RebuildJob& cur_job = jobs[node_to_job.at(gbwt::Node::id(change.first.front()))];
