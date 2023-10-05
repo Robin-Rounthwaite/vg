@@ -102,18 +102,24 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
+        cerr << "region: " << region.first << " " << region.second << endl;
+        if (!_graph.has_node(358816))
+        {
+            cerr << "graph has lost node 358816." << endl;
+            exit(1);
+        }
         pair<bool, bool> sequence_added_because_empty_node = make_pair(false, false);
 
         _debug_print=true;
-        cerr << "region: " << region.first << " " << region.second << endl;
-        if (_debug_print)
-        {
-            cerr << "about to extract_subgraph" << endl;
-        }
-        cerr << "does the graph contain node 18? " << _graph.has_node(18) << endl;
-        cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
+        // cerr << "region: " << region.first << " " << region.second << endl;
+        // if (_debug_print)
+        // {
+        //     cerr << "about to extract_subgraph" << endl;
+        // }
+        // cerr << "does the graph contain node 18? " << _graph.has_node(18) << endl;
+        // cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
         SubHandleGraph snarl = extract_subgraph(_graph, region.first, region.second);
-        cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
+        // cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
 
         //get original snarl size for comparison stats
         int original_snarl_size = 0;
@@ -123,8 +129,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
         // check that snarl is normalizable:
         bool passes_normalize_tests = test_snarl(snarl, region, original_snarl_size);
-        if (passes_normalize_tests == false) { cerr <<  "failed normalize tests" << endl; continue; }
-        // if (passes_normalize_tests == false) { /*cerr <<  "failed normalize tests" << endl;*/ continue; }
+        // if (passes_normalize_tests == false) { cerr <<  "failed normalize tests" << endl; continue; }
+        if (passes_normalize_tests == false) { /*cerr <<  "failed normalize tests" << endl;*/ continue; }
 
         if (_debug_print)
         {
@@ -145,10 +151,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes;
         vector<pair<step_handle_t, step_handle_t>> embedded_paths;
         vector<pair<gbwt::vector_type, string>> source_to_sink_gbwt_paths;
-        cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
         //extract the haplotypes:
         extract_haplotypes(snarl, region, sequence_added_because_empty_node, haplotypes, embedded_paths, source_to_sink_gbwt_paths, stop_inclusive);
-        cerr << "does the gbwt contain node 18? " << _gbwt.contains(gbwt::Node::encode(18, false)) << endl;
 
         if (_debug_print)
         {
@@ -198,7 +202,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         {
             string new_node_seq = new_snarl.get_sequence(to_insert_snarl_defining_handles.first.back());
             id_t new_node_id = new_snarl.get_id(to_insert_snarl_defining_handles.first.back());
-            cerr << "1 contents of replace node using sequence: " << new_node_id << " " <<  new_node_seq << " " << new_node_seq.substr(1) << endl;
+            // cerr << "1 contents of replace node using sequence: " << new_node_id << " " <<  new_node_seq << " " << new_node_seq.substr(1) << endl;
             replace_node_using_sequence(new_node_id, new_node_seq.substr(1), new_snarl);
             sequence_added_because_empty_node.first = false;
         }
@@ -206,7 +210,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         {
             string new_node_seq = new_snarl.get_sequence(to_insert_snarl_defining_handles.second.back());
             id_t new_node_id = new_snarl.get_id(to_insert_snarl_defining_handles.second.back());
-            cerr << "2 contents of replace node using sequence: " << new_node_id << " new_node_seq: " << new_node_seq << " new_node_seq.substr(1): " << new_node_seq.substr(1) << endl;
+            // cerr << "2 contents of replace node using sequence: " << new_node_id << " new_node_seq: " << new_node_seq << " new_node_seq.substr(1): " << new_node_seq.substr(1) << endl;
             replace_node_using_sequence(new_node_id, new_node_seq.substr(0, new_node_seq.size() - 1), new_snarl);
             sequence_added_because_empty_node.second = false;
         }

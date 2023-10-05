@@ -259,62 +259,62 @@ int main_normalize(int argc, char **argv) {
     }
 
 
-    //todo: begin debug code
-    SubHandleGraph subgraph = extract_subgraph(*graph, 1, 15);
-    vg::algorithms::SnarlSequenceFinder seq_finder = vg::algorithms::SnarlSequenceFinder(*graph, subgraph, *gbwt_graph, 1, 15, false);
-    std::tuple<std::vector<std::vector<gbwtgraph::handle_t>>, 
-    std::vector<std::vector<gbwtgraph::handle_t>>, 
-    std::unordered_set<handlegraph::nid_t>>
-        seqs = seq_finder.find_gbwt_haps();
+    // //todo: begin debug code
+    // SubHandleGraph subgraph = extract_subgraph(*graph, 1, 15);
+    // vg::algorithms::SnarlSequenceFinder seq_finder = vg::algorithms::SnarlSequenceFinder(*graph, subgraph, *gbwt_graph, 1, 15, false);
+    // std::tuple<std::vector<std::vector<gbwtgraph::handle_t>>, 
+    // std::vector<std::vector<gbwtgraph::handle_t>>, 
+    // std::unordered_set<handlegraph::nid_t>>
+    //     seqs = seq_finder.find_gbwt_haps();
         
-    unordered_set<string> haplotype_strings;
-    cerr << "ids of haplotypes:" << endl;
-    for (vector<handle_t> haplotype_handles : get<0>(seqs)) {
-        string hap;
-        for (handle_t handle : haplotype_handles) {
-            cerr << " " << gbwt_graph->get_id(handle);
+    // unordered_set<string> haplotype_strings;
+    // cerr << "ids of haplotypes:" << endl;
+    // for (vector<handle_t> haplotype_handles : get<0>(seqs)) {
+    //     string hap;
+    //     for (handle_t handle : haplotype_handles) {
+    //         cerr << " " << gbwt_graph->get_id(handle);
 
-            // hap += _gbwt_graph.get_sequence(handle);
-            hap += gbwt_graph->get_sequence(handle);
-        }
-        cerr << endl;
-        haplotype_strings.emplace(hap);
-        cerr << "hap: " << hap << endl;
-    }
-
-    // gbwt::SearchState cur_state = gbwt_graph->get_state(gbwt_graph->get_handle(1));
-    // gbwt::SearchState last_state = gbwt_graph->get_state(gbwt_graph->get_handle(15));
-    // vector<string> paths;
-    // paths.
-    // while (cur_state != last_state)
-    // {
-    //     cur_state.
+    //         // hap += _gbwt_graph.get_sequence(handle);
+    //         hap += gbwt_graph->get_sequence(handle);
+    //     }
+    //     cerr << endl;
+    //     haplotype_strings.emplace(hap);
+    //     // cerr << "hap: " << hap << endl;
     // }
-    // gbwt_graph->get_sequence()
-    
-    cerr << "gbwt graph contents: " << endl;
-    gbwt_graph->for_each_handle([&](handle_t handle){
 
-        cerr << gbwt_graph->get_id(handle) << " " << gbwt_graph->get_sequence(handle) << " | left:";
-        gbwt_graph->follow_edges(handle, true, [&](handle_t left)
-        {
-            cerr << " " << gbwt_graph->get_id(left);
-        });
-        cerr << " | right:";
-        gbwt_graph->follow_edges(handle, false, [&](handle_t right)
-        {
-            cerr << " " << gbwt_graph->get_id(right);
-        });
-        cerr << endl;
-        cerr << "does the gbwt contiain this node? " << gbwt->contains(gbwt::Node::encode(gbwt_graph->get_id(handle), false)) << endl;
-        // cerr << "does the gbwt contiain this node? " << _gbwt.contains(gbwt::Node::encode(snarl.get_id(handle), false)) << endl;
-        cerr << "does the gbwt_graph contian this node? " << gbwt_graph->has_node(gbwt_graph->get_id(handle)) << endl;
+    // // gbwt::SearchState cur_state = gbwt_graph->get_state(gbwt_graph->get_handle(1));
+    // // gbwt::SearchState last_state = gbwt_graph->get_state(gbwt_graph->get_handle(15));
+    // // vector<string> paths;
+    // // paths.
+    // // while (cur_state != last_state)
+    // // {
+    // //     cur_state.
+    // // }
+    // // gbwt_graph->get_sequence()
+    
+    // cerr << "gbwt graph contents: " << endl;
+    // gbwt_graph->for_each_handle([&](handle_t handle){
+
+    //     cerr << gbwt_graph->get_id(handle) << " " << gbwt_graph->get_sequence(handle) << " | left:";
+    //     gbwt_graph->follow_edges(handle, true, [&](handle_t left)
+    //     {
+    //         cerr << " " << gbwt_graph->get_id(left);
+    //     });
+    //     cerr << " | right:";
+    //     gbwt_graph->follow_edges(handle, false, [&](handle_t right)
+    //     {
+    //         cerr << " " << gbwt_graph->get_id(right);
+    //     });
+    //     cerr << endl;
+    //     cerr << "does the gbwt contiain this node? " << gbwt->contains(gbwt::Node::encode(gbwt_graph->get_id(handle), false)) << endl;
+    //     // cerr << "does the gbwt contiain this node? " << _gbwt.contains(gbwt::Node::encode(snarl.get_id(handle), false)) << endl;
+    //     cerr << "does the gbwt_graph contian this node? " << gbwt_graph->has_node(gbwt_graph->get_id(handle)) << endl;
 
         
-        // gbwt->contains(node);
-    });
+    //     // gbwt->contains(node);
+    // });
     
-    //todo: end debug code
+    // //todo: end debug code
 
     // v2 distance index
     cerr << "loading distance index" << endl;
@@ -360,36 +360,34 @@ int main_normalize(int argc, char **argv) {
     [&] (const bdsg::net_handle_t& node) {return true;});
 
 
+    // cerr << "calling weakly connected components before region finder" << endl;
+    // vector<unordered_set<nid_t>> components_0 = handlegraph::algorithms::weakly_connected_components(&(*gbwt_graph));
+    // cerr << "components_0.size() " << components_0.size() << endl;
+    //todo: re-uncomment begin .
 
+    // cerr << "segregating regions for parallelization" << endl; //so that edits in two parallel jobs can't touch the same node.
+    // vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_snarls_per_region, max_snarl_spacing);
 
-    cerr << "calling weakly connected components before region finder" << endl;
-    vector<unordered_set<nid_t>> components_0 = handlegraph::algorithms::weakly_connected_components(&(*gbwt_graph));
-    cerr << "components_0.size() " << components_0.size() << endl;
+    // // cerr << "calling weakly connected components after region finder" << endl;
+    // // vector<unordered_set<nid_t>> components_0_5 = handlegraph::algorithms::weakly_connected_components(&(*gbwt_graph));
 
-    cerr << "segregating regions for parallelization" << endl; //so that edits in two parallel jobs can't touch the same node.
-    vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_snarls_per_region, max_snarl_spacing);
-
-    cerr << "calling weakly connected components after region finder" << endl;
-    vector<unordered_set<nid_t>> components_0_5 = handlegraph::algorithms::weakly_connected_components(&(*gbwt_graph));
-    cerr << "components_0_5.size() " << components_0_5.size() << endl;
-    cerr << "*****************************************************************" << endl;
-
-    // std::set<vg::id_t> nodes_to_delete;
-    std::vector<std::pair<vg::id_t, vg::id_t>> parallel_normalize_regions;
-    cerr << "first snarl root " << snarl_roots.front().first << " " << snarl_roots.front().second << endl; 
-    vector< pair< pair< vg::id_t, vg::id_t >, vg::id_t > > desegregation_candidates;
-    std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, desegregation_candidates);
-    cerr << "first parallel_regions_gbwt_update: " << parallel_regions_gbwt_updates.front().first << " " << parallel_regions_gbwt_updates.front().second << endl; 
-    
-    // //todo: begin debug code
-    cerr << "before gbwt update to include node 18: " << endl;
-    cerr << "does the graph contain node 18? " << graph->has_node(18) << endl;
-    cerr << "does the gbwt contain node 18? " << gbwt->contains(gbwt::Node::encode(18, false)) << endl;
-
-    // vg::io::save_handle_graph(graph.get(), std::cout);
-    // exit(1);
-    // //todo: end debug code
-
+    // std::vector<std::pair<vg::id_t, vg::id_t>> parallel_normalize_regions;
+    // vector< pair< pair< vg::id_t, vg::id_t >, vg::id_t > > desegregation_candidates;
+    // std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, desegregation_candidates);
+    // // cerr << "first parallel_regions_gbwt_update: " << parallel_regions_gbwt_updates.front().first << " " << parallel_regions_gbwt_updates.front().second << endl; 
+    //todo: re-uncomment end.
+    handle_t debug_handle = graph->get_handle(168094);
+    cerr << "gbwt->contains(graph->get_id(debug_handle)) " << gbwt->contains(graph->get_id(debug_handle)) << endl;
+    cerr << "debug handle contents: " << graph->get_sequence(debug_handle) << endl;
+    pair<handle_t, handle_t> new_debugs = graph->divide_handle(debug_handle, graph->get_sequence(debug_handle).size()/2);
+    cerr << "new debugs seq: " << graph->get_sequence(new_debugs.first) << " " << graph->get_sequence(new_debugs.second) << endl;
+    gbwt::vector_type before;
+    before.push_back(gbwt::Node::encode(graph->get_id(debug_handle), false));
+    gbwt::vector_type after;
+    after.push_back(gbwt::Node::encode(graph->get_id(new_debugs.first), false));
+    after.push_back(gbwt::Node::encode(graph->get_id(new_debugs.second), false));
+    std::vector<vg::RebuildJob::mapping_type> debug_updates;
+    debug_updates.push_back(make_pair(before, after));
 
     cerr << "updating the gbwt and gbwt_graph with the isolated regions" << endl;
     auto isolated_regions_gbwt_update_start = chrono::high_resolution_clock::now();    
@@ -399,248 +397,197 @@ int main_normalize(int argc, char **argv) {
     {
       gbwt_threads = 12;
     }
-    cerr << "*****************************************************************" << endl;
-
-    // // //todo: begin debug code
-    // cerr << "gbwt_changelog overview: " << endl;
-    // int mapping_count = 0;
-    // for (auto& mapping : parallel_regions_gbwt_updates)
-    // {
-    //     //we are extending each mapping by one to the left and rigth to give more context. 
-    //     vg::RebuildJob::mapping_type new_mapping;
-
-    //     //first we extend the before-edited mapping
-    //     graph->follow_edges(graph->get_handle(gbwt::Node::id(mapping.first.front())), true, [&](handle_t left)
-    //     {
-    //         new_mapping.first.push_back(gbwt::Node::encode(graph->get_id(left), false));
-    //         return false;
-    //     });
-    //     for (auto original_mapping : mapping.first)
-    //     {
-    //         new_mapping.first.push_back(original_mapping);
-    //     }
-    //     graph->follow_edges(graph->get_handle(gbwt::Node::id(mapping.first.back())), false, [&](handle_t right)
-    //     {
-    //         new_mapping.first.push_back(gbwt::Node::encode(graph->get_id(right), false));
-    //         return false;
-    //     });
-
-    //     //next we extend the after-edited mapping
-    //     graph->follow_edges(graph->get_handle(gbwt::Node::id(mapping.second.front())), true, [&](handle_t left)
-    //     {
-    //         new_mapping.second.push_back(gbwt::Node::encode(graph->get_id(left), false));
-    //         return false;
-    //     });
-    //     for (auto original_mapping : mapping.second)
-    //     {
-    //         new_mapping.second.push_back(original_mapping);
-    //     }
-    //     graph->follow_edges(graph->get_handle(gbwt::Node::id(mapping.second.back())), false, [&](handle_t right)
-    //     {
-    //         new_mapping.second.push_back(gbwt::Node::encode(graph->get_id(right), false));
-    //         return false;
-    //     });
-
-    //     mapping = new_mapping;
-    //     mapping_count++;
-
-    //     // cerr << "from: ";
-    //     // for (auto unedited_region : mapping.first)
-    //     // {
-    //     //     cerr << gbwt::Node::id(unedited_region) << " ";
-    //     // }
-    //     // cerr << endl;
-    //     // cerr << "  to: ";
-    //     // for (auto edited_region : mapping.second)
-    //     // {
-    //     //     cerr << gbwt::Node::id(edited_region) << " ";
-    //     // }
-    //     // cerr << endl;
-    // }
-    // // //todo: end debug code
-
-    gbwt::GBWT parallel_regions_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, parallel_regions_gbwt_updates, *gbwt, gbwt_threads, false);
 
     // //todo: begin debug code
-    cerr << "after gbwt update to include node 18: " << endl;
-    cerr << "does the graph contain node 18? " << graph->has_node(18) << endl;
-    cerr << "does the gbwt contain node 18? " << gbwt->contains(gbwt::Node::encode(18, false)) << endl;
+    // vg::RebuildJob::mapping_type first = parallel_regions_gbwt_updates.front();
+    // cerr << "before update: ";
+    // for (auto before : first.first)
+    // {
+    //     cerr << " " << gbwt::Node::id(before);
+    // }
+    // cerr << endl;
+    // cerr << "after update: ";
+    // for (auto after : first.second)
+    // {
+    //     cerr << " " << gbwt::Node::id(after);
+    // }
+    // cerr << endl;
+
+    // // cerr << " " << first.second << endl;
+    // parallel_regions_gbwt_updates.clear();
+    // parallel_regions_gbwt_updates.push_back(first);
     // //todo: end debug code
+    gbwt::GBWT parallel_regions_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, debug_updates, *gbwt, gbwt_threads, false);
+    // gbwt::GBWT parallel_regions_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, parallel_regions_gbwt_updates, *gbwt, gbwt_threads, false);
+    //todo: *******************************************************************************DECOMMENT ALL LINES BELOW THIS FOR NORM:*******************************8888
+    // auto isolated_regions_gbwt_update_end = chrono::high_resolution_clock::now();    
+    // chrono::duration<double> gbwt_changelog_time = isolated_regions_gbwt_update_end - isolated_regions_gbwt_update_start;
+    // cerr << "Time spent generating the updated gbwt after isolating regions for parallelization: " << gbwt_changelog_time.count() << " s" << endl;
 
+    // cerr << "generating the updated gbwt graph" << endl;
+    // // make a new gbwt_graph for the parallel_regions_gbwt.
+    // gbwtgraph::GBWTGraph parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(parallel_regions_gbwt, *graph);
 
-    auto isolated_regions_gbwt_update_end = chrono::high_resolution_clock::now();    
-    chrono::duration<double> gbwt_changelog_time = isolated_regions_gbwt_update_end - isolated_regions_gbwt_update_start;
-    cerr << "Time spent generating the updated gbwt after isolating regions for parallelization: " << gbwt_changelog_time.count() << " s" << endl;
+    // //todo: begin debug code
+    // cerr << "after parallel regions update." << endl;
+    // cerr << "gbwt graph contents: " << endl;
+    // parallel_regions_gbwt_graph.for_each_handle([&](handle_t handle){
 
-    cerr << "generating the updated gbwt graph" << endl;
-    // make a new gbwt_graph for the parallel_regions_gbwt.
-    gbwtgraph::GBWTGraph parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(parallel_regions_gbwt, *graph);
-
-    cerr << "calling weakly connected components after region finder" << endl;
-    vector<unordered_set<nid_t>> components_0_7 = handlegraph::algorithms::weakly_connected_components(&(parallel_regions_gbwt_graph));
-    cerr << "components_0_7.size() " << components_0_7.size() << endl;
-
-    cerr << "*****************************************************************" << endl;
-    //todo: begin debug code
-    cerr << "after parallel regions update." << endl;
-    cerr << "gbwt graph contents: " << endl;
-    parallel_regions_gbwt_graph.for_each_handle([&](handle_t handle){
-
-        cerr << parallel_regions_gbwt_graph.get_id(handle) << " " << parallel_regions_gbwt_graph.get_sequence(handle) << " | left:";
-        parallel_regions_gbwt_graph.follow_edges(handle, true, [&](handle_t left)
-        {
-            cerr << " " << parallel_regions_gbwt_graph.get_id(left);
-        });
-        cerr << " | right:";
-        parallel_regions_gbwt_graph.follow_edges(handle, false, [&](handle_t right)
-        {
-            cerr << " " << parallel_regions_gbwt_graph.get_id(right);
-        });
-        cerr << endl;
-        cerr << "does the gbwt contiain this node? " << parallel_regions_gbwt.contains(gbwt::Node::encode(parallel_regions_gbwt_graph.get_id(handle), false)) << endl;
-        // cerr << "does the gbwt contiain this node? " << _gbwt.contains(gbwt::Node::encode(snarl.get_id(handle), false)) << endl;
-        cerr << "does the parallel_regions_gbwt_graph contain this node? " << parallel_regions_gbwt_graph.has_node(parallel_regions_gbwt_graph.get_id(handle)) << endl;
+    //     cerr << parallel_regions_gbwt_graph.get_id(handle) << " " << parallel_regions_gbwt_graph.get_sequence(handle) << " | left:";
+    //     parallel_regions_gbwt_graph.follow_edges(handle, true, [&](handle_t left)
+    //     {
+    //         cerr << " " << parallel_regions_gbwt_graph.get_id(left);
+    //     });
+    //     cerr << " | right:";
+    //     parallel_regions_gbwt_graph.follow_edges(handle, false, [&](handle_t right)
+    //     {
+    //         cerr << " " << parallel_regions_gbwt_graph.get_id(right);
+    //     });
+    //     cerr << endl;
+    //     cerr << "does the gbwt contiain this node? " << parallel_regions_gbwt.contains(gbwt::Node::encode(parallel_regions_gbwt_graph.get_id(handle), false)) << endl;
+    //     // cerr << "does the gbwt contiain this node? " << _gbwt.contains(gbwt::Node::encode(snarl.get_id(handle), false)) << endl;
+    //     cerr << "does the parallel_regions_gbwt_graph contain this node? " << parallel_regions_gbwt_graph.has_node(parallel_regions_gbwt_graph.get_id(handle)) << endl;
 
         
-        // gbwt->contains(node);
-    });
+    //     // gbwt->contains(node);
+    // });
     
-    //todo: end debug code
-
-
-    // free some memory, since we don't need the original gbwt anymore.
-    gbwt.reset();
-    // //todo: begin debug code
-
-    SubHandleGraph subgraph_2 = extract_subgraph(*graph, 1, 15);
-    vg::algorithms::SnarlSequenceFinder seq_finder_2 = vg::algorithms::SnarlSequenceFinder(*graph, subgraph_2, parallel_regions_gbwt_graph, 1, 15, false);
-    std::tuple<std::vector<std::vector<gbwtgraph::handle_t>>, 
-    std::vector<std::vector<gbwtgraph::handle_t>>, 
-    std::unordered_set<handlegraph::nid_t>>
-        seqs_2 = seq_finder_2.find_gbwt_haps();
-
-    // unordered_set<string> haplotype_strings;
-    cerr << "ids of haplotypes:" << endl;
-    for (vector<handle_t> haplotype_handles : get<0>(seqs_2)) {
-        string hap;
-        for (handle_t handle : haplotype_handles) {
-            cerr << " " << parallel_regions_gbwt_graph.get_id(handle);
-
-            // hap += _gbwt_graph.get_sequence(handle);
-            // hap += gbwt_graph->get_sequence(handle);
-        }
-        cerr << endl;
-        // haplotype_strings.emplace(hap);
-        // cerr << "hap: " << hap << endl;
-    }
-
     // //todo: end debug code
 
-    // //todo: delete debug code
-    // cerr << " parallel_regions_gbwt_graph.get_sequence(parallel_regions_gbwt_graph.get_handle(18, false)) " << parallel_regions_gbwt_graph.get_sequence(parallel_regions_gbwt_graph.get_handle(18, false)) << endl;
 
-    // =======running normalize=======
-    cerr << "=======running normalize=======" << endl;
-    string alignment_algorithm="sPOA"; bool disable_gbwt_update=false; bool debug_print=false; //todo: remove these options or else ensure they are implemented correctly.
+    // // free some memory, since we don't need the original gbwt anymore.
+    // gbwt.reset();
+    // // //todo: begin debug code
 
-    //todo: note: debug code.
-    // std::set<vg::id_t> nodes_to_delete;
+    // SubHandleGraph subgraph_2 = extract_subgraph(*graph, 1, 15);
+    // vg::algorithms::SnarlSequenceFinder seq_finder_2 = vg::algorithms::SnarlSequenceFinder(*graph, subgraph_2, parallel_regions_gbwt_graph, 1, 15, false);
+    // std::tuple<std::vector<std::vector<gbwtgraph::handle_t>>, 
+    // std::vector<std::vector<gbwtgraph::handle_t>>, 
+    // std::unordered_set<handlegraph::nid_t>>
+    //     seqs_2 = seq_finder_2.find_gbwt_haps();
+
+    // // unordered_set<string> haplotype_strings;
+    // cerr << "ids of haplotypes:" << endl;
+    // for (vector<handle_t> haplotype_handles : get<0>(seqs_2)) {
+    //     string hap;
+    //     for (handle_t handle : haplotype_handles) {
+    //         cerr << " " << parallel_regions_gbwt_graph.get_id(handle);
+
+    //         // hap += _gbwt_graph.get_sequence(handle);
+    //         // hap += gbwt_graph->get_sequence(handle);
+    //     }
+    //     cerr << endl;
+    //     // haplotype_strings.emplace(hap);
+    //     // cerr << "hap: " << hap << endl;
+    // }
+
+    // // //todo: end debug code
+
+    // // //todo: delete debug code
+    // // cerr << " parallel_regions_gbwt_graph.get_sequence(parallel_regions_gbwt_graph.get_handle(18, false)) " << parallel_regions_gbwt_graph.get_sequence(parallel_regions_gbwt_graph.get_handle(18, false)) << endl;
+
+    // // =======running normalize=======
+    // cerr << "=======running normalize=======" << endl;
+    // string alignment_algorithm="sPOA"; bool disable_gbwt_update=false; bool debug_print=false; //todo: remove these options or else ensure they are implemented correctly.
+
+    // //todo: note: debug code.
+    // // std::set<vg::id_t> nodes_to_delete;
+    // // vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
+    // //   *graph, *gbwt, *gbwt_graph, nodes_to_delete, max_handle_size, max_snarls_per_region, max_snarl_spacing, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
+    // // std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(snarl_roots);
     // vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
-    //   *graph, *gbwt, *gbwt_graph, nodes_to_delete, max_handle_size, max_snarls_per_region, max_snarl_spacing, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
-    // std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(snarl_roots);
-    vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
-      *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, max_handle_size, max_snarls_per_region, max_snarl_spacing, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
+    //   *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, max_handle_size, max_snarls_per_region, max_snarl_spacing, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
 
-    cerr << "calling weakly connected components before normalization" << endl;
-    vector<unordered_set<nid_t>> components_1 = handlegraph::algorithms::weakly_connected_components(&(parallel_regions_gbwt_graph));
-    cerr << "components_1.size() " << components_1.size() << endl;
+    // cerr << "calling weakly connected components before normalization" << endl;
+    // vector<unordered_set<nid_t>> components_1 = handlegraph::algorithms::weakly_connected_components(&(parallel_regions_gbwt_graph));
+    // cerr << "components_1.size() " << components_1.size() << endl;
 
-    std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
+    // std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
 
-    cerr << "calling weakly connected components after normalization" << endl;
-    vector<unordered_set<nid_t>> components_2 = handlegraph::algorithms::weakly_connected_components(&(parallel_regions_gbwt_graph));
-    cerr << "components_2.size() " << components_2.size() << endl;
+    // cerr << "calling weakly connected components after normalization" << endl;
+    // vector<unordered_set<nid_t>> components_2 = handlegraph::algorithms::weakly_connected_components(&(parallel_regions_gbwt_graph));
+    // cerr << "components_2.size() " << components_2.size() << endl;
 
-
-    //todo: begin debug code
-    cerr << "graph contents: " << endl;
-    graph->for_each_handle([&](handle_t handle){
-
-        cerr << graph->get_id(handle) << " " << graph->get_sequence(handle) << " | left:";
-        graph->follow_edges(handle, true, [&](handle_t left)
-        {
-            cerr << " " << graph->get_id(left);
-        });
-        cerr << " | right:";
-        graph->follow_edges(handle, false, [&](handle_t right)
-        {
-            cerr << " " << graph->get_id(right);
-        });
-        cerr << endl;
-    });
-    
-    //todo: end debug code
-
-
-    cerr << "=======updating gbwt after normalization and before desegregating regions=======" << endl;
 
     // //todo: begin debug code
-    // cerr << "first I'll try running update with just the first gbwt update." << endl;
-    // cerr << "size of gbwt_normalize_updates: " << gbwt_normalize_updates.size() << endl;
-    // auto saved = gbwt_normalize_updates.back();
-    // cerr << saved.first << " | " << saved.second << endl;
-    // gbwt_normalize_updates.clear();
-    // gbwt_normalize_updates.push_back(saved);
-    // cerr << saved.first << " | " << saved.second << endl;
-    // // gbwt::Node::id(node);
+    // cerr << "graph contents: " << endl;
+    // graph->for_each_handle([&](handle_t handle){
 
-    cerr << "saving updated graph to file" << endl;
-    //save normalized graph
-    vg::io::save_handle_graph(graph.get(), std::cout);
-    exit(1);
-
+    //     cerr << graph->get_id(handle) << " " << graph->get_sequence(handle) << " | left:";
+    //     graph->follow_edges(handle, true, [&](handle_t left)
+    //     {
+    //         cerr << " " << graph->get_id(left);
+    //     });
+    //     cerr << " | right:";
+    //     graph->follow_edges(handle, false, [&](handle_t right)
+    //     {
+    //         cerr << " " << graph->get_id(right);
+    //     });
+    //     cerr << endl;
+    // });
+    
     // //todo: end debug code
 
-    cerr << "updating gbwt after normalization" << endl;
-    auto _post_norm_gbwt_update_start = chrono::high_resolution_clock::now();
-    gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(parallel_regions_gbwt_graph, gbwt_normalize_updates, parallel_regions_gbwt, gbwt_threads, false);
-    auto _post_norm_gbwt_update_end = chrono::high_resolution_clock::now();    
-    chrono::duration<double> _post_norm_gbwt_update_elapsed = _post_norm_gbwt_update_end - _post_norm_gbwt_update_start;
-    cerr << "elapsed time from updating gbwt after normalization: " << _post_norm_gbwt_update_elapsed.count() << " s" << endl;
+
+    // cerr << "=======updating gbwt after normalization and before desegregating regions=======" << endl;
+
+    // // //todo: begin debug code
+    // // cerr << "first I'll try running update with just the first gbwt update." << endl;
+    // // cerr << "size of gbwt_normalize_updates: " << gbwt_normalize_updates.size() << endl;
+    // // auto saved = gbwt_normalize_updates.back();
+    // // cerr << saved.first << " | " << saved.second << endl;
+    // // gbwt_normalize_updates.clear();
+    // // gbwt_normalize_updates.push_back(saved);
+    // // cerr << saved.first << " | " << saved.second << endl;
+    // // // gbwt::Node::id(node);
+
+    // // cerr << "saving updated graph to file" << endl;
+    // // //save normalized graph
+    // // vg::io::save_handle_graph(graph.get(), std::cout);
+    // // exit(1);
+
+    // // //todo: end debug code
+
+    // cerr << "updating gbwt after normalization" << endl;
+    // auto _post_norm_gbwt_update_start = chrono::high_resolution_clock::now();
+    // gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(parallel_regions_gbwt_graph, gbwt_normalize_updates, parallel_regions_gbwt, gbwt_threads, false);
+    // auto _post_norm_gbwt_update_end = chrono::high_resolution_clock::now();    
+    // chrono::duration<double> _post_norm_gbwt_update_elapsed = _post_norm_gbwt_update_end - _post_norm_gbwt_update_start;
+    // cerr << "elapsed time from updating gbwt after normalization: " << _post_norm_gbwt_update_elapsed.count() << " s" << endl;
 
 
-    cerr << "generating the post-normalization gbwt graph" << endl;
-    // make a new gbwt_graph for the parallel_regions_gbwt.
-    gbwtgraph::GBWTGraph normalized_gbwt_graph = gbwtgraph::GBWTGraph(normalized_gbwt, *graph);
+    // cerr << "generating the post-normalization gbwt graph" << endl;
+    // // make a new gbwt_graph for the parallel_regions_gbwt.
+    // gbwtgraph::GBWTGraph normalized_gbwt_graph = gbwtgraph::GBWTGraph(normalized_gbwt, *graph);
 
-    cerr << "=======desegregating normalization regions after parallelized normalization=======" << endl;
+    // cerr << "=======desegregating normalization regions after parallelized normalization=======" << endl;
 
-    cerr << "desegregating the normalize regions." << endl;
-    vg::algorithms::NormalizeRegionFinder post_norm_region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_snarls_per_region, max_snarl_spacing);
-    //merges nodes, updates entries in gbwt_normalize to match those merged nodes. (note: is there a way to make this O(n), rather than O(n^2)? Maybe a reverse index... seems possibly a distraction. Could be worth just running desegregate nodes after updating the gbwt, and update the gbwt a third time.)
-    std::vector<vg::RebuildJob::mapping_type> desegregated_regions_gbwt_updates = post_norm_region_finder.desegregate_nodes(desegregation_candidates);
+    // cerr << "desegregating the normalize regions." << endl;
+    // vg::algorithms::NormalizeRegionFinder post_norm_region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_snarls_per_region, max_snarl_spacing);
+    // //merges nodes, updates entries in gbwt_normalize to match those merged nodes. (note: is there a way to make this O(n), rather than O(n^2)? Maybe a reverse index... seems possibly a distraction. Could be worth just running desegregate nodes after updating the gbwt, and update the gbwt a third time.)
+    // std::vector<vg::RebuildJob::mapping_type> desegregated_regions_gbwt_updates = post_norm_region_finder.desegregate_nodes(desegregation_candidates);
 
-    cerr << "======preparing and saving output=======" << endl;
+    // cerr << "======preparing and saving output=======" << endl;
 
-    cerr << "saving updated graph to file" << endl;
-    //save normalized graph
-    vg::io::save_handle_graph(graph.get(), std::cout);
+    // cerr << "saving updated graph to file" << endl;
+    // //save normalized graph
+    // vg::io::save_handle_graph(graph.get(), std::cout);
 
-    cerr << "updating gbwt after de-isolation." << endl;
-    auto _desegregated_regions_gbwt_update_start = chrono::high_resolution_clock::now();    
-    gbwt::GBWT normalized_desegregated_gbwt = vg::algorithms::apply_gbwt_changelog(normalized_gbwt_graph, desegregated_regions_gbwt_updates, normalized_gbwt, gbwt_threads, false);
+    // cerr << "updating gbwt after de-isolation." << endl;
+    // auto _desegregated_regions_gbwt_update_start = chrono::high_resolution_clock::now();    
+    // gbwt::GBWT normalized_desegregated_gbwt = vg::algorithms::apply_gbwt_changelog(normalized_gbwt_graph, desegregated_regions_gbwt_updates, normalized_gbwt, gbwt_threads, false);
 
-    auto _desegregated_regions_gbwt_update_end = chrono::high_resolution_clock::now();    
-    chrono::duration<double> _desegregated_regions_gbwt_update_elapsed = _desegregated_regions_gbwt_update_end - _desegregated_regions_gbwt_update_start;
-    cerr << "elapsed time from updating gbwt after de-isolating regions: " << _desegregated_regions_gbwt_update_elapsed.count() << " s" << endl;
+    // auto _desegregated_regions_gbwt_update_end = chrono::high_resolution_clock::now();    
+    // chrono::duration<double> _desegregated_regions_gbwt_update_elapsed = _desegregated_regions_gbwt_update_end - _desegregated_regions_gbwt_update_start;
+    // cerr << "elapsed time from updating gbwt after de-isolating regions: " << _desegregated_regions_gbwt_update_elapsed.count() << " s" << endl;
 
-    cerr << "saving updated gbwt" << endl;
-    save_gbwt(normalized_desegregated_gbwt, output_gbwt_file, true);
+    // cerr << "saving updated gbwt" << endl;
+    // save_gbwt(normalized_desegregated_gbwt, output_gbwt_file, true);
 
-    // Record end time
-    auto finish = std::chrono::high_resolution_clock::now();
-    chrono::duration<double> elapsed = finish - start;
-    cerr << "Total elapsed time: " << elapsed.count() << " s" << endl;
+    // // Record end time
+    // auto finish = std::chrono::high_resolution_clock::now();
+    // chrono::duration<double> elapsed = finish - start;
+    // cerr << "Total elapsed time: " << elapsed.count() << " s" << endl;
 
 
     return 0;

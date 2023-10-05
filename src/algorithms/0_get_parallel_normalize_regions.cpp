@@ -159,14 +159,14 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             // }
             // encode the change in gbwt path in the gbwt.
             gbwt::vector_type original_gbwt_path;
-            original_gbwt_path.emplace_back(gbwt::Node::encode(original_left_context, false));
+            // original_gbwt_path.emplace_back(gbwt::Node::encode(original_left_context, false));
             original_gbwt_path.emplace_back(gbwt::Node::encode(region.first, false));
-            original_gbwt_path.emplace_back(gbwt::Node::encode(original_right_context, false));
+            // original_gbwt_path.emplace_back(gbwt::Node::encode(original_right_context, false));
             gbwt::vector_type new_gbwt_path;
-            new_gbwt_path.emplace_back(gbwt::Node::encode(original_left_context, false));
+            // new_gbwt_path.emplace_back(gbwt::Node::encode(original_left_context, false));
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_leftmosts.first), false));
             new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_leftmosts.second), false));
-            new_gbwt_path.emplace_back(gbwt::Node::encode(original_right_context, false));
+            // new_gbwt_path.emplace_back(gbwt::Node::encode(original_right_context, false));
 
             // cerr << "replacing original leftmost " << region.first << " with " << _graph.get_id(new_leftmosts.first) << " " << _graph.get_id(new_leftmosts.second) << endl;
             _gbwt_changelog.emplace_back(original_gbwt_path, new_gbwt_path);
@@ -353,7 +353,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
         // });
 
         new_normalize_regions.push_back(make_pair(new_leftmost, new_rightmost));
-
+        // break;
     }
     return new_normalize_regions;
 }
@@ -689,12 +689,14 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::desegregate_nod
         vector<handle_t> left_handles;
         _graph.follow_edges(_graph.get_handle(to_merge_pair.first), true, [&](handle_t left_handle){
             left_handles.push_back(left_handle);
+            cerr << "tracking edge between left_handle " << _graph.get_id(left_handle) << " and current id " << original_id << endl;
         });
 
         //get edges pointing to the right of the to_merge_pair.
         vector<handle_t> right_handles;
-        _graph.follow_edges(_graph.get_handle(to_merge_pair.first), false, [&](handle_t right_handle){
+        _graph.follow_edges(_graph.get_handle(to_merge_pair.second), false, [&](handle_t right_handle){
             right_handles.push_back(right_handle);
+            cerr << "tracking edge between right_handle " << _graph.get_id(right_handle) << " and current id " << original_id << endl;
         });
 
         //get combined sequence of the to_merge_pair.
@@ -726,7 +728,6 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::desegregate_nod
                 vector<handle_t> new_path_location;
                 new_path_location.push_back(_graph.get_handle_of_step(prev));
                 new_path_location.push_back(temp_handle);
-                new_path_location.push_back(_graph.get_handle_of_step(next));
 
                 _graph.rewrite_segment(prev, next, new_path_location);
             }
