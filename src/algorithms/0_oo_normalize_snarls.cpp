@@ -337,7 +337,7 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
 
         if (debug_state.empty())
         {
-            cerr << "debug state is empty." << endl;
+            // cerr << "debug state is empty." << endl;
             all_handles_in_gbwt = false;
             return;
         }

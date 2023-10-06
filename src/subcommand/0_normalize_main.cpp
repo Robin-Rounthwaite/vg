@@ -40,81 +40,81 @@ using namespace vg::subcommand;
 
 
 
-SubHandleGraph extract_subgraph(const HandleGraph &graph,
-                                                 const vg::id_t leftmost_id,
-                                                 const vg::id_t rightmost_id) {
-    /// make a subgraph containing only nodes of interest. (e.g. a snarl)
-    // make empty subgraph
-    SubHandleGraph subgraph = SubHandleGraph(&graph);
+// SubHandleGraph extract_subgraph(const HandleGraph &graph,
+//                                                  const vg::id_t leftmost_id,
+//                                                  const vg::id_t rightmost_id) {
+//     /// make a subgraph containing only nodes of interest. (e.g. a snarl)
+//     // make empty subgraph
+//     SubHandleGraph subgraph = SubHandleGraph(&graph);
 
-    // this bool tracks when we find the rightmost_id while extending the snarl. If we 
-    // never find it, then we must have been passed leftmost_id and rightmost_id in 
-    // reverse order. In that case, we'll throw an error.
-    bool found_rightmost = false;
+//     // this bool tracks when we find the rightmost_id while extending the snarl. If we 
+//     // never find it, then we must have been passed leftmost_id and rightmost_id in 
+//     // reverse order. In that case, we'll throw an error.
+//     bool found_rightmost = false;
 
-    unordered_set<vg::id_t> visited;  // to avoid counting the same node twice.
-    unordered_set<vg::id_t> to_visit; // nodes found that belong in the subgraph.
+//     unordered_set<vg::id_t> visited;  // to avoid counting the same node twice.
+//     unordered_set<vg::id_t> to_visit; // nodes found that belong in the subgraph.
 
-    // initialize with leftmost_handle (because we move only to the right of leftmost_handle):
-    handle_t leftmost_handle = graph.get_handle(leftmost_id);
-    subgraph.add_handle(leftmost_handle);
-    visited.insert(graph.get_id(leftmost_handle));
+//     // initialize with leftmost_handle (because we move only to the right of leftmost_handle):
+//     handle_t leftmost_handle = graph.get_handle(leftmost_id);
+//     subgraph.add_handle(leftmost_handle);
+//     visited.insert(graph.get_id(leftmost_handle));
 
-    // look only to the right of leftmost_handle
-    graph.follow_edges(leftmost_handle, false, [&](const handle_t handle) {
-        // mark the nodes to come as to_visit
-        if (visited.find(graph.get_id(handle)) == visited.end()) {
-            to_visit.insert(graph.get_id(handle));
-        }
-    });
+//     // look only to the right of leftmost_handle
+//     graph.follow_edges(leftmost_handle, false, [&](const handle_t handle) {
+//         // mark the nodes to come as to_visit
+//         if (visited.find(graph.get_id(handle)) == visited.end()) {
+//             to_visit.insert(graph.get_id(handle));
+//         }
+//     });
 
-    /// explore the rest of the snarl:
-    while (to_visit.size() != 0) {
-        // remove cur_handle from to_visit
-        unordered_set<vg::id_t>::iterator cur_index = to_visit.begin();
-        handle_t cur_handle = graph.get_handle(*cur_index);
+//     /// explore the rest of the snarl:
+//     while (to_visit.size() != 0) {
+//         // remove cur_handle from to_visit
+//         unordered_set<vg::id_t>::iterator cur_index = to_visit.begin();
+//         handle_t cur_handle = graph.get_handle(*cur_index);
 
-        to_visit.erase(cur_index);
+//         to_visit.erase(cur_index);
 
-        /// visit cur_handle
-        visited.insert(graph.get_id(cur_handle));
+//         /// visit cur_handle
+//         visited.insert(graph.get_id(cur_handle));
 
-        subgraph.add_handle(cur_handle);
+//         subgraph.add_handle(cur_handle);
 
-        if (graph.get_id(cur_handle) != rightmost_id) { // don't iterate past rightmost node!
-            // look for all nodes connected to cur_handle that need to be added
-            // looking to the left,
-            graph.follow_edges(cur_handle, true, [&](const handle_t handle) {
-                // mark the nodes to come as to_visit
-                if (visited.find(graph.get_id(handle)) == visited.end()) {
-                    to_visit.insert(graph.get_id(handle));
-                }
-            });
-            // looking to the right,
-            graph.follow_edges(cur_handle, false, [&](const handle_t handle) {
-                // mark the nodes to come as to_visit
-                if (visited.find(graph.get_id(handle)) == visited.end()) {
-                    to_visit.insert(graph.get_id(handle));
-                }
-            });
-        }
-        else
-        {
-            // cerr << "found the righmost node id. Here's the cur_handle: " << graph.get_id(cur_handle) << endl;
-            found_rightmost = true;
-        }
-    }
-    if (!found_rightmost)
-    {
-        // we never found rightmost! We probably were fed a rightmost_id that was actually to the left of the leftmost_id. Throw error.
-        cerr << "error:[vg normalize] in function extract_subgraph, was passed snarl with leftmost_id" << leftmost_id;
-        cerr << " and rightmost_id " << rightmost_id;
-        cerr << ". However, rightmost_id was not found to the right of leftmost_id.";
-        cerr << " Were the ids swapped?" << endl;
-        exit(1);
-    }
-    return subgraph;
-}
+//         if (graph.get_id(cur_handle) != rightmost_id) { // don't iterate past rightmost node!
+//             // look for all nodes connected to cur_handle that need to be added
+//             // looking to the left,
+//             graph.follow_edges(cur_handle, true, [&](const handle_t handle) {
+//                 // mark the nodes to come as to_visit
+//                 if (visited.find(graph.get_id(handle)) == visited.end()) {
+//                     to_visit.insert(graph.get_id(handle));
+//                 }
+//             });
+//             // looking to the right,
+//             graph.follow_edges(cur_handle, false, [&](const handle_t handle) {
+//                 // mark the nodes to come as to_visit
+//                 if (visited.find(graph.get_id(handle)) == visited.end()) {
+//                     to_visit.insert(graph.get_id(handle));
+//                 }
+//             });
+//         }
+//         else
+//         {
+//             // cerr << "found the righmost node id. Here's the cur_handle: " << graph.get_id(cur_handle) << endl;
+//             found_rightmost = true;
+//         }
+//     }
+//     if (!found_rightmost)
+//     {
+//         // we never found rightmost! We probably were fed a rightmost_id that was actually to the left of the leftmost_id. Throw error.
+//         cerr << "error:[vg normalize] in function extract_subgraph, was passed snarl with leftmost_id" << leftmost_id;
+//         cerr << " and rightmost_id " << rightmost_id;
+//         cerr << ". However, rightmost_id was not found to the right of leftmost_id.";
+//         cerr << " Were the ids swapped?" << endl;
+//         exit(1);
+//     }
+//     return subgraph;
+// }
 
 
 void help_normalize(char **argv) {
@@ -138,6 +138,10 @@ void help_normalize(char **argv) {
         //todo: allow the user to specify normalize and update_gbwt threads separately.
         << "    -t, --threads      The number of threads used in the normalization process. In addition to the normalization step, it affects the update_gbwt step, which can grow very long without multithreading. To prevent overusing memory, the update_gbwt step will only use up to 14 threads (even if more is specified), but the normalization step can use as many as specified, so long as there are regions that still need realigning.  Default:14."
         << endl
+        << "    -s, --segregate_regions_only       segregates the graph into segregated "
+            "regions, and generates an updated gbwt. This allows for easy tests of "
+            "normalize on the segregated graph without having to update the gbwt. "
+            "(debugging tool)" << endl
         << "    -h, --help      print this help info." << endl;
 }
 
@@ -154,6 +158,7 @@ int main_normalize(int argc, char **argv) {
     string output_gbwt_file = "normalized.gbwt";
     int max_handle_size = 32;
     int threads = 14;
+    bool segregate_regions_only = false;
 
     //todo: make options for these variables.
     // dictates the number of snarls that may be clustered into a single region.
@@ -174,9 +179,10 @@ int main_normalize(int argc, char **argv) {
             {"output_gbwt", required_argument, 0, 'o'},
             {"max_handle_size", required_argument, 0, 'l'},
             {"threads", required_argument, 0, 't'},
+            {"segregate_regions_only", required_argument, 0, 's'},
             {0, 0, 0, 0}};
         int option_index = 0;
-        c = getopt_long(argc, argv, "hg:d:r:o:l:t:", long_options,
+        c = getopt_long(argc, argv, "hg:d:r:o:l:t:s", long_options,
                         &option_index);
         // Detect the end of the options.
         if (c == -1)
@@ -206,6 +212,10 @@ int main_normalize(int argc, char **argv) {
 
         case 't':
             threads = parse<int>(optarg);
+            break;
+
+        case 's':
+            segregate_regions_only = true;
             break;
 
         case 'h':
@@ -418,6 +428,19 @@ int main_normalize(int argc, char **argv) {
     cerr << "generating the updated gbwt graph" << endl;
     // make a new gbwt_graph for the parallel_regions_gbwt.
     gbwtgraph::GBWTGraph parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(parallel_regions_gbwt, *graph);
+
+    if (segregate_regions_only)
+    {
+        cerr << "saving updated graph to file" << endl;
+        //save normalized graph
+        vg::io::save_handle_graph(graph.get(), std::cout);
+
+        cerr << "saving updated gbwt" << endl;
+        save_gbwt(parallel_regions_gbwt, output_gbwt_file, true);
+
+        exit(0);
+
+    }
 
     // //todo: begin debug code
     // cerr << "after parallel regions update." << endl;
