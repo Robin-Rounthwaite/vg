@@ -51,33 +51,12 @@ namespace algorithms {
 /// @return 
 gbwt::GBWT apply_gbwt_changelog(const gbwtgraph::GBWTGraph &gbwt_graph, const std::vector<vg::RebuildJob::mapping_type>& gbwt_changelog, const gbwt::GBWT& gbwt, const int& threads, const bool& debug_print)
 {
-    // //todo: begin debug code
-    // cerr<< "************ does gbwt graph have node 358816? " << gbwt_graph.has_node(358816) << endl;;
-    // cerr << "gbwt.contains(358816): " << gbwt.contains(gbwt::Node::encode(358816, false)) << endl;
-    // cerr << "gbwt.contains(12): " << gbwt.contains(gbwt::Node::encode(12, false)) << endl;
-    // cerr << "gbwt.contains(16): " << gbwt.contains(gbwt::Node::encode(16, false)) << endl;
-    // cerr << "gbwt.contains(9): " << gbwt.contains(gbwt::Node::encode(9, false)) << endl;
-    // cerr << "gbwt.contains(17): " << gbwt.contains(gbwt::Node::encode(17, false)) << endl;
-    // cerr << "gbwt.contains(6): " << gbwt.contains(gbwt::Node::encode(6, false)) << endl;
-    // cerr << "gbwt.contains(18): " << gbwt.contains(gbwt::Node::encode(18, false)) << endl;
-    // cerr << "gbwt_changelog overview: " << endl;
-    // for (auto mapping : gbwt_changelog)
-    // {
-    //     cerr << "from: ";
-    //     for (auto unedited_region : mapping.first)
-    //     {
-    //         cerr << gbwt::Node::id(unedited_region) << " ";
-    //     }
-    //     cerr << endl;
-    //     cerr << "  to: ";
-    //     for (auto edited_region : mapping.second)
-    //     {
-    //         cerr << gbwt::Node::id(edited_region) << " ";
-    //     }
-    //     cerr << endl;
-    // }
-    // //todo: end debug code
-
+    if (gbwt_changelog.size() == 0)
+    {
+        cerr << "no changes necessary; the regions of the graph were already sufficiently segregated." << endl;
+        return gbwt;
+    }
+    
     vg::RebuildJob::mapping_type first_change = gbwt_changelog.front();
     // std::vector<vg::RebuildJob::mapping_type> debug_changelog;
     // debug_changelog.push_back(first_change);
@@ -88,7 +67,6 @@ gbwt::GBWT apply_gbwt_changelog(const gbwtgraph::GBWTGraph &gbwt_graph, const st
     vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&gbwt_graph);
     // cerr << "size of components: " << components.size() << endl;
     // cerr << "gbwt_graph.has_node(1): " << gbwt_graph.has_node(1) << endl;
-    gbwt_graph.has_node(1);
     // vector<unordered_set<nid_t>> components = handlegraph::algorithms::weakly_connected_components(&_graph); // this was using the handlegraph algorithm, but I think we want the gbwt's view of the connected components.
 
     cerr << "\tget_node_to_job" << endl;

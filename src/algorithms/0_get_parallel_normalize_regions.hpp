@@ -2,6 +2,7 @@
 #include "../gbwt_helper.hpp"
 #include <gbwtgraph/gbwtgraph.h>
 #include "../subgraph.hpp"
+#include "../snarl_distance_index.hpp"
 
 #include "../vg.hpp"
 namespace vg {
@@ -12,8 +13,9 @@ class NormalizeRegionFinder {
     virtual ~NormalizeRegionFinder() = default;
 
     NormalizeRegionFinder(MutablePathDeletableHandleGraph &graph,
+                                 const SnarlDistanceIndex& distance_index,
                                  const int max_region_size,
-                                 const int max_snarl_spacing);
+                                 const int max_region_gap);
 
     /// Runs get_normalize_regions, and then split_sources_and_sinks on the normalize regions.
     // to ensure that each region is non-overlapping with each other region.
@@ -36,32 +38,43 @@ class NormalizeRegionFinder {
 
     //member variables from construction:
     MutablePathDeletableHandleGraph &_graph;
+    const SnarlDistanceIndex &_distance_index;
     const int _max_region_size;
-    const int _max_snarl_spacing;
+    const int _max_region_gap;
 
     //other member variables:
     vector<vg::RebuildJob::mapping_type> _gbwt_changelog; //this is equivalent to vector<pair<gbwt::vector_type, gbwt::vector_type>> _gbwt_changelog;
 
-    /// another function called by get_parallel_normalize_regions:
+    /// other functionS called by get_parallel_normalize_regions:
     vector<pair<id_t, id_t>> split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates);
 
-    /// functions called by get_normalize_regions.
-    vector< vector<pair<vg::id_t, vg::id_t>> > cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots);
+    vector<pair<id_t, id_t>> cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots);
 
-    vector<pair<id_t, id_t>> convert_snarl_clusters_to_regions(const vector<vector<pair<vg::id_t, vg::id_t>> >& clusters);
-
-    /// Functions used in cluster_snarls:
-    // function used in cluster_snarls, and copied from SnarlNormalizer.
+    //used by cluster_roots:
     SubHandleGraph extract_subgraph(const HandleGraph &graph,
                                                  const id_t leftmost_id,
                                                  const id_t rightmost_id);
 
-    // Another function used in cluster_snarls:
-    bool snarls_adjacent(const pair<id_t, id_t>& snarl_1, const pair<id_t, id_t>& snarl_2);
 
-    bool is_trivial(const pair<id_t, id_t>& snarl);
+    bool test_snarl_for_clustering(const HandleGraph &graph, const int snarl_size);
+
+    // /// functions called by get_normalize_regions.
+    // vector< vector<pair<vg::id_t, vg::id_t>> > cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots);
+
+    // vector<pair<id_t, id_t>> convert_snarl_clusters_to_regions(const vector<vector<pair<vg::id_t, vg::id_t>> >& clusters);
+
+    // /// Functions used in cluster_snarls:
+    // // function used in cluster_snarls, and copied from SnarlNormalizer.
+    // SubHandleGraph extract_subgraph(const HandleGraph &graph,
+    //                                              const id_t leftmost_id,
+    //                                              const id_t rightmost_id);
+
+    // // Another function used in cluster_snarls:
+    // bool snarls_adjacent(const pair<id_t, id_t>& snarl_1, const pair<id_t, id_t>& snarl_2);
+
+    // bool is_trivial(const pair<id_t, id_t>& snarl);
     
-    ///Functions used in split_sources_and_sinks:
+    ///Functions used in desegregate_nodes:
     handle_t overwrite_node_id(const id_t old_node_id, const id_t new_node_id);
     
     ///Debug function:

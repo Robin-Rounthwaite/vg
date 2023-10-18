@@ -69,12 +69,12 @@ bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>&
                 
 
                 MSAConverter myMSAConverter = MSAConverter();
-                cerr << "before align example " << endl;
-                for (auto align : msa_output)
-                {
-                    cerr << "align example: " << align << endl;
-                }
-                cerr << "after align example " << endl;
+                // cerr << "before align example " << endl;
+                // for (auto align : msa_output)
+                // {
+                //     cerr << "align example: " << align << endl;
+                // }
+                // cerr << "after align example " << endl;
                 myMSAConverter.load_alignments_from_vector(msa_output);
                 output_subgraph = myMSAConverter.make_graph();
                 
@@ -95,13 +95,25 @@ bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>&
     // cerr << "edited_source_to_sink_haplotypes.size()" << edited_source_to_sink_haplotypes.size() << endl;
 
     // cerr << "deleting first and last characters:" << endl;
+
     for (auto it = edited_source_to_sink_haplotypes.begin(); it != edited_source_to_sink_haplotypes.end(); it++)
     {
         // cerr << "before delete: " << *it << endl;
+        //todo: remove debug code lines:
+        // it->erase(0, 8);
+        // it->erase(it->size() - 14, 14); //14-n is the amount of flanking sequence, n given to erase.
+        //todo: end debug code lines.
+        //// todo: reinstate these two correct code lines:
         it->erase(0, 1);
         it->erase(it->size() - 1, 1);
+
+        //todo: begin debug_code:
+        // it->insert(0, string("AAAAAAAAAAAAAAAAAAAAAAAAAA"));
+        // //todo: end debug_code:
+
         // cerr << "after delete: " << *it << endl;
     }
+
     // cerr << "edited_source_to_sink_haplotypes.size()" << edited_source_to_sink_haplotypes.size() << endl;
 
     //todo: make sPOA and abPOA sections separate functions?
@@ -113,13 +125,17 @@ bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>&
     { 
         // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 5, -3, -3, -1); // original inputs. m n g e, probably means "match, mismatch, gap, extend"?
         // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 5, -5, -5, -1); // modified inputs, with increased gap-open cost.
-        auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 5, -10, -10, -1); // modified inputs, with increased gap-open cost.
+        // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 199, -624, -1000, -500); // modified inputs, with increased gap-open cost.
+        // match and mismatch score of alignment based off of table 1 from https://www.sciencedirect.com/science/article/pii/S1046202305801653
+        // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 6, -9, -36, -18); // modified inputs, with increased gap-open cost.
+        // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 6, -9, -11, -9); // modified inputs, with increased gap-open cost.
+        auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kNW, 6, -9, -11, -6); // modified inputs, with increased gap-open cost.
         spoa::Graph spoa_graph{};
-
         // cerr << "about to add sequences" << endl;
         for (string sequence : edited_source_to_sink_haplotypes)
         {
             // cerr << "adding seq of size " << sequence.size() << endl;
+            // cerr << "adding seq: " << sequence << endl;
             auto alignment = alignment_engine->Align(sequence, spoa_graph);
             spoa_graph.AddAlignment(alignment, sequence);
         }
@@ -375,11 +391,19 @@ bool SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>&
         // cerr << "after insert: " << *it << endl;
     }
 
-    // cerr << "aligned haps to be given to MSAConverter: " << endl;
-    // for (auto hap : msa_output)
-    // {
-    //     cerr << hap << endl;
-    // }
+    if (_debug_print)
+    {
+        cerr << "haps to be aligned: " << endl;
+        for (auto hap : source_to_sink_haplotypes)
+        {
+            cerr << hap << endl;
+        }
+        cerr << "aligned haps to be given to MSAConverter: " << endl;
+        for (auto hap : msa_output)
+        {
+            cerr << hap << endl;
+        }
+    }
 
     if (two_char_hap_exists)
     {

@@ -1,12 +1,14 @@
 #include "0_get_parallel_normalize_regions.hpp"
+// #include <bdsg/snarl_distance_index.hpp>
 
 
 namespace vg {
 namespace algorithms {
 NormalizeRegionFinder::NormalizeRegionFinder(MutablePathDeletableHandleGraph &graph,
+                                 const SnarlDistanceIndex& distance_index,
                                  const int max_region_size,
-                                 const int max_snarl_spacing)
-: _graph(graph), _max_region_size(max_region_size), _max_snarl_spacing(max_snarl_spacing) {}
+                                 const int max_region_gap) //todo: remove snarl spacing, or adapt it for when I want to divide clusters, esp once abpoa allows for larger clusters.
+: _graph(graph), _distance_index(distance_index), _max_region_size(max_region_size), _max_region_gap(max_region_gap){}
 
 /// @brief The main function to be called in NormalizeRegionFinder. Sets ups normalizable
 /// regions that are completely independent of each other (no overlapping handles between
@@ -26,62 +28,44 @@ NormalizeRegionFinder::NormalizeRegionFinder(MutablePathDeletableHandleGraph &gr
 /// to match the parallel normalize regions. Tuple: (_gbwt_graph, _gbwt_changelog, _gbwt)
 std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates)
 {
-    //note: right now snarl_roots is identical to what would normally be the output of single-snarl get_normalize_regions. 
-    //todo: make a snarl clusterer based on distance_index.
-    // vector<pair<id_t, id_t>> normalize_regions = get_normalize_regions(snarl_roots);
-    // cerr << "normalize_regions: " << endl;
-    // for (auto root : normalize_regions)
-    // {
-    //     cerr << root.first << " " << root.second << endl;
-    // }
+    vector<pair<vg::id_t, vg::id_t>> clustered_snarls = cluster_snarls(snarl_roots);
+    // vector<pair<id_t, id_t>> clustered_regions = convert_snarl_clusters_to_regions(clustered_snarls);
 
+    // parallel_normalize_regions = split_sources_and_sinks(snarl_roots, desegregation_candidates);
+    parallel_normalize_regions = split_sources_and_sinks(clustered_snarls, desegregation_candidates);
 
-    parallel_normalize_regions = split_sources_and_sinks(snarl_roots, desegregation_candidates);
-    // for (auto change : _gbwt_changelog) 
-    // {
-    //     cerr << "change.first "<< endl;
-    //     for (auto str : change.first)
-    //     {
-    //         cerr << str << endl;
-    //     }
-
-    //     cerr << "change.second "<< endl;
-    //     for (auto str : change.second)
-    //     {
-    //         cerr << str << endl;
-    //     }
-    // }
     return _gbwt_changelog;
 }
+
 
 
 ////////////////////////////////////////////////////////////
 /// Functions called by get_parallel_normalize_regions:
 ////////////////////////////////////////////////////////////
 
-vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots) 
-{
-        //todo: uncomment below if I want? Should be equivalent, but slightly more efficient than the general case. I'm currently using it for testing.
-        //if batch size is 1, just return the nontrivial roots from snarl_roots.
-        // if (_max_region_size==1)
-        // {
-        //     return get_single_snarl_normalize_regions(snarl_roots);
-        // }
+// vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots) 
+// {
+//         //todo: uncomment below if I want? Should be equivalent, but slightly more efficient than the general case. I'm currently using it for testing.
+//         //if batch size is 1, just return the nontrivial roots from snarl_roots.
+//         // if (_max_region_size==1)
+//         // {
+//         //     return get_single_snarl_normalize_regions(snarl_roots);
+//         // }
 
-    //otherwise, cluster snarls.
-    vector<vector<pair<vg::id_t, vg::id_t>> > snarl_clusters = cluster_snarls(snarl_roots);
-    // cerr << "snarl clusters: " << endl;
-    // for (auto cluster : snarl_clusters)
-    // {
-    //     cerr << "one cluster: " << endl;
-    //     for (auto root : cluster)
-    //     {
-    //         cerr << root.first << " " << root.second << endl;
-    //     }
-    // }
-    vector<pair<id_t, id_t>> regions = convert_snarl_clusters_to_regions(snarl_clusters); //todo: MAKE THIS NOT BROKEN! right now, it assumes the snarls are ordered in the cluster from left to right.
-    return regions;
-}
+//     //otherwise, cluster snarls.
+//     vector<vector<pair<vg::id_t, vg::id_t>> > snarl_clusters = cluster_snarls(snarl_roots);
+//     // cerr << "snarl clusters: " << endl;
+//     // for (auto cluster : snarl_clusters)
+//     // {
+//     //     cerr << "one cluster: " << endl;
+//     //     for (auto root : cluster)
+//     //     {
+//     //         cerr << root.first << " " << root.second << endl;
+//     //     }
+//     // }
+//     vector<pair<id_t, id_t>> regions = convert_snarl_clusters_to_regions(snarl_clusters); //todo: MAKE THIS NOT BROKEN! right now, it assumes the snarls are ordered in the cluster from left to right.
+//     return regions;
+// }
 
 
 /// @brief Checks to see if original source and sink of each snarl is shared with another 
@@ -91,8 +75,8 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::get_normalize_regions(const vect
 ///         the current snarl gets its node ids updated.)
 /// @param normalize_regions 
 /// @param desegregation_candidates a vector of pairs. The first element of the pair is a
-/// pair of the two nodes created by handle.split(). The second element in the pair is the
-/// id_t that was the original id of the handle before splitting. This wil lbe used for
+/// pair of the two graph node ids created by handle.split(). The second element in the pair is the
+/// id_t that was the original graph node id of the handle before splitting. This wil lbe used for
 /// de-splitting the snarl later.
 /// @return a set of sources and sinks representing each (now isolated) snarl.
 vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates){
@@ -239,17 +223,17 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
 
             id_t original_rightmost = _graph.get_id(rightmost_handle);
             pair<handle_t, handle_t> new_rightmosts = _graph.divide_handle(rightmost_handle, _graph.get_sequence(rightmost_handle).size()/2);
-            desegregation_candidates.push_back(make_pair(make_pair(_graph.get_id(new_rightmosts.first), _graph.get_id(new_rightmosts.second)), original_rightmost));
-            // cerr << "0" << endl;
-            // cerr << "new rightmosts left id: " << _graph.get_id(new_rightmosts.first) << " " << _graph.get_sequence(new_rightmosts.first) << endl;
-            // cerr << "new rightmosts right id: " << _graph.get_id(new_rightmosts.second) << " " << _graph.get_sequence(new_rightmosts.second) << endl;
             // gotta move the original node id to the rightmost of the divided handles, 
             // rather than the leftmost:
             handle_t dummy_handle = _graph.create_handle("A");
             id_t new_node_id = _graph.get_id(dummy_handle);
             _graph.destroy_handle(dummy_handle);
+
             overwrite_node_id(_graph.get_id(new_rightmosts.first), new_node_id);
             overwrite_node_id(_graph.get_id(new_rightmosts.second), region.second);
+            desegregation_candidates.push_back(make_pair(make_pair(new_node_id, region.second), original_rightmost));
+
+
             // cerr << "1" << endl;
             // cerr << "new rightmosts left id: " << _graph.get_id(_graph.get_handle(new_node_id)) << " " << _graph.get_sequence(_graph.get_handle(new_node_id)) << endl;
             // cerr << "new rightmosts right id: " << _graph.get_id(_graph.get_handle(region.second)) << " " << _graph.get_sequence(_graph.get_handle(region.second)) << endl;
@@ -265,8 +249,10 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             gbwt::vector_type new_gbwt_path;
             // cerr << "_graph.get_id(new_rightmosts.second): " << _graph.get_id(new_rightmosts.second) << endl;
             // cerr << "gbwt encoding of _graph.get_id(new_rightmosts.second): " << gbwt::Node::encode(_graph.get_id(new_rightmosts.second), false) << endl;
-            new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_rightmosts.first), false));
-            new_gbwt_path.emplace_back(gbwt::Node::encode(_graph.get_id(new_rightmosts.second), false));
+            new_gbwt_path.emplace_back(gbwt::Node::encode(new_node_id, false));
+            new_gbwt_path.emplace_back(gbwt::Node::encode(region.second, false));
+            _gbwt_changelog.emplace_back(original_gbwt_path, new_gbwt_path);
+
             // cerr << "original_gbwt_path: " << endl;
         //     for (auto id : original_gbwt_path)
         //     {
@@ -354,99 +340,101 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
 
         new_normalize_regions.push_back(make_pair(new_leftmost, new_rightmost));
         // break;
+
     }
+
     return new_normalize_regions;
 }
 
-////////////////////////////////////////////////////////////
-/// Functions called by get_normalize_regions:
-////////////////////////////////////////////////////////////
+// ////////////////////////////////////////////////////////////
+// /// Functions called by get_normalize_regions:
+// ////////////////////////////////////////////////////////////
 
 
-vector< vector<pair<vg::id_t, vg::id_t>> > NormalizeRegionFinder::cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots) {    
-    vector< vector<pair<vg::id_t, vg::id_t>> > snarl_clusters;
-    auto cur_snarl = snarl_roots.begin();
-    int trivial_count = 0;
-    vector<pair<vg::id_t, vg::id_t>> first_cluster;
-    snarl_clusters.push_back(first_cluster);
+// vector< vector<pair<vg::id_t, vg::id_t>> > NormalizeRegionFinder::cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots) {    
+//     vector< vector<pair<vg::id_t, vg::id_t>> > snarl_clusters;
+//     auto cur_snarl = snarl_roots.begin();
+//     int trivial_count = 0;
+//     vector<pair<vg::id_t, vg::id_t>> first_cluster;
+//     snarl_clusters.push_back(first_cluster);
 
-    while (cur_snarl != snarl_roots.end())
-    {
-        //todo: Find out if this graph extraction is highly inefficient. If so, remove the graph_extraction I perform here, or else integrate it into the 
-        //todo:     overall normalizer in a way that prevents me from having to extract it twice (if that's efficient).
+//     while (cur_snarl != snarl_roots.end())
+//     {
+//         //todo: Find out if this graph extraction is highly inefficient. If so, remove the graph_extraction I perform here, or else integrate it into the 
+//         //todo:     overall normalizer in a way that prevents me from having to extract it twice (if that's efficient).
         
-        SubHandleGraph snarl_graph = extract_subgraph(_graph, cur_snarl->first, cur_snarl->second);
-        bool cyclic = !handlealgs::is_acyclic(&snarl_graph);
+//         SubHandleGraph snarl_graph = extract_subgraph(_graph, cur_snarl->first, cur_snarl->second);
+//         bool cyclic = !handlealgs::is_acyclic(&snarl_graph);
 
-        // If we are considering extending a snarl cluster, first make sure that we 
-        // haven't reached the end conditions of the current cluster.
-        // batch size exceeded? Or snarls aren't part of the same connected component?
-        // start new cluster, and trim the previous one of any trailing trivial snarls.
-        if (snarl_clusters.back().size() != 0)
-        {
-            pair<id_t, id_t> prev_snarl = snarl_clusters.back().back();
-            if (snarl_clusters.back().size() == _max_region_size || !snarls_adjacent(prev_snarl, *cur_snarl) || trivial_count > _max_snarl_spacing || cyclic)
-            {
-                //If we're here, we've reached the end condition for this cluster.
-                //Trim the tirivial snarls from the end of the cluster:
-                for (int i = 0; i < trivial_count; i++)
-                {
-                    snarl_clusters.back().pop_back();
-                }
-                trivial_count = 0;
+//         // If we are considering extending a snarl cluster, first make sure that we 
+//         // haven't reached the end conditions of the current cluster.
+//         // batch size exceeded? Or snarls aren't part of the same connected component?
+//         // start new cluster, and trim the previous one of any trailing trivial snarls.
+//         if (snarl_clusters.back().size() != 0)
+//         {
+//             pair<id_t, id_t> prev_snarl = snarl_clusters.back().back();
+//             if (snarl_clusters.back().size() == _max_region_size || !snarls_adjacent(prev_snarl, *cur_snarl) || trivial_count > _max_snarl_spacing || cyclic)
+//             {
+//                 //If we're here, we've reached the end condition for this cluster.
+//                 //Trim the trivial snarls from the end of the cluster:
+//                 for (int i = 0; i < trivial_count; i++)
+//                 {
+//                     snarl_clusters.back().pop_back();
+//                 }
+//                 trivial_count = 0;
 
-                //start new cluster
-                vector<pair<id_t, id_t>> new_cluster;
-                snarl_clusters.push_back(new_cluster);
-            }
+//                 //start new cluster
+//                 vector<pair<id_t, id_t>> new_cluster;
+//                 snarl_clusters.push_back(new_cluster);
+//             }
 
-        }
+//         }
         
-        // special case: if we find a cyclic snarl and its the first snarl of a new cluster:
-        if (snarl_clusters.back().size() == 0 && cyclic)
-        {
-            // Then just skip the cyclic snarl.
-            cur_snarl++;
-            continue;
-        }
+//         // special case: if we find a cyclic snarl and its the first snarl of a new cluster:
+//         if (snarl_clusters.back().size() == 0 && cyclic)
+//         {
+//             // Then just skip the cyclic snarl.
+//             cur_snarl++;
+//             continue;
+//         }
         
-        bool trivial = is_trivial(*cur_snarl);
-        // if we have a snarl that isn't trivial, add it to the latest cluster.
-        if (!trivial)
-        {
-            snarl_clusters.back().push_back(*cur_snarl);
-            //reset the trivial_count
-            trivial_count=0;
-        }
+//         bool trivial = is_trivial(*cur_snarl);
+//         // if we have a snarl that isn't trivial, add it to the latest cluster.
+//         if (!trivial)
+//         {
+//             snarl_clusters.back().push_back(*cur_snarl);
+//             //reset the trivial_count
+//             trivial_count=0;
+//         }
             
-        // if we have a snarl that is trivial, but we have a cluster in progress, add it to the cluster.
-        else if (snarl_clusters.back().size() > 0)
-        {
-            snarl_clusters.back().push_back(*cur_snarl);
-            trivial_count++;
-        }
-        // if we have a snarl that is trivial, and we have no cluster in progress, skip it. (no code needed.)
-        cur_snarl++;
-    }
-    //check to see if the snarl_cluster at the end is empty. If so, discard it.
-    if (snarl_clusters.back().size() == 0)
-    {
-        snarl_clusters.pop_back();
-    }
-    return snarl_clusters;
-}
+//         // if we have a snarl that is trivial, but we have a cluster in progress, add it to the cluster.
+//         else if (snarl_clusters.back().size() > 0)
+//         {
+//             snarl_clusters.back().push_back(*cur_snarl);
+//             trivial_count++;
+//         }
+//         // if we have a snarl that is trivial, and we have no cluster in progress, skip it. (no code needed.)
+//         cur_snarl++;
+//     }
+//     //check to see if the snarl_cluster at the end is empty. If so, discard it.
+//     if (snarl_clusters.back().size() == 0)
+//     {
+//         snarl_clusters.pop_back();
+//     }
+//     return snarl_clusters;
+// }
 
-//todo: instead of either of these problematic hacky-ways of turning (poor) clusters to regions (which in the most recent implementation doesn't take into account snarls put in the lcuster in reverse order), try doing something based on the distance_index itself.
-vector<pair<id_t, id_t>> NormalizeRegionFinder::convert_snarl_clusters_to_regions(const vector<vector<pair<vg::id_t, vg::id_t>> >& clusters) {
-    vector<pair<id_t, id_t>> normalize_regions;
-    for (auto cluster : clusters)
-    {
-        pair<id_t, id_t> normalize_region;
-        normalize_region.first = cluster.front().first;
-        normalize_region.second = cluster.back().second;
-        normalize_regions.push_back(normalize_region);
-    }
-    return normalize_regions;
+// //todo: instead of either of these problematic hacky-ways of turning (poor) clusters to regions (which in the most recent implementation doesn't take into account snarls put in the lcuster in reverse order), try doing something based on the distance_index itself.
+// vector<pair<id_t, id_t>> NormalizeRegionFinder::convert_snarl_clusters_to_regions(const vector<vector<pair<vg::id_t, vg::id_t>> >& clusters) {
+//     vector<pair<id_t, id_t>> normalize_regions;
+//     for (auto cluster : clusters)
+//     {
+//         pair<id_t, id_t> normalize_region;
+//         normalize_region.first = cluster.front().first;
+//         normalize_region.second = cluster.back().second;
+//         normalize_regions.push_back(normalize_region);
+//     }
+//     return normalize_regions;
 
     // for (auto cluster : clusters )
     // {
@@ -496,7 +484,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::convert_snarl_clusters_to_region
     //     normalize_regions.push_back(cur_region);
 
     // }
-}
+// }
 
 ////////////////////////////////////////////////////////////
 /// Functions called by cluster_snarls:
@@ -587,42 +575,42 @@ SubHandleGraph NormalizeRegionFinder::extract_subgraph(const HandleGraph &graph,
     return subgraph;
 }
 
-//snarls_adjacent used to identify if two snarls overlap at one of their boundary nodes.
-bool NormalizeRegionFinder::snarls_adjacent(const pair<id_t, id_t>& snarl_1, const pair<id_t, id_t>& snarl_2) 
-{
-    return (snarl_1.second == snarl_2.first || snarl_2.second == snarl_1.first);
-}
+// //snarls_adjacent used to identify if two snarls overlap at one of their boundary nodes.
+// bool NormalizeRegionFinder::snarls_adjacent(const pair<id_t, id_t>& snarl_1, const pair<id_t, id_t>& snarl_2) 
+// {
+//     return (snarl_1.second == snarl_2.first || snarl_2.second == snarl_1.first);
+// }
 
 
-bool NormalizeRegionFinder::is_trivial(const pair<id_t, id_t>& snarl) {
-    vector<id_t> nodes_adjacent_to_source;
-    handle_t first_h = _graph.get_handle(snarl.first);
+// bool NormalizeRegionFinder::is_trivial(const pair<id_t, id_t>& snarl) {
+//     vector<id_t> nodes_adjacent_to_source;
+//     handle_t first_h = _graph.get_handle(snarl.first);
 
-    _graph.follow_edges(first_h, false, [&](handle_t next)
-    {
-        nodes_adjacent_to_source.push_back(_graph.get_id(next));
-    });
+//     _graph.follow_edges(first_h, false, [&](handle_t next)
+//     {
+//         nodes_adjacent_to_source.push_back(_graph.get_id(next));
+//     });
 
-    if (nodes_adjacent_to_source.size() == 1)
-    {
-        if (nodes_adjacent_to_source.back() == snarl.second)
-        {
-            return true;
-        }
-        else
-        {
-            cerr << "error:[vg normalize] snarl with start" << snarl.first;
-            cerr << " and end " << snarl.second;
-            cerr << " is performing unexpectedly. The start has only one internal-to-snarl";
-            cerr << " neighbor, and it is not the end node. Malformed snarl input?" << endl;
-            exit(1);
-        }
-    }
-    else
-    {
-        return false;
-    }
-}
+//     if (nodes_adjacent_to_source.size() == 1)
+//     {
+//         if (nodes_adjacent_to_source.back() == snarl.second)
+//         {
+//             return true;
+//         }
+//         else
+//         {
+//             cerr << "error:[vg normalize] snarl with start" << snarl.first;
+//             cerr << " and end " << snarl.second;
+//             cerr << " is performing unexpectedly. The start has only one internal-to-snarl";
+//             cerr << " neighbor, and it is not the end node. Malformed snarl input?" << endl;
+//             exit(1);
+//         }
+//     }
+//     else
+//     {
+//         return false;
+//     }
+// }
 
 ////////////////////////////////////////////////////////////
 /// Functions called by split_sources_and_sinks:
@@ -696,7 +684,6 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::desegregate_nod
         vector<handle_t> right_handles;
         _graph.follow_edges(_graph.get_handle(to_merge_pair.second), false, [&](handle_t right_handle){
             right_handles.push_back(right_handle);
-            // cerr << "tracking edge between right_handle " << _graph.get_id(right_handle) << " and current id " << original_id << endl;
         });
 
         //get combined sequence of the to_merge_pair.
@@ -769,5 +756,200 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::desegregate_nod
     
 //     return _gbwt_changelog;
 // }
+
+
+
+vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots)
+{
+    vector<pair<id_t, id_t>> clustered_snarls;
+    vector<pair<id_t, id_t>> skipped_snarls;
+    int cur_cluster_size = 0;
+    pair<id_t, id_t> cur_cluster = make_pair(-1, -1);
+    pair<id_t, id_t> default_cluster = make_pair(-1, -1); //for checking if cluster has been reinitialized as empty again.
+    auto cur_snarl_i = snarl_roots.begin();
+    while (cur_snarl_i != snarl_roots.end())
+    {
+        SubHandleGraph snarl_graph = extract_subgraph(_graph, cur_snarl_i->first, cur_snarl_i->second);
+
+        //case: initialize cur_cluster:
+        int cur_snarl_size = _distance_index.maximum_distance(cur_snarl_i->first, false, 0, cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1);
+
+
+        if (cur_cluster == default_cluster)
+        {
+            //then initialize the cur_cluster as the current snarl, or
+            //if the current snarl fails the tests, move on to the next snarl.  
+            int snarl_gap = 0; //because there is no cur_cluster to get distance to snarl
+            if (!test_snarl_for_clustering(snarl_graph, cur_snarl_size))
+            {
+                // cerr << "initial snarl fails test" << endl;
+                skipped_snarls.push_back(*cur_snarl_i);
+                cur_snarl_i++;
+                continue;
+            }
+            else
+            {
+                // cerr << "initial snarl continues." << endl;
+
+                // Initialize the cur_cluster as the current snarl.
+                cur_cluster = *cur_snarl_i;
+                cur_cluster_size = cur_snarl_size;
+                cur_snarl_i++;
+                continue;
+            }
+        }
+
+        // we are considering extending the cluster. So, let's get the distance between the end of the cur_cluster and the beginning of cur_snarl.
+        //the smaller of these two gap calculations must not be the one containing a snarl inside it. Thus it is the true gap calculation. 
+        // cerr << "distance of graph: " << _distance_index.maximum_distance(1, false, 0, 18, false, _graph.get_sequence(_graph.get_handle(18)).size() - 1) << endl;
+        // cerr << "distance of 15 to 18: " << _distance_index.maximum_distance(15, false, 0, 18, false, _graph.get_sequence(_graph.get_handle(18)).size() - 1) << endl;
+        // cerr << "distance of 12 to 18: " << _distance_index.maximum_distance(12, false, 0, 18, false, _graph.get_sequence(_graph.get_handle(18)).size() - 1) << endl;
+        // cerr << "distance of 12 to 12: " << _distance_index.maximum_distance(12, false, 0, 12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1) << endl;
+        // cerr << "reverse distance of 12 to 12: " << _distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0) << endl;
+        
+        // cerr << "cur_cluster.second " << cur_cluster.second << endl;
+        // cerr << "cur_snarl_i->first " << cur_snarl_i->first << endl;
+        // cerr << "cur_snarl_i->second " << cur_snarl_i->second << endl;
+        // cerr << "cur_cluster.first " << cur_cluster.first << endl;
+        int right_gap = INT_MAX;
+        int left_gap = INT_MAX;
+        int snarl_gap = INT_MAX;
+        // if (cur_cluster.second == cur_snarl_i->first)
+        // {
+        //     //then the right_gap is correct, and the gap is the length of the shared handle.
+        //     right_gap = _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size();
+        //     snarl_gap = right_gap;
+
+        // }
+        // else if (cur_snarl_i->second == cur_cluster.first)
+        // {
+        //     //then the left_gap is correct, and the gap is the length of the shared handle.
+        //     left_gap = _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size();
+        //     snarl_gap = left_gap;
+        // }
+        // else
+        // {
+        //     //we have to calculate minimum distance:
+        //     right_gap = _distance_index.maximum_distance(cur_cluster.second, false, _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() - 1, cur_snarl_i->first, false, 0);
+        //     left_gap = _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0);
+        //     if (right_gap == -1)
+        //     {
+        //         snarl_gap = left_gap;
+        //     }
+        //     else if (left_gap == -1)
+        //     {
+        //         snarl_gap = right_gap;
+        //     }
+        //     else
+        //     {
+        //         snarl_gap = min(left_gap, right_gap);
+        //         // cerr << "Although the snarls do not overlap, both distances are this should never happen, based on what I understand."
+        //     }
+        // }
+        // cerr << "_distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0)" << _distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0) << endl;
+        // cerr << "_distance_index.maximum_distance(15, false, _graph.get_sequence(_graph.get_handle(15)).size() - 1, 15, false, 0)" << _distance_index.maximum_distance(15, false, _graph.get_sequence(_graph.get_handle(15)).size() - 1, 15, false, 0) << endl;
+        // cerr << "_distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0) " << _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0) << endl;
+
+        // int test_1 = _distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0);
+        // int test_2 = _distance_index.maximum_distance(15, false, _graph.get_sequence(_graph.get_handle(15)).size() - 1, 15, false, 0);
+        // int test_3 = _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0);
+        // cerr << test_1 << " " << test_2 << " " << test_3 << endl;
+        
+        // cerr << "cur_cluster.second " << cur_cluster.second << " _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() " << _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() << " cur_snarl_i->first " << cur_snarl_i->first << endl;
+        right_gap = _distance_index.maximum_distance(cur_cluster.second, false, _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() - 1, cur_snarl_i->first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
+        // cerr << "cur_snarl_i->second " << cur_snarl_i->second << " _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() " << _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() << " cur_cluster.first " << cur_cluster.first << endl;
+        left_gap = _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
+        snarl_gap = min(left_gap, right_gap);
+        cerr << " left_gap " << left_gap << " right_gap " << right_gap << " snarl_gap " << snarl_gap << endl; //case: cur_snarl fails the tests, so reset the cluster.
+        if (!test_snarl_for_clustering(snarl_graph, cur_snarl_size))
+        {
+            cerr << "cur_snarl fails the tests, reset cluster." << endl;
+            // discard the cur_snarl, since it's too large.
+            skipped_snarls.push_back(*cur_snarl_i);
+            // save the current cluster and make a new one.
+            clustered_snarls.push_back(cur_cluster);
+            cur_cluster_size = 0;
+            cur_cluster = make_pair(-1, -1);
+            cur_snarl_i++;
+
+            continue;
+        }
+        else if (snarl_gap > _max_region_gap)
+        {
+            //reset the cluster, but do not skip/discard the cur_snarl.
+            clustered_snarls.push_back(cur_cluster);
+            cur_cluster_size = 0;
+            cur_cluster = make_pair(-1, -1);
+            continue;
+        }
+
+
+        //case: the snarl can be added to the cluster. 
+        int extended_cluster_size = cur_cluster_size + snarl_gap + cur_snarl_size;
+        
+        // if ((cur_cluster_size + max_size + cur_snarl_size) <= _max_region_size)
+        if (extended_cluster_size <= _max_region_size)
+        {
+            //combine the cluster with the new cluster.
+            if (left_gap < right_gap)
+            {
+                cur_cluster = make_pair(cur_snarl_i->first, cur_cluster.second);
+            }
+            else if (right_gap < left_gap)
+            {
+                cur_cluster = make_pair(cur_cluster.first, cur_snarl_i->second);
+            }
+            else
+            {
+                cerr << "unfortunately, distance index's maximum_distance acts differently than I thought. two sizes that should have been different were treated as identical." << endl;
+                exit(1);
+            }
+            
+            cur_cluster_size = extended_cluster_size;
+            cur_snarl_i++;
+        }
+        //case: the snarl cannot be added to the cluster because it would make the cluster
+        // too large. Reset the cluster with cur_snarl.
+        else
+        {
+            // save the current cluster and initialize the new one with the new region.
+            clustered_snarls.push_back(cur_cluster);
+            cur_cluster_size = cur_snarl_size;
+            cur_cluster = *cur_snarl_i;
+            cur_snarl_i++;
+            continue;
+        }
+        
+    }
+    if (cur_cluster != default_cluster)
+    {
+        //then there was a cluster being extended when the while loop ended.
+        clustered_snarls.push_back(cur_cluster);
+    }
+    return clustered_snarls;
+}
+
+/// @brief Determines if a snarl is fit for adding to the current cluster.
+/// @param snarl_graph the SubHandleGraph containing the snarl.
+/// @param snarl_size the size of the cur_snarl
+/// @param snarl_gap the gap between the cur_snarl and the cluster that is being extended. (set to 0 if this is the first snarl in the cluster.) 
+/// @return bool, true if passes tests; false if fails tests.
+bool NormalizeRegionFinder::test_snarl_for_clustering(const HandleGraph& snarl_graph, const int snarl_size)
+{
+    if(snarl_size > _max_region_size)
+    {
+        // cerr << "snarl size (" << snarl_size << ") > " << _max_region_size << endl;
+        return false;
+    }
+    if (!handlealgs::is_acyclic(&snarl_graph))
+    {
+        // cerr << "snarl is cyclic." << endl;
+        return false;
+    }
+    return true;
+}
+
 }
 }
+
+

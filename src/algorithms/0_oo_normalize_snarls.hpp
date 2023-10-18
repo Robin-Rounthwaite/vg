@@ -17,7 +17,6 @@ class SnarlNormalizer {
     SnarlNormalizer(MutablePathDeletableHandleGraph &graph, const gbwt::GBWT &gbwt, const gbwtgraph::GBWTGraph & gbwt_graph,
                     const int max_handle_size,
                     const int max_region_size,
-                    const int max_snarl_spacing,
                     const int threads,
                     const int max_alignment_size = INT_MAX, //TODO: add a _max_handle_length default length
                     const string path_finder = "GBWT", /*alternative is "exhaustive"*/
@@ -90,7 +89,6 @@ class SnarlNormalizer {
     const int _max_alignment_size;
     const int _max_handle_size;
     const int _max_region_size;
-    const int _max_snarl_spacing;
     const string _path_finder;
     const bool _disable_gbwt_update;
     /*const*/ bool _debug_print; // for printing info that isn't necessarily something gone wrong. Note: not const so that I can easily toggle it within the code.

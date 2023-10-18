@@ -53,7 +53,6 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const gbwtgraph::GBWTGraph &gbwt_graph,
                                  const int max_handle_size,
                                  const int max_region_size,
-                                 const int max_snarl_spacing,
                                  const int threads,
                                  const int max_alignment_size, /*= MAX_INT*/
                                  const string path_finder, /*= "GBWT"*/
@@ -61,7 +60,7 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const bool disable_gbwt_update, /*= false*/
                                  const bool debug_print /*= false*/)
 : _graph(graph), _gbwt(gbwt), _gbwt_graph(gbwt_graph), _max_alignment_size(max_alignment_size),
-      _max_handle_size(max_handle_size), _max_region_size(max_region_size), _max_snarl_spacing(max_snarl_spacing), _threads(threads), _path_finder(path_finder),
+      _max_handle_size(max_handle_size), _max_region_size(max_region_size), _threads(threads), _path_finder(path_finder),
        _alignment_algorithm(alignment_algorithm), _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
 
 /// @brief note: assumes that each region is pair<leftmost_id, rightmost_id>, i.e. that 
@@ -95,8 +94,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     // _debug_print=true;
     // split_normalize_regions.clear();
     // split_normalize_regions.push_back(make_pair(157206, 157209));
-    // split_normalize_regions.push_back(make_pair(157209, 157212));
-    // split_normalize_regions.push_back(make_pair(157212, 157215));
     int num_snarls_normalized = 0;
         // Record start time
     auto start = std::chrono::high_resolution_clock::now();
@@ -107,7 +104,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
-
         if (num_snarls_normalized%10000 == 0)
         // if (num_snarls_normalized%1 == 0)
         {
@@ -122,11 +118,11 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         pair<bool, bool> sequence_added_because_empty_node = make_pair(false, false);
 
         // _debug_print=true;
-        // cerr << "region: " << region.first << " " << region.second << endl;
-        // if (_debug_print)
-        // {
-        //     cerr << "about to extract_subgraph" << endl;
-        // }
+        if (_debug_print)
+        {
+            cerr << "region: " << region.first << " " << region.second << endl;
+            cerr << "about to extract_subgraph" << endl;
+        }
         // cerr << "does the graph contain node 18? " << _graph.has_node(18) << endl;
         SubHandleGraph snarl = extract_subgraph(_graph, region.first, region.second);
 
@@ -139,11 +135,11 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         // check that snarl is normalizable:
         bool passes_normalize_tests = test_snarl(snarl, region, original_snarl_size);
         // if (passes_normalize_tests == false) { cerr <<  "failed normalize tests" << endl; continue; }
-        if (passes_normalize_tests == false) { /*cerr <<  "failed normalize tests" << endl;*/ continue; }
+        if (passes_normalize_tests == false) { if(_debug_print){cerr <<  "failed normalize tests" << endl;} continue; }
 
         if (_debug_print)
         {
-            cerr << "about to extract_subgraph" << endl;
+            cerr << "about to extract_haplotypes" << endl;
         }
         // stop_inclusive ensures that the step_handle_t doesn't follow the standard
         // convention of going one past the furthest handle on the path that we want to
@@ -235,13 +231,11 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         }
         normalized_snarls.push_back(make_tuple(snarl, new_snarl, embedded_paths, region.first, region.second, false, source_to_sink_gbwt_paths));
         // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, embedded_paths, region.first, region.second, false);
-        
-        // if ((normalized_snarls.size())%100 == 0)
-        // {
-        //     cerr << "number of total snarls that are getting normalized: " << normalized_snarls.size() << endl;
-        // }
-
     }
+
+    auto cur_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = cur_time - start;
+    cerr << "all snarls normalized at time " << elapsed.count() << ". About to start integrating snarls." << endl;
 
     //integrate all the normalized snarls formed in the parallel loop above.
     for (auto snarl : normalized_snarls)
@@ -256,9 +250,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
         SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
-
-
-
+        
         log_gbwt_changes(get<6>(snarl), integrated_snarl);
 
     }
@@ -337,6 +329,11 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
 
         if (debug_state.empty())
         {
+            if (_debug_print)
+            {
+                cerr << "handle " << snarl.get_id(handle) << " not in gbwt." << endl;
+            }
+
             // cerr << "debug state is empty." << endl;
             all_handles_in_gbwt = false;
             return;
@@ -344,6 +341,10 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
     }, true);
     if (!all_handles_in_gbwt)
     {
+        if (_debug_print)
+        {
+            cerr << "test failed because !all_handles_in_gbwt. " << endl;
+        }
         _sizes_of_snarls_skipped_because_gbwt_misses_handles.push_back(snarl_size);
         _snarls_skipped_because_gbwt_misses_handles.push_back(region);
         // cerr << "!all handles in gbwt!" << "number of snarls skipped for this reason is: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl;
@@ -352,6 +353,10 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
 
     // check for cyclic snarls
     if (!handlealgs::is_acyclic(&snarl)) {
+        if (_debug_print)
+        {
+            cerr << "test failed because !handlealgs::is_acyclic(&snarl). " << endl;
+        }
         _sizes_of_snarls_skipped_because_cyclic.push_back(snarl_size);
         _snarls_skipped_because_cyclic.push_back(region);
         return false;
@@ -796,7 +801,7 @@ void SnarlNormalizer::print_statistics(const vector<pair<id_t, id_t>>& normalize
          << "normalization arguments:" << endl
          << "aligner (-A): " << _alignment_algorithm << endl
          << "max normalization region size (-k): " << _max_region_size << " snarls" << endl //todo: change to "bases" if/when I change _max_region_size's metric.
-         << "max snarl spacing (-i): " << _max_snarl_spacing << endl //todo: add units. Handles? bases? I don't recall.
+        //  << "max snarl spacing (-i): " << _max_snarl_spacing << endl //todo: add units. Handles? bases? I don't recall.
          << "max number of threads in an alignment (-m): " << _max_alignment_size << endl
          << "~" << endl
          << "normalized " << num_snarls_normalized << " snarls, skipped "
@@ -1867,46 +1872,6 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     return new_left_right;
 }
 
-
-// /// @brief If there is a blank node for either the new leftmost handle or rightmost handle, it will be removed from the graph.  
-// /// @param new_left_right 
-// void SnarlNormalizer::delete_blanks_on_flanks(pair<handle_t, handle_t> new_left_right)
-// {
-//     if (_graph.get_sequence(new_left_right.first).size() == 0)
-//     {
-//         destroy_handle_and_stitch(new_left_right.first);
-//     }
-//     if (_graph.get_sequence(new_left_right.second).size() == 0)
-//     {
-//         destroy_handle_and_stitch(new_left_right.second);
-//     }
-// }
-
-// void SnarlNormalizer::destroy_handle_and_stitch(handle_t to_delete)
-// {
-//     vector<handle_t> left_handles;
-//     _graph.follow_edges(
-//     to_delete, true, [&](const handle_t left_handle) {
-//         left_handles.push_back(left_handle);
-//     });
-
-//     vector<handle_t> right_handles;
-//     _graph.follow_edges(
-//     to_delete, false, [&](const handle_t left_handle) {
-//         left_handles.push_back(left_handle);
-//     });
-
-//     for (handle_t left_handle : left_handles)
-//     {
-//         for (handle_t right_handle : right_handles)
-//         {
-//             _graph.create_edge(left_handle, right_handle);
-//         }
-//     }
-
-//     _graph.destroy_handle(to_delete);
-// }
-
 /**
  * Deletes the given node, replacing it with a new node that has the desired
  * new_node_sequence.
@@ -1920,11 +1885,17 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
 handle_t SnarlNormalizer::replace_node_using_sequence(const id_t old_node_id, const string new_node_sequence, MutablePathDeletableHandleGraph& graph)
 {
     handle_t old_handle = graph.get_handle(old_node_id);
+    if (new_node_sequence.size() == 0) //special case of creating an empty node.
+    {
+        pair<handle_t, handle_t> split = graph.divide_handle(old_handle, graph.get_sequence(old_handle).size());
+        graph.follow_edges(split.first, true, [&](const handle_t prev_handle) 
+        {
+            graph.create_edge(prev_handle, split.second);
+        });
+        graph.destroy_handle(split.first);
+        return split.second;
+    }
     handle_t new_handle = graph.create_handle(new_node_sequence);
-
-    cerr << "old node id: " << old_node_id << endl;
-    cerr << "old node seq: " << graph.get_sequence(old_handle) << endl;
-    cerr << "new node sequence " << new_node_sequence << endl;
 
     // move the edges:
     graph.follow_edges(old_handle, true, [&](const handle_t prev_handle) 
