@@ -860,10 +860,10 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
         // cerr << "cur_snarl_i->second " << cur_snarl_i->second << " _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() " << _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() << " cur_cluster.first " << cur_cluster.first << endl;
         left_gap = _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
         snarl_gap = min(left_gap, right_gap);
-        cerr << " left_gap " << left_gap << " right_gap " << right_gap << " snarl_gap " << snarl_gap << endl; //case: cur_snarl fails the tests, so reset the cluster.
+        // cerr << " left_gap " << left_gap << " right_gap " << right_gap << " snarl_gap " << snarl_gap << endl; //case: cur_snarl fails the tests, so reset the cluster.
         if (!test_snarl_for_clustering(snarl_graph, cur_snarl_size))
         {
-            cerr << "cur_snarl fails the tests, reset cluster." << endl;
+            // cerr << "cur_snarl fails the tests, reset cluster." << endl;
             // discard the cur_snarl, since it's too large.
             skipped_snarls.push_back(*cur_snarl_i);
             // save the current cluster and make a new one.
@@ -901,6 +901,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
             }
             else
             {
+                cerr << "in snarl" << cur_snarl_i->first << " " << cur_snarl_i->second << endl;
                 cerr << "unfortunately, distance index's maximum_distance acts differently than I thought. two sizes that should have been different were treated as identical." << endl;
                 exit(1);
             }

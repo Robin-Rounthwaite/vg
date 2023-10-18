@@ -347,16 +347,16 @@ int main_normalize(int argc, char **argv) {
 
     if (run_tests)
     {
-        cerr << "non-parallel normalize regions: " << endl;
-        for (auto region: snarl_roots)
-        {
-            cerr << region.first << " " << region.second << endl;
-        }
-        cerr << "parallel normalize regions: " << endl;
-        for (auto region : parallel_normalize_regions)
-        {
-            cerr << region.first << " " << region.second << endl;
-        }
+        // cerr << "non-parallel normalize regions: " << endl;
+        // for (auto region: snarl_roots)
+        // {
+        //     cerr << region.first << " " << region.second << endl;
+        // }
+        // cerr << "parallel normalize regions: " << endl;
+        // for (auto region : parallel_normalize_regions)
+        // {
+        //     cerr << region.first << " " << region.second << endl;
+        // }
         // cerr << " regions in parallel_regions_gbwt_updates: " << endl;
         // for (auto region : parallel_regions_gbwt_updates)
         // {
