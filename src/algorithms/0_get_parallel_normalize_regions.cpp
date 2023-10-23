@@ -771,6 +771,59 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
     {
         SubHandleGraph snarl_graph = extract_subgraph(_graph, cur_snarl_i->first, cur_snarl_i->second);
 
+        // //todo: begin debug_code:
+        // cerr << "cur_cluster: " << cur_cluster.first << " " << cur_cluster.second << endl;
+        // if (cur_cluster.first != -1)
+        // {
+        //     cerr << " reverse? " << _graph.get_is_reverse(_graph.get_handle(cur_cluster.first)) << " " << _graph.get_is_reverse(_graph.get_handle(cur_cluster.second)) << endl;
+        // }
+        // cerr << "cur_snarl: " << cur_snarl_i->first << " " << cur_snarl_i->second << endl;
+        // if (cur_snarl_i->first != -1)
+        // {
+        //     cerr << " reverse? " << _graph.get_is_reverse(_graph.get_handle(cur_snarl_i->first)) << " " << _graph.get_is_reverse(_graph.get_handle(cur_snarl_i->second)) << endl;
+        // }
+        // for (auto node_id : {cur_cluster.first, cur_cluster.second, cur_snarl_i->first, cur_snarl_i->second})
+        // {
+        //     cerr << "follow edges of " << node_id << endl;
+        //     if (node_id != -1)
+        //     {
+        //         cerr << "go left is true: " << endl;
+        //         _graph.follow_edges(_graph.get_handle(node_id), true, [&](handle_t handle)
+        //         {
+        //             cerr << _graph.get_id(handle) << " " << _graph.get_sequence(handle) << endl;
+        //         });
+        //         cerr << "go left is false: " << endl;
+        //         _graph.follow_edges(_graph.get_handle(node_id), false, [&](handle_t handle)
+        //         {
+        //             cerr << _graph.get_id(handle) << " " << _graph.get_sequence(handle) << endl;
+        //         });
+        //     }
+
+            
+        // }
+
+        // if (cur_snarl_i->first == 177070) 
+        // {
+        //     cerr << "for each handle in cur snarl: " << endl;
+        //     cerr << _graph.get_sequence(_graph.get_handle(177073)) << endl;
+        //     cerr << _graph.get_sequence(_graph.get_handle(177068)) << endl;
+        //     snarl_graph.for_each_handle([&](handle_t handle)
+        //     {
+        //         cerr << snarl_graph.get_id(handle) << " " << snarl_graph.get_sequence(handle) << endl;
+        //     });
+        //     cerr << "follow edges of 177072:" << endl;
+        //     _graph.follow_edges(_graph.get_handle(177072), true, [&](handle_t handle)
+        //     {
+        //         cerr << _graph.get_id(handle) << " " << _graph.get_sequence(handle) << endl;
+        //     });
+        //     cerr << "go left is false: " << endl;
+        //     _graph.follow_edges(_graph.get_handle(177072), false, [&](handle_t handle)
+        //     {
+        //         cerr << _graph.get_id(handle) << " " << _graph.get_sequence(handle) << endl;
+        //     });
+        // }
+        //todo: end debug_code:
+
         //case: initialize cur_cluster:
         int cur_snarl_size = _distance_index.maximum_distance(cur_snarl_i->first, false, 0, cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1);
 
@@ -855,12 +908,16 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
         // int test_3 = _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0);
         // cerr << test_1 << " " << test_2 << " " << test_3 << endl;
         
-        // cerr << "cur_cluster.second " << cur_cluster.second << " _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() " << _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() << " cur_snarl_i->first " << cur_snarl_i->first << endl;
         right_gap = _distance_index.maximum_distance(cur_cluster.second, false, _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() - 1, cur_snarl_i->first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
-        // cerr << "cur_snarl_i->second " << cur_snarl_i->second << " _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() " << _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() << " cur_cluster.first " << cur_cluster.first << endl;
         left_gap = _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
         snarl_gap = min(left_gap, right_gap);
-        // cerr << " left_gap " << left_gap << " right_gap " << right_gap << " snarl_gap " << snarl_gap << endl; //case: cur_snarl fails the tests, so reset the cluster.
+        // if (cur_snarl_i->first == 177070) 
+        // {
+        //     cerr << "cur_cluster.second " << cur_cluster.second << " _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() " << _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() << " cur_snarl_i->first " << cur_snarl_i->first << endl;
+        //     cerr << "cur_snarl_i->second " << cur_snarl_i->second << " _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() " << _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() << " cur_cluster.first " << cur_cluster.first << endl;
+
+        //     cerr << " left_gap " << left_gap << " right_gap " << right_gap << " snarl_gap " << snarl_gap << endl; //case: cur_snarl fails the tests, so reset the cluster.
+        // }
         if (!test_snarl_for_clustering(snarl_graph, cur_snarl_size))
         {
             // cerr << "cur_snarl fails the tests, reset cluster." << endl;
@@ -901,7 +958,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
             }
             else
             {
-                cerr << "in snarl" << cur_snarl_i->first << " " << cur_snarl_i->second << endl;
+                cerr << "in snarl " << cur_snarl_i->first << " " << cur_snarl_i->second << endl;
                 cerr << "unfortunately, distance index's maximum_distance acts differently than I thought. two sizes that should have been different were treated as identical." << endl;
                 exit(1);
             }

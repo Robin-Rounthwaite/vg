@@ -303,9 +303,23 @@ int main_normalize(int argc, char **argv) {
     cerr << "=======isolating normalize regions for multithreading=======" << endl;
     cerr << "getting non-isolated normalize regions." << endl;
     vector<pair<vg::id_t, vg::id_t>> snarl_roots;
+    // distance_index->is_root_snarl
     distance_index->traverse_decomposition([&] (const bdsg::net_handle_t& snarl) {
+        
+
+        if (distance_index->get_depth(snarl) != 1) // snarl must be top-level.
+        {
+            return true;
+        }
         handle_t inward_source_handle = distance_index->get_handle(distance_index->get_bound(snarl, false, true), &*graph);
         handle_t outward_sink_handle = distance_index->get_handle(distance_index->get_bound(snarl, true, false), &*graph);
+        // cerr << graph->get_id(inward_source_handle) << " " << graph->get_id(outward_sink_handle) << endl;
+        // cerr << "distance_index->get_depth(snarl): " << distance_index->get_depth(snarl) << endl;
+        // if (!distance_index->is_root_snarl(snarl))
+        // {
+        //     cerr << "not root snarl" << graph->get_id(inward_source_handle) << " " << graph->get_id(outward_sink_handle) << endl;
+        //     return true;
+        // } 
 
         //source is "rightmost" handle if inward_source is_reverse=true. (where the
         //direction "right" is forward for the default orientation of a handle generated
