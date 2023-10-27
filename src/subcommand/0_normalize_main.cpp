@@ -330,8 +330,8 @@ int main_normalize(int argc, char **argv) {
             }
             handle_t inward_source_handle = distance_index->get_handle(distance_index->get_bound(snarl, false, true), &*graph);
             handle_t outward_sink_handle = distance_index->get_handle(distance_index->get_bound(snarl, true, false), &*graph);
-            cerr << graph->get_id(inward_source_handle) << " " << graph->get_id(outward_sink_handle) << endl;
-            cerr << "distance_index->get_depth(snarl): " << distance_index->get_depth(snarl) << endl;
+            // cerr << graph->get_id(inward_source_handle) << " " << graph->get_id(outward_sink_handle) << endl;
+            // cerr << "distance_index->get_depth(snarl): " << distance_index->get_depth(snarl) << endl;
             // if (!distance_index->is_root_snarl(snarl))
             // {
             //     cerr << "not root snarl" << graph->get_id(inward_source_handle) << " " << graph->get_id(outward_sink_handle) << endl;
@@ -375,40 +375,40 @@ int main_normalize(int argc, char **argv) {
         parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, *distance_index, parallel_normalize_regions, desegregation_candidates);
         if (run_tests)
         {
-            cerr << "non-parallel normalize regions: " << endl;
-            for (auto region: snarl_roots)
-            {
-                cerr << region.first << " " << region.second << endl;
-            }
-            cerr << "parallel normalize regions: " << endl;
-            for (auto region : parallel_normalize_regions)
-            {
-                cerr << region.first << " " << region.second << endl;
-            }
-            cerr << " regions in parallel_regions_gbwt_updates: " << endl;
-            for (auto region : parallel_regions_gbwt_updates)
-            {
-                cerr << "before: " << endl;
-                for (auto node : region.first)
-                {
-                    cerr << gbwt::Node::id(node) << " ";
-                }
-                cerr << endl;
-                cerr << "after: " << endl;
-                for (auto node : region.second)
-                {
-                    cerr << gbwt::Node::id(node) << " ";
-                }
-                cerr << endl;
-            }
-            cerr << " cands in desegregation_candidates: " << endl;
-            for (auto cand : desegregation_candidates)
-            {
-                cerr << "before: " << endl;
-                cerr << cand.second << endl;
-                cerr << "after: " << endl;
-                cerr << cand.first.first << " " << cand.first.second << endl;
-            }
+            // cerr << "non-parallel normalize regions: " << endl;
+            // for (auto region: snarl_roots)
+            // {
+            //     cerr << region.first << " " << region.second << endl;
+            // }
+            // cerr << "parallel normalize regions: " << endl;
+            // for (auto region : parallel_normalize_regions)
+            // {
+            //     cerr << region.first << " " << region.second << endl;
+            // }
+            // cerr << " regions in parallel_regions_gbwt_updates: " << endl;
+            // for (auto region : parallel_regions_gbwt_updates)
+            // {
+            //     cerr << "before: " << endl;
+            //     for (auto node : region.first)
+            //     {
+            //         cerr << gbwt::Node::id(node) << " ";
+            //     }
+            //     cerr << endl;
+            //     cerr << "after: " << endl;
+            //     for (auto node : region.second)
+            //     {
+            //         cerr << gbwt::Node::id(node) << " ";
+            //     }
+            //     cerr << endl;
+            // }
+            // cerr << " cands in desegregation_candidates: " << endl;
+            // for (auto cand : desegregation_candidates)
+            // {
+            //     cerr << "before: " << endl;
+            //     cerr << cand.second << endl;
+            //     cerr << "after: " << endl;
+            //     cerr << cand.first.first << " " << cand.first.second << endl;
+            // }
             assert(parallel_regions_gbwt_updates.size()==desegregation_candidates.size());
             for (int i = 0; i != parallel_regions_gbwt_updates.size(); i++)
             {
@@ -429,7 +429,7 @@ int main_normalize(int argc, char **argv) {
         
         std::ifstream file( input_segregate_regions_only_file );
         string line_str;
-        while(getline(file, line_str, '\n'))
+        while(getline(file, line_str, '\n') && line_str!="-----")
         {
             stringstream line_ss(line_str);
 
@@ -439,10 +439,26 @@ int main_normalize(int argc, char **argv) {
 
             pair<vg::id_t, vg::id_t> region = make_pair(parse<int>(region_first), parse<int>(region_second));
             parallel_normalize_regions.push_back(region);
-            cerr << "working with region: " << region.first << " " << region.second << endl;
-            cerr << "in gbwtgraph: " << gbwt_graph->has_node(region.first) << " " << gbwt_graph->has_node(region.second) << endl;
-            cerr << "in graph: " << graph->has_node(region.first) << " " << graph->has_node(region.second) << endl;
+            // cerr << "working with region: " << region.first << " " << region.second << endl;
+            // cerr << "in gbwtgraph: " << gbwt_graph->has_node(region.first) << " " << gbwt_graph->has_node(region.second) << endl;
+            // cerr << "in graph: " << graph->has_node(region.first) << " " << graph->has_node(region.second) << endl;
         }
+        while(getline(file, line_str, '\n'))
+        {
+            stringstream line_ss(line_str);
+            
+            string region_first; string region_second; string region_original;
+            getline(line_ss, region_first, ' ');
+            getline(line_ss, region_second, ' ');
+            getline(line_ss, region_original, ' ');
+
+            pair<vg::id_t, vg::id_t> desegregation_candidate = make_pair(parse<int>(region_first), parse<int>(region_second));
+            pair< pair< vg::id_t, vg::id_t >, vg::id_t > candidate_with_original = make_pair(desegregation_candidate, parse<int>(region_original));
+
+            desegregation_candidates.push_back(candidate_with_original);
+
+        }
+        file.close();
     }
 
 
@@ -468,22 +484,28 @@ int main_normalize(int argc, char **argv) {
         parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(parallel_regions_gbwt, *graph);
     }
 
-    cerr << "output_segregate_regions_only_file.size() " << output_segregate_regions_only_file.size() << endl;
+    // cerr << "output_segregate_regions_only_file.size() " << output_segregate_regions_only_file.size() << endl;
     if (output_segregate_regions_only_file.size()>0)
     {
-        cerr << "saving updated graph to file" << endl;
+        // cerr << "saving updated graph to file" << endl;
         //save normalized graph
         vg::io::save_handle_graph(graph.get(), std::cout);
 
-        cerr << "saving updated gbwt" << endl;
+        // cerr << "saving updated gbwt" << endl;
         save_gbwt(parallel_regions_gbwt, output_gbwt_file, true);
 
-        cerr << "saving extra segregate regions data to file " << output_segregate_regions_only_file << endl;
+        // cerr << "saving extra segregate regions data to file " << output_segregate_regions_only_file << endl;
         std::ofstream output_file(output_segregate_regions_only_file);
         for (auto const& region : parallel_normalize_regions)
         {
-            cerr << "saving the following to output: " << region.first << " " << region.second << endl;
+            // cerr << "saving the following to output: " << region.first << " " << region.second << endl;
             output_file << region.first << " " << region.second << endl;
+        }
+        output_file << "-----" << endl; //this marks the end of parallel_normalize_regions and the beginning of desegregation_candidates.
+        for (auto const& cand : desegregation_candidates)
+        {
+            // cerr << "saving the following to desegregation_candidates: " << endl;
+            output_file << cand.first.first << " " << cand.first.second << " " << cand.second << endl;
         }
         exit(0);
         
@@ -509,7 +531,7 @@ int main_normalize(int argc, char **argv) {
         //test for all desegregation candidates having made it into the graph, gbwt_graph, and gbwt.
         for (auto cand : desegregation_candidates)
         {
-            // cerr << "testing nodes " << cand.first.first << " and " << cand.first.second << endl;
+            // cerr << "desegregation_candidates: " << cand.first.first << " and " << cand.first.second << endl;
             assert(parallel_regions_gbwt_graph.has_node(cand.first.first));
             assert(parallel_regions_gbwt_graph.has_node(cand.first.second));
             assert(graph->has_node(cand.first.first));
