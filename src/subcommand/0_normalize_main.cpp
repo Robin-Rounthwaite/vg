@@ -131,6 +131,7 @@ void help_normalize(char **argv) {
         << "    -r, --gbwt_graph       the gbwt_graph corresponding to the input graph and gbwt. If not supplied, will be temporarily generated." << endl
         << "    -o, --output_gbwt   name for the gbwt corresponding to the normalized graph. Default is normalized.gbwt."
         << "optional options: " << endl
+        // << "    -O, --output_gbwt_graph   name for the gbwt_graph corresponding to the normalized graph and gbwt. Default is normalized.gbwt.gg."
         << "    -l, --max_handle_size       currently, default is 32, to match the default "
             "handle size of most graphs. This "
             "changes what the largest size of handle can be in normalized regions. "
@@ -140,10 +141,15 @@ void help_normalize(char **argv) {
         //todo: allow the user to specify normalize and update_gbwt threads separately.
         << "    -t, --threads      The number of threads used in the normalization process. In addition to the normalization step, it affects the update_gbwt step, which can grow very long without multithreading. To prevent overusing memory, the update_gbwt step will only use up to 14 threads (even if more is specified), but the normalization step can use as many as specified, so long as there are regions that still need realigning.  Default:14."
         << endl
-        << "    -s, --segregate_regions_only       segregates the graph into segregated "
+        << "    -s, --output_segregate_regions_only_file       specify the output file for the segregation of the graph into segregated "
             "regions, and generates an updated gbwt. This allows for easy tests of "
             "normalize on the segregated graph without having to update the gbwt. "
             "(debugging tool)" << endl
+        << "    -S, --input_segregate_regions_only_file       input from a previous run "
+            "that had an output of segregate_regions_only. This. along with the segregated "
+            "regions gbwt, gg, and graph, contains all the program needs to continue a run "
+            "of normalize after the first segregation of regions. (distance index "
+            "may be passed to the program untouched.)." << endl
         << "    -u, --run_tests       run tests to make sure that normalize is still functioning properly." << endl
         << "    -b, --debug_print       print some information during normalization for debugging." << endl
         << "    -h, --help      print this help info." << endl;
@@ -164,7 +170,8 @@ int main_normalize(int argc, char **argv) {
     int max_region_size = 750; //todo: when abpoa added, make default region size much larger. However much that memory/time can handle.
     int max_region_gap = 32; //todo: when abpoa added, possibly make default region gap larger.
     int threads = 14;
-    bool segregate_regions_only = false;
+    string output_segregate_regions_only_file;
+    string input_segregate_regions_only_file;
     bool run_tests = false;
     bool debug_print = false;
 
@@ -188,12 +195,13 @@ int main_normalize(int argc, char **argv) {
             {"max_region_size", required_argument, 0, 'm'},
             {"max_region_gap", required_argument, 0, 'n'},
             {"threads", required_argument, 0, 't'},
-            {"segregate_regions_only", no_argument, 0, 's'},
+            {"output_segregate_regions_only_file", required_argument, 0, 's'},
+            {"input_segregate_regions_only_file", required_argument, 0, 'S'},
             {"run_tests", no_argument, 0, 'u'},
             {"debug_print", no_argument, 0, 'b'},
             {0, 0, 0, 0}};
         int option_index = 0;
-        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:sub", long_options,
+        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:s:S:ub", long_options,
                         &option_index);
         // Detect the end of the options.
         if (c == -1)
@@ -234,7 +242,11 @@ int main_normalize(int argc, char **argv) {
             break;
 
         case 's':
-            segregate_regions_only = true;
+            output_segregate_regions_only_file = optarg;
+            break;
+
+        case 'S':
+            input_segregate_regions_only_file = optarg;
             break;
 
         case 'u':
@@ -295,120 +307,145 @@ int main_normalize(int argc, char **argv) {
       gbwt_graph->set_gbwt(*gbwt);
     }
 
-    // v2 distance index
-    cerr << "loading distance index" << endl;
-    auto distance_index = vg::io::VPKG::load_one<SnarlDistanceIndex>(distance_index_file);
-
-    // // =======isolating normalize regions for multithreading=======
-    cerr << "=======isolating normalize regions for multithreading=======" << endl;
-    cerr << "getting non-isolated normalize regions." << endl;
-    vector<pair<vg::id_t, vg::id_t>> snarl_roots;
-    // distance_index->is_root_snarl
-    distance_index->traverse_decomposition([&] (const bdsg::net_handle_t& snarl) {
-        
-
-        if (distance_index->get_depth(snarl) != 1) // snarl must be top-level.
-        {
-            return true;
-        }
-        handle_t inward_source_handle = distance_index->get_handle(distance_index->get_bound(snarl, false, true), &*graph);
-        handle_t outward_sink_handle = distance_index->get_handle(distance_index->get_bound(snarl, true, false), &*graph);
-        // cerr << graph->get_id(inward_source_handle) << " " << graph->get_id(outward_sink_handle) << endl;
-        // cerr << "distance_index->get_depth(snarl): " << distance_index->get_depth(snarl) << endl;
-        // if (!distance_index->is_root_snarl(snarl))
-        // {
-        //     cerr << "not root snarl" << graph->get_id(inward_source_handle) << " " << graph->get_id(outward_sink_handle) << endl;
-        //     return true;
-        // } 
-
-        //source is "rightmost" handle if inward_source is_reverse=true. (where the
-        //direction "right" is forward for the default orientation of a handle generated
-        //on the node)
-        if (graph->get_is_reverse(inward_source_handle) && graph->get_is_reverse(outward_sink_handle))
-        {
-            snarl_roots.push_back(
-                make_pair(
-                    graph->get_id(outward_sink_handle),
-                    graph->get_id(inward_source_handle)
-                    ));
-        }
-        else if (!graph->get_is_reverse(inward_source_handle) && !graph->get_is_reverse(outward_sink_handle))
-        {
-          snarl_roots.push_back(
-            make_pair(
-                graph->get_id(inward_source_handle),
-                graph->get_id(outward_sink_handle)
-                ));
-        }
-        else
-        {
-            //something unexpected is happening. There shouldn't ever be a reverse source but non-reversed sink, or vice-versa. Throw error. 
-            //todo: permit this by turning snarl_roots into pairs of handles instead of id_ts. 
-            cerr << "error:[vg normalize] there is a snarl with a source and sink that have mismatched orientations. This is currently unsupported. " << endl;
-            exit(1);
-        }
-        return true;
-    },
-    [&](const bdsg::net_handle_t& chain) {return true;},
-    [&] (const bdsg::net_handle_t& node) {return true;});
-
-    cerr << "segregating regions for parallelization" << endl; //so that edits in two parallel jobs can't touch the same node.
-    vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, *distance_index, max_region_size, max_region_gap);
 
     std::vector<std::pair<vg::id_t, vg::id_t>> parallel_normalize_regions;
     vector< pair< pair< vg::id_t, vg::id_t >, vg::id_t > > desegregation_candidates; // all id_t are from node ids in the graph 
-    std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, parallel_normalize_regions, desegregation_candidates);
-
-    if (run_tests)
+    std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_updates;
+    if (input_segregate_regions_only_file.size() == 0)
     {
-        // cerr << "non-parallel normalize regions: " << endl;
-        // for (auto region: snarl_roots)
-        // {
-        //     cerr << region.first << " " << region.second << endl;
-        // }
-        // cerr << "parallel normalize regions: " << endl;
-        // for (auto region : parallel_normalize_regions)
-        // {
-        //     cerr << region.first << " " << region.second << endl;
-        // }
-        // cerr << " regions in parallel_regions_gbwt_updates: " << endl;
-        // for (auto region : parallel_regions_gbwt_updates)
-        // {
-        //     cerr << "before: " << endl;
-        //     for (auto node : region.first)
-        //     {
-        //         cerr << gbwt::Node::id(node) << " ";
-        //     }
-        //     cerr << endl;
-        //     cerr << "after: " << endl;
-        //     for (auto node : region.second)
-        //     {
-        //         cerr << gbwt::Node::id(node) << " ";
-        //     }
-        //     cerr << endl;
-        // }
-        // cerr << " cands in desegregation_candidates: " << endl;
-        // for (auto cand : desegregation_candidates)
-        // {
-        //     cerr << "before: " << endl;
-        //     cerr << cand.second << endl;
-        //     cerr << "after: " << endl;
-        //     cerr << cand.first.first << " " << cand.first.second << endl;
-        // }
-        assert(parallel_regions_gbwt_updates.size()==desegregation_candidates.size());
-        for (int i = 0; i != parallel_regions_gbwt_updates.size(); i++)
+        // v2 distance index
+        cerr << "loading distance index" << endl;
+        auto distance_index = vg::io::VPKG::load_one<SnarlDistanceIndex>(distance_index_file);
+
+        // // =======isolating normalize regions for multithreading=======
+        cerr << "=======isolating normalize regions for multithreading=======" << endl;
+        cerr << "getting non-isolated normalize regions." << endl;
+        vector<pair<vg::id_t, vg::id_t>> snarl_roots;
+        // distance_index->is_root_snarl
+        distance_index->traverse_decomposition([&] (const bdsg::net_handle_t& snarl) {
+            
+            if (distance_index->get_depth(snarl) != 1) // snarl must be top-level.
+            {
+                return true;
+            }
+            handle_t inward_source_handle = distance_index->get_handle(distance_index->get_bound(snarl, false, true), &*graph);
+            handle_t outward_sink_handle = distance_index->get_handle(distance_index->get_bound(snarl, true, false), &*graph);
+            cerr << graph->get_id(inward_source_handle) << " " << graph->get_id(outward_sink_handle) << endl;
+            cerr << "distance_index->get_depth(snarl): " << distance_index->get_depth(snarl) << endl;
+            // if (!distance_index->is_root_snarl(snarl))
+            // {
+            //     cerr << "not root snarl" << graph->get_id(inward_source_handle) << " " << graph->get_id(outward_sink_handle) << endl;
+            //     return true;
+            // } 
+
+            //source is "rightmost" handle if inward_source is_reverse=true. (where the
+            //direction "right" is forward for the default orientation of a handle generated
+            //on the node)
+            if (graph->get_is_reverse(inward_source_handle) && graph->get_is_reverse(outward_sink_handle))
+            {
+                snarl_roots.push_back(
+                    make_pair(
+                        graph->get_id(outward_sink_handle),
+                        graph->get_id(inward_source_handle)
+                        ));
+            }
+            else if (!graph->get_is_reverse(inward_source_handle) && !graph->get_is_reverse(outward_sink_handle))
+            {
+            snarl_roots.push_back(
+                make_pair(
+                    graph->get_id(inward_source_handle),
+                    graph->get_id(outward_sink_handle)
+                    ));
+            }
+            else
+            {
+                //something unexpected is happening. There shouldn't ever be a reverse source but non-reversed sink, or vice-versa. Throw error. 
+                //todo: permit this by turning snarl_roots into pairs of handles instead of id_ts. 
+                cerr << "error:[vg normalize] there is a snarl with a source and sink that have mismatched orientations. This is currently unsupported. " << endl;
+                exit(1);
+            }
+            return true;
+        },
+        [&](const bdsg::net_handle_t& chain) {return true;},
+        [&] (const bdsg::net_handle_t& node) {return true;});
+
+        cerr << "segregating regions for parallelization" << endl; //so that edits in two parallel jobs can't touch the same node.
+        vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
+
+        parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, *distance_index, parallel_normalize_regions, desegregation_candidates);
+        if (run_tests)
         {
-            //the "before" version of the update should be 1 in length:
-            assert(parallel_regions_gbwt_updates[i].first.size()==1);
-            //and equivalent to the original id in desegregation_candidates:
-            assert(gbwt::Node::id(parallel_regions_gbwt_updates[i].first.back())==desegregation_candidates[i].second);
-            //the "after" version of the update should be 2 in length:
-            assert(parallel_regions_gbwt_updates[i].second.size()==2);
-            //and equivalent to the new ids in desegregation_candidates:
-            assert(gbwt::Node::id(parallel_regions_gbwt_updates[i].second.front())==desegregation_candidates[i].first.first);
-            assert(gbwt::Node::id(parallel_regions_gbwt_updates[i].second.back())==desegregation_candidates[i].first.second);
+            cerr << "non-parallel normalize regions: " << endl;
+            for (auto region: snarl_roots)
+            {
+                cerr << region.first << " " << region.second << endl;
+            }
+            cerr << "parallel normalize regions: " << endl;
+            for (auto region : parallel_normalize_regions)
+            {
+                cerr << region.first << " " << region.second << endl;
+            }
+            cerr << " regions in parallel_regions_gbwt_updates: " << endl;
+            for (auto region : parallel_regions_gbwt_updates)
+            {
+                cerr << "before: " << endl;
+                for (auto node : region.first)
+                {
+                    cerr << gbwt::Node::id(node) << " ";
+                }
+                cerr << endl;
+                cerr << "after: " << endl;
+                for (auto node : region.second)
+                {
+                    cerr << gbwt::Node::id(node) << " ";
+                }
+                cerr << endl;
+            }
+            cerr << " cands in desegregation_candidates: " << endl;
+            for (auto cand : desegregation_candidates)
+            {
+                cerr << "before: " << endl;
+                cerr << cand.second << endl;
+                cerr << "after: " << endl;
+                cerr << cand.first.first << " " << cand.first.second << endl;
+            }
+            assert(parallel_regions_gbwt_updates.size()==desegregation_candidates.size());
+            for (int i = 0; i != parallel_regions_gbwt_updates.size(); i++)
+            {
+                //the "before" version of the update should be 1 in length:
+                assert(parallel_regions_gbwt_updates[i].first.size()==1);
+                //and equivalent to the original id in desegregation_candidates:
+                assert(gbwt::Node::id(parallel_regions_gbwt_updates[i].first.back())==desegregation_candidates[i].second);
+                //the "after" version of the update should be 2 in length:
+                assert(parallel_regions_gbwt_updates[i].second.size()==2);
+                //and equivalent to the new ids in desegregation_candidates:
+                assert(gbwt::Node::id(parallel_regions_gbwt_updates[i].second.front())==desegregation_candidates[i].first.first);
+                assert(gbwt::Node::id(parallel_regions_gbwt_updates[i].second.back())==desegregation_candidates[i].first.second);
+            }
         }
     }
+    else
+    {
+        
+        std::ifstream file( input_segregate_regions_only_file );
+        string line_str;
+        while(getline(file, line_str, '\n'))
+        {
+            stringstream line_ss(line_str);
+
+            string region_first; string region_second;
+            getline(line_ss, region_first, ' ');
+            getline(line_ss, region_second, ' ');
+
+            pair<vg::id_t, vg::id_t> region = make_pair(parse<int>(region_first), parse<int>(region_second));
+            parallel_normalize_regions.push_back(region);
+            cerr << "working with region: " << region.first << " " << region.second << endl;
+            cerr << "in gbwtgraph: " << gbwt_graph->has_node(region.first) << " " << gbwt_graph->has_node(region.second) << endl;
+            cerr << "in graph: " << graph->has_node(region.first) << " " << graph->has_node(region.second) << endl;
+        }
+    }
+
+
 
     cerr << "updating the gbwt and gbwt_graph with the isolated regions" << endl;
     auto isolated_regions_gbwt_update_start = chrono::high_resolution_clock::now();    
@@ -431,7 +468,8 @@ int main_normalize(int argc, char **argv) {
         parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(parallel_regions_gbwt, *graph);
     }
 
-    if (segregate_regions_only)
+    cerr << "output_segregate_regions_only_file.size() " << output_segregate_regions_only_file.size() << endl;
+    if (output_segregate_regions_only_file.size()>0)
     {
         cerr << "saving updated graph to file" << endl;
         //save normalized graph
@@ -440,7 +478,29 @@ int main_normalize(int argc, char **argv) {
         cerr << "saving updated gbwt" << endl;
         save_gbwt(parallel_regions_gbwt, output_gbwt_file, true);
 
+        cerr << "saving extra segregate regions data to file " << output_segregate_regions_only_file << endl;
+        std::ofstream output_file(output_segregate_regions_only_file);
+        for (auto const& region : parallel_normalize_regions)
+        {
+            cerr << "saving the following to output: " << region.first << " " << region.second << endl;
+            output_file << region.first << " " << region.second << endl;
+        }
         exit(0);
+        
+        // std::ostream_iterator<std::string> output_iterator(output_file, "\n");
+        
+        // // std::ostream_iterator<std::pair<gbwtgraph::nid_t, gbwtgraph::nid_t>> output_iterator(output_file, "\n");
+        // std::copy(std::begin(parallel_normalize_regions), std::end(parallel_normalize_regions), output_iterator);
+
+        // for (auto const& x : vec1) 
+        // {
+        //     fout << x.first << ": "; 
+        //     for (float f : x.second) fout << f << " ";
+        //     fout << '\n';
+        // }
+        
+        
+        // exit(0);
 
     }
 
@@ -504,7 +564,7 @@ int main_normalize(int argc, char **argv) {
 
     cerr << "=======desegregating normalization regions after parallelized normalization=======" << endl;
     cerr << "desegregating the normalize regions." << endl;
-    vg::algorithms::NormalizeRegionFinder post_norm_region_finder = vg::algorithms::NormalizeRegionFinder(*graph, *distance_index, max_region_size, max_region_gap);
+    vg::algorithms::NormalizeRegionFinder post_norm_region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
     //merges nodes, updates entries in gbwt_normalize to match those merged nodes. (note: is there a way to make this O(n), rather than O(n^2)? Maybe a reverse index... seems possibly a distraction. Could be worth just running desegregate nodes after updating the gbwt, and update the gbwt a third time.)
     std::vector<vg::RebuildJob::mapping_type> desegregated_regions_gbwt_updates = post_norm_region_finder.desegregate_nodes(desegregation_candidates);
 

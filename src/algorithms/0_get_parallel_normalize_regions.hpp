@@ -13,7 +13,6 @@ class NormalizeRegionFinder {
     virtual ~NormalizeRegionFinder() = default;
 
     NormalizeRegionFinder(MutablePathDeletableHandleGraph &graph,
-                                 const SnarlDistanceIndex& distance_index,
                                  const int max_region_size,
                                  const int max_region_gap);
 
@@ -26,10 +25,10 @@ class NormalizeRegionFinder {
     // arguments parallel_normalize_regions and nodes_to_remove are empty vectors 
     // that are filled by the function.
     // Returns the changes that need to be made ot the gbwt to account for split nodes.
-    std::vector<vg::RebuildJob::mapping_type> get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates);
+    std::vector<vg::RebuildJob::mapping_type> get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, const SnarlDistanceIndex& distance_index, vector<pair<id_t, id_t>>& parallel_normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates);
 
-    /// function called by get_parallel_normalize_regions:
-    vector<pair<id_t, id_t>> get_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots);
+    // /// function called by get_parallel_normalize_regions:
+    // vector<pair<id_t, id_t>> get_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots);
 
     ///Function used to remove the splits introduced in split_sources_and_sinks. (NOTE: this will overwrite the current _gbwt_changelog.
     std::vector<vg::RebuildJob::mapping_type> desegregate_nodes(std::vector<std::pair<std::pair<id_t, id_t>, id_t>> desegregation_candidates);
@@ -38,7 +37,6 @@ class NormalizeRegionFinder {
 
     //member variables from construction:
     MutablePathDeletableHandleGraph &_graph;
-    const SnarlDistanceIndex &_distance_index;
     const int _max_region_size;
     const int _max_region_gap;
 
@@ -48,7 +46,7 @@ class NormalizeRegionFinder {
     /// other functionS called by get_parallel_normalize_regions:
     vector<pair<id_t, id_t>> split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates);
 
-    vector<pair<id_t, id_t>> cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots);
+    vector<pair<id_t, id_t>> cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, const SnarlDistanceIndex& distance_index);
 
     //used by cluster_roots:
     SubHandleGraph extract_subgraph(const HandleGraph &graph,

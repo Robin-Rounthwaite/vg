@@ -5,10 +5,9 @@
 namespace vg {
 namespace algorithms {
 NormalizeRegionFinder::NormalizeRegionFinder(MutablePathDeletableHandleGraph &graph,
-                                 const SnarlDistanceIndex& distance_index,
                                  const int max_region_size,
                                  const int max_region_gap) //todo: remove snarl spacing, or adapt it for when I want to divide clusters, esp once abpoa allows for larger clusters.
-: _graph(graph), _distance_index(distance_index), _max_region_size(max_region_size), _max_region_gap(max_region_gap){}
+: _graph(graph), _max_region_size(max_region_size), _max_region_gap(max_region_gap){}
 
 /// @brief The main function to be called in NormalizeRegionFinder. Sets ups normalizable
 /// regions that are completely independent of each other (no overlapping handles between
@@ -26,9 +25,9 @@ NormalizeRegionFinder::NormalizeRegionFinder(MutablePathDeletableHandleGraph &gr
 /// parallelized normalization.
 /// @return A tuple of arguments to pass to gbwt_update_items if you want an updated gbwt
 /// to match the parallel normalize regions. Tuple: (_gbwt_graph, _gbwt_changelog, _gbwt)
-std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, vector<pair<id_t, id_t>>& parallel_normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates)
+std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, const SnarlDistanceIndex& distance_index, vector<pair<id_t, id_t>>& parallel_normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates)
 {
-    vector<pair<vg::id_t, vg::id_t>> clustered_snarls = cluster_snarls(snarl_roots);
+    vector<pair<vg::id_t, vg::id_t>> clustered_snarls = cluster_snarls(snarl_roots, distance_index);
     // vector<pair<id_t, id_t>> clustered_regions = convert_snarl_clusters_to_regions(clustered_snarls);
 
     // parallel_normalize_regions = split_sources_and_sinks(snarl_roots, desegregation_candidates);
@@ -759,7 +758,7 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::desegregate_nod
 
 
 
-vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots)
+vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, const SnarlDistanceIndex& distance_index)
 {
     vector<pair<id_t, id_t>> clustered_snarls;
     vector<pair<id_t, id_t>> skipped_snarls;
@@ -825,7 +824,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
         //todo: end debug_code:
 
         //case: initialize cur_cluster:
-        int cur_snarl_size = _distance_index.maximum_distance(cur_snarl_i->first, false, 0, cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1);
+        int cur_snarl_size = distance_index.maximum_distance(cur_snarl_i->first, false, 0, cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1);
 
 
         if (cur_cluster == default_cluster)
@@ -854,11 +853,11 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
 
         // we are considering extending the cluster. So, let's get the distance between the end of the cur_cluster and the beginning of cur_snarl.
         //the smaller of these two gap calculations must not be the one containing a snarl inside it. Thus it is the true gap calculation. 
-        // cerr << "distance of graph: " << _distance_index.maximum_distance(1, false, 0, 18, false, _graph.get_sequence(_graph.get_handle(18)).size() - 1) << endl;
-        // cerr << "distance of 15 to 18: " << _distance_index.maximum_distance(15, false, 0, 18, false, _graph.get_sequence(_graph.get_handle(18)).size() - 1) << endl;
-        // cerr << "distance of 12 to 18: " << _distance_index.maximum_distance(12, false, 0, 18, false, _graph.get_sequence(_graph.get_handle(18)).size() - 1) << endl;
-        // cerr << "distance of 12 to 12: " << _distance_index.maximum_distance(12, false, 0, 12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1) << endl;
-        // cerr << "reverse distance of 12 to 12: " << _distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0) << endl;
+        // cerr << "distance of graph: " << distance_index.maximum_distance(1, false, 0, 18, false, _graph.get_sequence(_graph.get_handle(18)).size() - 1) << endl;
+        // cerr << "distance of 15 to 18: " << distance_index.maximum_distance(15, false, 0, 18, false, _graph.get_sequence(_graph.get_handle(18)).size() - 1) << endl;
+        // cerr << "distance of 12 to 18: " << distance_index.maximum_distance(12, false, 0, 18, false, _graph.get_sequence(_graph.get_handle(18)).size() - 1) << endl;
+        // cerr << "distance of 12 to 12: " << distance_index.maximum_distance(12, false, 0, 12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1) << endl;
+        // cerr << "reverse distance of 12 to 12: " << distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0) << endl;
         
         // cerr << "cur_cluster.second " << cur_cluster.second << endl;
         // cerr << "cur_snarl_i->first " << cur_snarl_i->first << endl;
@@ -883,8 +882,8 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
         // else
         // {
         //     //we have to calculate minimum distance:
-        //     right_gap = _distance_index.maximum_distance(cur_cluster.second, false, _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() - 1, cur_snarl_i->first, false, 0);
-        //     left_gap = _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0);
+        //     right_gap = distance_index.maximum_distance(cur_cluster.second, false, _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() - 1, cur_snarl_i->first, false, 0);
+        //     left_gap = distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0);
         //     if (right_gap == -1)
         //     {
         //         snarl_gap = left_gap;
@@ -899,17 +898,17 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
         //         // cerr << "Although the snarls do not overlap, both distances are this should never happen, based on what I understand."
         //     }
         // }
-        // cerr << "_distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0)" << _distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0) << endl;
-        // cerr << "_distance_index.maximum_distance(15, false, _graph.get_sequence(_graph.get_handle(15)).size() - 1, 15, false, 0)" << _distance_index.maximum_distance(15, false, _graph.get_sequence(_graph.get_handle(15)).size() - 1, 15, false, 0) << endl;
-        // cerr << "_distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0) " << _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0) << endl;
+        // cerr << "distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0)" << distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0) << endl;
+        // cerr << "distance_index.maximum_distance(15, false, _graph.get_sequence(_graph.get_handle(15)).size() - 1, 15, false, 0)" << distance_index.maximum_distance(15, false, _graph.get_sequence(_graph.get_handle(15)).size() - 1, 15, false, 0) << endl;
+        // cerr << "distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0) " << distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0) << endl;
 
-        // int test_1 = _distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0);
-        // int test_2 = _distance_index.maximum_distance(15, false, _graph.get_sequence(_graph.get_handle(15)).size() - 1, 15, false, 0);
-        // int test_3 = _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0);
+        // int test_1 = distance_index.maximum_distance(12, false, _graph.get_sequence(_graph.get_handle(12)).size() - 1, 12, false, 0);
+        // int test_2 = distance_index.maximum_distance(15, false, _graph.get_sequence(_graph.get_handle(15)).size() - 1, 15, false, 0);
+        // int test_3 = distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0);
         // cerr << test_1 << " " << test_2 << " " << test_3 << endl;
         
-        right_gap = _distance_index.maximum_distance(cur_cluster.second, false, _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() - 1, cur_snarl_i->first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
-        left_gap = _distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
+        right_gap = distance_index.maximum_distance(cur_cluster.second, false, _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() - 1, cur_snarl_i->first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
+        left_gap = distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
         snarl_gap = min(left_gap, right_gap);
         // if (cur_snarl_i->first == 177070) 
         // {
