@@ -566,10 +566,17 @@ int main_normalize(int argc, char **argv) {
     // vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
     //   *graph, *gbwt, *gbwt_graph, nodes_to_delete, max_handle_size, max_region_size, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
     // std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(snarl_roots);
+    
+    
+
     vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
       *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, max_handle_size, max_region_size, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
 
     std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
+
+    cerr << "normalize ran with arguments: " << endl;
+    cerr << "max_region_size (-m): " << max_region_size << endl;
+    cerr << "max_region_gap (-n): " << max_region_gap << endl;
 
     cerr << "=======updating gbwt after normalization and before desegregating regions=======" << endl;
     cerr << "updating gbwt after normalization" << endl;

@@ -87,7 +87,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: change to make more memory efficient? 
     //todo: I could also at least re-derive the SubHandleGraph if I needed to.
     // vector< pair< vg::VG, pair<id_t,id_t> > > normalized_snarls;
-    vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls;
+    vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls(split_normalize_regions.size());
     
 
     // //todo: debug_code
@@ -229,6 +229,11 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         {
             cerr << "about to store the normalized snarl for later." << endl;
         }
+
+        //record snarl size change statistic
+        _snarl_size_changes[make_pair(region.first, region.second)] = make_pair(original_snarl_size, new_snarl_size);
+
+        #pragma omp critical
         normalized_snarls.push_back(make_tuple(snarl, new_snarl, embedded_paths, region.first, region.second, false, source_to_sink_gbwt_paths));
         // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, embedded_paths, region.first, region.second, false);
     }
@@ -246,7 +251,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             cerr << "======================about to integrate snarl " << get<3>(snarl) << " " << get<4>(snarl) << "======================" << endl;
         }
 
-
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
         SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
@@ -261,40 +265,126 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
 void SnarlNormalizer::print_parallel_statistics()
 {
-        //todo: include the size avg? Or some other size-related stat.
+    cerr << "---------summary of skipped regions:---------" << endl;
     // vector<int> _sizes_of_snarls_skipped_because_gbwt_misses_handles;
     if (_snarls_skipped_because_gbwt_misses_handles.size() >0)
     {
-        cerr << "number of snarls skipped because gbwt misses handles: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl; 
+        cerr << "number of regions skipped because gbwt misses handles: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl; 
     }
 
-    //todo: include the size avg? Or some other size-related stat.
     // vector<int> _sizes_of_snarls_skipped_because_cyclic;
     if (_snarls_skipped_because_cyclic.size() >0)
     {
-        cerr << "number of snarls skipped because cyclic: " << _snarls_skipped_because_cyclic.size() << endl; 
+        cerr << "number of regions skipped because cyclic: " << _snarls_skipped_because_cyclic.size() << endl; 
     }
 
-    //todo: include the size avg? Or some other size-related stat.
     // vector<int> _sizes_of_snarls_skipped_because_haplotype_ends_in_middle;
     if (_snarls_skipped_because_haplotype_ends_in_middle.size() >0)
     {
-        cerr << "number of snarls skipped because haplotype ends in middle: " << _snarls_skipped_because_haplotype_ends_in_middle.size() << endl; 
+        cerr << "number of regions skipped because haplotype ends in middle: " << _snarls_skipped_because_haplotype_ends_in_middle.size() << endl; 
     }
 
-    //todo: include the size avg? Or some other size-related stat.
     // vector<int> _sizes_of_snarls_skipped_because_alignment_too_many_threads;
     if (_snarls_skipped_because_alignment_too_many_threads.size() >0)
     {
-        cerr << "number of snarls skipped because alignment too many threads: " << _snarls_skipped_because_alignment_too_many_threads.size() << endl; 
+        cerr << "number of regions skipped because alignment too many threads: " << _snarls_skipped_because_alignment_too_many_threads.size() << endl; 
     }
 
-    //todo: include the size avg? Or some other size-related stat.
     // vector<int> _sizes_of_snarls_skipped_because_haps_too_long_for_spoa;
     if (_snarls_skipped_because_haps_too_long_for_spoa.size() >0)
     {
-        cerr << "number of snarls skipped because haps too long for spoa: " << _snarls_skipped_because_haps_too_long_for_spoa.size() << endl; 
+        cerr << "number of regions skipped because haps too long for spoa: " << _snarls_skipped_because_haps_too_long_for_spoa.size() << endl; 
     }
+
+    cerr << "---------summary of normalized regions:---------" << endl;
+    int num_top_snarls_tracked = 10; // hardcoded for debugging convenience. //todo: change?
+
+    // Detect the top best (shrinking-size, not actually necessarily best) snarl changes:
+    auto best_compare = [](const pair<pair<id_t, id_t>, pair<int, int>> left, const pair<pair<id_t, id_t>, pair<int, int>> right) 
+    {
+        return (right.second.second - right.second.first) >= (left.second.second - left.second.first);
+    };
+    vector<pair<pair<id_t, id_t>, pair<int, int>>> best_snarl_changes;
+
+
+    for (pair<pair<id_t, id_t>, pair<int, int>> region : _snarl_size_changes)
+    {
+
+        if (best_snarl_changes.size() < num_top_snarls_tracked)
+        {
+            best_snarl_changes.insert(upper_bound(best_snarl_changes.begin(), best_snarl_changes.end(), region, best_compare), region);
+        }
+        else if ((region.second.second - region.second.first) < (best_snarl_changes.back().second.second - best_snarl_changes.back().second.first)) //todo: check that this is proper comparison.
+        {
+            best_snarl_changes.insert(upper_bound(best_snarl_changes.begin(), best_snarl_changes.end(), region, best_compare), region);
+            best_snarl_changes.pop_back();
+        }
+    }
+
+
+    // general statistics
+    int size_of_all_shrinking_snarls_pre_norm = 0;
+    int size_of_all_shrinking_snarls_post_norm = 0;
+    int size_of_all_growing_snarls_pre_norm = 0;
+    int size_of_all_growing_snarls_post_norm = 0;
+    
+    // Detect the top worst (growing-size, not actually necessarily worst) snarl changes:
+    int snarls_that_grow_after_norm = 0;
+    int snarls_that_shrink_after_norm = 0;
+    auto worst_compare = [](const pair<pair<id_t, id_t>, pair<int, int>> left, const pair<pair<id_t, id_t>, pair<int, int>> right) 
+    {
+        return (right.second.second - right.second.first) <= (left.second.second - left.second.first);
+    };
+    vector<pair<pair<id_t, id_t>, pair<int, int>>> worst_snarl_changes;
+    for (pair<pair<id_t, id_t>, pair<int, int>> region : _snarl_size_changes)
+    {
+        
+        if (region.second.second - region.second.first > 0)
+        {
+            snarls_that_grow_after_norm += 1;
+            size_of_all_growing_snarls_pre_norm += region.second.first;
+            size_of_all_growing_snarls_post_norm += region.second.second;
+        }
+        else if (region.second.second - region.second.first < 0)
+        {
+            snarls_that_shrink_after_norm += 1;
+            size_of_all_shrinking_snarls_pre_norm += region.second.first;
+            size_of_all_shrinking_snarls_post_norm += region.second.second;
+        }
+        // cerr << "deciding whether or not to insert following value: " << region.second.first << " , " << region.second.second << endl;
+        if (worst_snarl_changes.size() < num_top_snarls_tracked)
+        {
+            // cerr << "inserted because the worst_snarl_changes isn't big enough." << endl;
+            worst_snarl_changes.insert(upper_bound(worst_snarl_changes.begin(), worst_snarl_changes.end(), region, worst_compare), region);
+        }
+        else if ((region.second.second - region.second.first) > (worst_snarl_changes.back().second.second - worst_snarl_changes.back().second.first))
+        {
+            // cerr << "inserted and replaced an item. shrinkage of Item replaced: " << worst_snarl_changes.back().second.second - worst_snarl_changes.back().second.first << endl;
+            // cerr << "Shrinkage of item added: " << region.second.second - region.second.first << endl;
+            worst_snarl_changes.insert(upper_bound(worst_snarl_changes.begin(), worst_snarl_changes.end(), region, worst_compare), region);
+            worst_snarl_changes.pop_back();
+        }
+    }
+    cerr << "total snarls that shrink in size: " << snarls_that_shrink_after_norm << endl;
+    cerr << "percent change of snarls that shrink in size: " << (((double)size_of_all_shrinking_snarls_post_norm - (double)size_of_all_shrinking_snarls_pre_norm)/(double)snarls_that_shrink_after_norm)*100 << "%" << endl;  
+    cerr << "top " << num_top_snarls_tracked << " snarls *reduction* in size (probably desirable): " << endl;
+    cerr << "leftmost_id  rightmost_id  original_size  normalized_size  (change_in_size;  percent change)" << endl;
+    
+    // for (auto i = _snarl_size_changes.end(); i != next(_snarl_size_changes.end(), -num_top_snarls_tracked); i--)
+    for (auto region : best_snarl_changes)
+    {
+        cerr << region.first.first << "   " << region.first.second << "   " << region.second.first << "   " << region.second.second << "   (" << region.second.second - region.second.first << ";" << "   " << ((((double)region.second.second - (double)region.second.first)/(double)region.second.first)*100.0) << "%)" << endl;
+    }
+
+    cerr << "total snarls that grow in size: " << snarls_that_grow_after_norm << endl;
+    cerr << "percent change of snarls that grow in size: " << (((double)size_of_all_growing_snarls_post_norm - (double)size_of_all_growing_snarls_pre_norm)/(double)snarls_that_grow_after_norm)*100 << "%" << endl;  
+    cerr << "top " << num_top_snarls_tracked << " snarls *increase* in size (probably undesirable): " << endl;
+    cerr << "leftmost_id  rightmost_id  original_size  normalized_size  (change_in_size;  percent change)" << endl;
+    for (auto region : worst_snarl_changes)
+    {
+        cerr << region.first.first << "   " << region.first.second << "   " << region.second.first << "   " << region.second.second << "   (" << region.second.second - region.second.first << ";" << "   " << ((((double)region.second.second - (double)region.second.first)/(double)region.second.first)*100.0) << "%)" << endl;
+    }
+
 }
 
 /// @brief 
