@@ -179,6 +179,7 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     }
     string path_name = _graph.get_path_name(_graph.get_path_handle_of_step(old_path.first)); // used for unit tests at bottom.
     vector<handle_t> old_path_location;
+
     // cerr << "about to walk steps down the path" << endl;
     // cerr << "path id: " << _graph.get_path_name(_graph.get_path_handle_of_step(cur_step)) << endl;
     // cerr << "_graph.get_previous_step(old_path.second) " << "step id: " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) << " step seq: " << _graph.get_sequence(_graph.get_handle_of_step(_graph.get_previous_step(old_path.second))) << endl;
@@ -219,7 +220,17 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
         cur_step = _graph.get_next_step(cur_step);
     }
 
-
+    if (_debug_print==true)
+    {
+        cerr << "path name " << path_name << endl;
+        cerr << "path_str " << path_str << endl;
+        cerr << "all handles in maingraphsourceandsink: " << endl;
+        auto test = extract_subgraph(_graph, leftmost_id, rightmost_id);
+        test.for_each_handle([&](handle_t handle)
+        {
+            cerr << test.get_id(handle) << " " << test.get_sequence(handle) << endl;
+        });
+    }
 
     // cerr << "path string as originally extracted: " << path_str << endl;
     handle_t leftmost_handle = _graph.get_handle(leftmost_id);

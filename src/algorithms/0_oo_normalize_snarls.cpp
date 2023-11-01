@@ -87,7 +87,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: change to make more memory efficient? 
     //todo: I could also at least re-derive the SubHandleGraph if I needed to.
     // vector< pair< vg::VG, pair<id_t,id_t> > > normalized_snarls;
-    vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls(split_normalize_regions.size());
+    vector< tuple< SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls;
     
 
     // //todo: debug_code
@@ -100,10 +100,38 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     cerr << "starting clock for internal normalize stats." << endl;
 
 
+
+    //todo: begin debug_code:
+    // split_normalize_regions.clear();
+    // split_normalize_regions.push_back(make_pair(2369282, 2369288));
+    // split_normalize_regions.push_back(make_pair(2555912, 2555931));
+    // // vector<pair<id_t, id_t>> debug_split_normalize_regions;
+    // int count = 0;
+    // for (auto i = split_normalize_regions.begin(); i!= split_normalize_regions.end(); i++)
+    // {
+    //     count++;
+    //     if (i->first < 2556000 && i->first > 2555000) 
+    //     {
+    //         cerr << count << endl;
+    //         cerr << i->first << " " << i->second << endl;
+    //     }
+    //     if (i->first == 2555912 && i->second==2555931)
+    //     {
+    //         cerr << "count is " << count << endl;
+    //         split_normalize_regions.push_back(*(--i));
+    //         split_normalize_regions.push_back(*(i));
+    //     }
+    //     break;
+    // }
+    //todo: end debug_code:
+
+
     omp_set_num_threads(_threads);
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
+        #pragma omp critical(print_progress)
+        {
         if (num_snarls_normalized%10000 == 0)
         // if (num_snarls_normalized%1 == 0)
         {
@@ -115,6 +143,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             
         }
         num_snarls_normalized++;
+        }
         pair<bool, bool> sequence_added_because_empty_node = make_pair(false, false);
 
         // _debug_print=true;
@@ -231,16 +260,18 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         }
 
         //record snarl size change statistic
-        _snarl_size_changes[make_pair(region.first, region.second)] = make_pair(original_snarl_size, new_snarl_size);
 
-        #pragma omp critical
+        #pragma omp critical(save_snarl)
+        {
+        _snarl_size_changes[make_pair(region.first, region.second)] = make_pair(original_snarl_size, new_snarl_size);
         normalized_snarls.push_back(make_tuple(snarl, new_snarl, embedded_paths, region.first, region.second, false, source_to_sink_gbwt_paths));
+        }
         // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, embedded_paths, region.first, region.second, false);
     }
 
-    auto cur_time = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = cur_time - start;
-    cerr << "all snarls normalized at time " << elapsed.count() << ". About to start integrating snarls." << endl;
+    auto align_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> align_elapsed = align_time - start;
+    cerr << "all snarls normalized at time " << align_elapsed.count() << ". About to start integrating snarls." << endl;
 
     //integrate all the normalized snarls formed in the parallel loop above.
     for (auto snarl : normalized_snarls)
@@ -258,6 +289,10 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         log_gbwt_changes(get<6>(snarl), integrated_snarl);
 
     }
+    auto integration_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> integration_elapsed = integration_time - align_time;
+    std::chrono::duration<double> total_elapsed = integration_time - start;
+    cerr << "Integration took " << integration_elapsed.count() << " seconds. Total time: " << total_elapsed.count() << endl;
 
     print_parallel_statistics();
     return _gbwt_changelog;
@@ -435,8 +470,11 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
         {
             cerr << "test failed because !all_handles_in_gbwt. " << endl;
         }
+        #pragma omp critical(error_update_1)
+        {
         _sizes_of_snarls_skipped_because_gbwt_misses_handles.push_back(snarl_size);
         _snarls_skipped_because_gbwt_misses_handles.push_back(region);
+        }
         // cerr << "!all handles in gbwt!" << "number of snarls skipped for this reason is: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl;
         return false;
     }
@@ -447,8 +485,11 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
         {
             cerr << "test failed because !handlealgs::is_acyclic(&snarl). " << endl;
         }
+        #pragma omp critical(error_update_2)
+        {
         _sizes_of_snarls_skipped_because_cyclic.push_back(snarl_size);
         _snarls_skipped_because_cyclic.push_back(region);
+        }
         return false;
     }
 
@@ -462,16 +503,22 @@ bool SnarlNormalizer::test_haplotypes(const tuple<unordered_set<string>, vector<
     //todo: Get rid of this once I can align these types of haps.
     if (!(get<1>(haplotypes).empty()))
     {
+        #pragma omp critical (test_haplotypes_1)
+        {
         _sizes_of_snarls_skipped_because_haplotype_ends_in_middle.push_back(original_snarl_size);
         _snarls_skipped_because_haplotype_ends_in_middle.push_back(region);
+        }
         return false;
     }
     // also, limit the number of haplotypes to be aligned, since normalize slows down 
     // greatly at higher thread counts. //todo: identify best _max_alignment_size for spoa/abpoa
     if (get<0>(haplotypes).size() > _max_alignment_size)
     {
+        #pragma omp critical (test_haplotypes_2)
+        {
         _sizes_of_snarls_skipped_because_alignment_too_many_threads.push_back(original_snarl_size);
         _snarls_skipped_because_alignment_too_many_threads.push_back(region);
+        }
         return false;
     }
 
@@ -480,8 +527,11 @@ bool SnarlNormalizer::test_haplotypes(const tuple<unordered_set<string>, vector<
     {
         if (hap.size() > max_spoa_length)
         {
+            #pragma omp critical (test_haplotypes_3)
+            {
             _sizes_of_snarls_skipped_because_haps_too_long_for_spoa.push_back(original_snarl_size);
             _snarls_skipped_because_haps_too_long_for_spoa.push_back(region);
+            }
             return false;
         }
     }
