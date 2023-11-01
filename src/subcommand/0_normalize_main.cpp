@@ -373,6 +373,7 @@ int main_normalize(int argc, char **argv) {
         vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
 
         parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, *distance_index, parallel_normalize_regions, desegregation_candidates);
+        cerr << "found " << parallel_normalize_regions.size() << " regions to normalize." << endl;
         if (run_tests)
         {
             // cerr << "non-parallel normalize regions: " << endl;
