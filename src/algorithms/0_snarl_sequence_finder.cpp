@@ -122,6 +122,11 @@ SnarlSequenceFinder::find_gbwt_haps() {
         //     for (handle_t handle : hap.first) {
         //         cerr << _gbwt_graph.get_id(handle) << " ";
         //     }
+        //     cerr << "sequence: " << endl;
+        //     for (handle_t handle : hap.first) {
+        //         cerr << _gbwt_graph.get_sequence(handle) << " ";
+        //     }
+            
         //     cerr << endl;
         // }
 

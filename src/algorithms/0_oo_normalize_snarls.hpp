@@ -174,6 +174,9 @@ class SnarlNormalizer {
     vector<int> _sizes_of_snarls_skipped_because_gbwt_misses_handles;
     vector<pair<id_t, id_t>> _snarls_skipped_because_gbwt_misses_handles;
 
+    vector<int> _sizes_of_snarls_skipped_because_gbwt_misses_edges;
+    vector<pair<id_t, id_t>> _snarls_skipped_because_gbwt_misses_edges;
+
     vector<int> _sizes_of_snarls_skipped_because_cyclic;
     vector<pair<id_t, id_t>> _snarls_skipped_because_cyclic;
 

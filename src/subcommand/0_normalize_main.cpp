@@ -307,6 +307,17 @@ int main_normalize(int argc, char **argv) {
       gbwt_graph->set_gbwt(*gbwt);
     }
 
+    // //todo:debug code:
+    // gbwt::SearchState debug_state = gbwt_graph->get_state(gbwt_graph->get_handle(2555917));
+    // gbwt_graph->follow_paths(debug_state,
+    //                         [&](const gbwt::SearchState next_search) -> bool {
+    //                             cerr << "(directly from the query node of 2555915): adjacent handles to state of " << gbwt_graph->get_id(gbwt_graph->node_to_handle(debug_state.node)) << " is " << gbwt_graph->get_id(gbwt_graph->node_to_handle(next_search.node)) << endl;
+    //                             return true;
+    //                         });
+
+
+    // //todo end debug
+
 
     std::vector<std::pair<vg::id_t, vg::id_t>> parallel_normalize_regions;
     vector< pair< pair< vg::id_t, vg::id_t >, vg::id_t > > desegregation_candidates; // all id_t are from node ids in the graph 
@@ -578,6 +589,7 @@ int main_normalize(int argc, char **argv) {
     cerr << "normalize ran with arguments: " << endl;
     cerr << "max_region_size (-m): " << max_region_size << endl;
     cerr << "max_region_gap (-n): " << max_region_gap << endl;
+    cerr << "threads (-t): " << threads << endl;
 
     cerr << "=======updating gbwt after normalization and before desegregating regions=======" << endl;
     cerr << "updating gbwt after normalization" << endl;

@@ -9,9 +9,6 @@
 #include <seqan/graph_align.h>
 #include <seqan/graph_msa.h>
 
-// #include <abpoa/abpoa.h>
-
-
 #include <gbwtgraph/gbwtgraph.h>
 #include "../gbwt_helper.hpp"
 
@@ -282,10 +279,12 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             cerr << "======================about to integrate snarl " << get<3>(snarl) << " " << get<4>(snarl) << "======================" << endl;
         }
 
+        cerr << "integration" << endl;
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
+        cerr << "extraction" << endl;
         SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
-        
+        cerr << "log changes" << endl;
         log_gbwt_changes(get<6>(snarl), integrated_snarl);
 
     }
@@ -305,6 +304,11 @@ void SnarlNormalizer::print_parallel_statistics()
     if (_snarls_skipped_because_gbwt_misses_handles.size() >0)
     {
         cerr << "number of regions skipped because gbwt misses handles: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl; 
+    }
+
+    if (_snarls_skipped_because_gbwt_misses_edges.size() >0)
+    {
+        cerr << "number of regions skipped because gbwt misses edges: " << _snarls_skipped_because_gbwt_misses_edges.size() << endl; 
     }
 
     // vector<int> _sizes_of_snarls_skipped_because_cyclic;
@@ -431,6 +435,7 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
 {
     //make sure that all handles in the snarl are represented by the gbwt.
     bool all_handles_in_gbwt = true;
+    bool all_edges_in_gbwt = true;
     // try 
     // {
     //     snarl.for_each_handle([&](handle_t handle){
@@ -446,13 +451,13 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
     snarl.for_each_handle([&](handle_t handle){
         // cerr << "handle exists in second for each handle: " << snarl.get_id(handle) << endl;
         // cerr << "snarl.get_id(handle)" << " " << snarl.get_id(handle) << endl;
-        const gbwt::BidirectionalState debug_state = _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)));
+        const gbwt::SearchState handle_state = _gbwt_graph.get_state(_gbwt_graph.get_handle(snarl.get_id(handle)));
         // cerr << "_gbwt_graph.get_handle(snarl.get_id(handle))" << " " << _gbwt_graph.get_handle(snarl.get_id(handle)) << endl;
         // cerr << "_gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)))" << " " << _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle))) << endl;
         // cerr << "does the gbwt contain this node? " << _gbwt.contains(gbwt::Node::encode(snarl.get_id(handle), false)) << endl;
         // cerr << "does the gbwt_graph contian this node? " << _gbwt_graph.has_node(snarl.get_id(handle)) << endl;
 
-        if (debug_state.empty())
+        if (handle_state.empty())
         {
             if (_debug_print)
             {
@@ -463,6 +468,34 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
             all_handles_in_gbwt = false;
             return;
         }
+
+        set<id_t> right_neighbors;
+        _graph.follow_edges(handle, false, [&](handle_t next_handle)
+        {
+            right_neighbors.emplace(_graph.get_id(next_handle));
+        });
+
+        _gbwt_graph.follow_paths(handle_state,
+        [&](const gbwt::SearchState next_search) -> bool {
+            if (right_neighbors.find(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node))) == right_neighbors.end())
+            {
+                // cerr << "looking for node id " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node)) << " equivalence: " << (right_neighbors.find(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(handle_state.node))) == right_neighbors.end()) << endl;
+                // cerr << "nodes in right_neighbors: " << endl;
+                // for (auto node : right_neighbors)
+                // {
+                //     cerr << node << " ";
+                // }
+                // cerr << endl;
+                if (_debug_print)
+                {
+                    cerr << "handle " << snarl.get_id(handle) << " not connect to " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node)) << " in gbwt." << endl;
+                }
+                all_edges_in_gbwt = false;
+            }
+            return true;
+        });
+
+    // cerr << "all_edges_in_gbwt " << all_edges_in_gbwt << endl << endl << endl; 
     }, true);
     if (!all_handles_in_gbwt)
     {
@@ -474,6 +507,21 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
         {
         _sizes_of_snarls_skipped_because_gbwt_misses_handles.push_back(snarl_size);
         _snarls_skipped_because_gbwt_misses_handles.push_back(region);
+        }
+        // cerr << "!all handles in gbwt!" << "number of snarls skipped for this reason is: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl;
+        return false;
+    }
+
+    if (!all_edges_in_gbwt)
+    {
+        if (_debug_print)
+        {
+            cerr << "test failed because !all_edges_in_gbwt. " << endl;
+        }
+        #pragma omp critical(error_update_1_5)
+        {
+        _sizes_of_snarls_skipped_because_gbwt_misses_edges.push_back(snarl_size);
+        _snarls_skipped_because_gbwt_misses_edges.push_back(region);
         }
         // cerr << "!all handles in gbwt!" << "number of snarls skipped for this reason is: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl;
         return false;
@@ -547,6 +595,46 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
         const bool stop_inclusive/*=false*/)
 {
     bool backwards = false;
+
+    // if (_debug_print == true)
+    // {
+    //     cerr << "all nodes in snarl according to extract_haplotypes:" << endl;
+
+    //     snarl.for_each_handle([&](handle_t handle)
+    //     {
+    //         cerr << snarl.get_id(handle) << " " << snarl.get_sequence(handle) << endl;
+    //         cerr << "lefts: ";
+    //         snarl.follow_edges(handle, true, [&](handle_t left){
+    //             cerr << snarl.get_id(left) << " ";
+    //         });
+    //         cerr << endl;
+    //         cerr << "rights: ";
+    //         snarl.follow_edges(handle, false, [&](handle_t right){
+    //             cerr << snarl.get_id(right) << " ";
+    //         });
+    //         cerr << endl;
+    //     });
+    //     cerr << "end all nodes in snarl according to extract_haplotypes." << endl;
+
+
+        // //todo: debug_print:
+        // gbwt::SearchState debug_state = _gbwt_graph.get_state(_gbwt_graph.get_handle(2555915));
+        // _gbwt_graph.follow_paths(debug_state,
+        //                          [&](const gbwt::SearchState next_search) -> bool {
+        //                              cerr << "(directly from the query node of 2555915): adjacent handles to state of " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(debug_state.node)) << " is " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node)) << endl;
+        //                              return true;
+        //                          });
+
+        // gbwt::SearchState debug_state_2 = _gbwt_graph.get_state(_gbwt_graph.get_handle(2555917));
+        // _gbwt_graph.follow_paths(debug_state_2,
+        //                          [&](const gbwt::SearchState next_search) -> bool {
+        //                              cerr << "(directly from the query node of 2555917): adjacent handles to state of " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(debug_state.node)) << " is " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node)) << endl;
+        //                              return true;
+        //                          });
+        // //todo: end debug_print
+
+    // }
+    
     // extract threads.
     // haplotypes is of format:
     // 0: a set of all the haplotypes which stretch from source to sink, in string format.
@@ -588,6 +676,23 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
     // Convert the haplotypes from vector<handle_t> format to string format.
     get<0>(haplotypes) = format_handle_haplotypes_to_strings(_graph, _gbwt_graph, get<0>(gbwt_haplotypes));
 
+    // //todo: debug_print
+    // cerr << "all haploytypes as seen in extract_haplotypes." << endl;
+    // for (auto hap : get<0>(haplotypes))
+    // {
+    //     cerr << hap << endl;
+    // }
+    // cerr << "all haploytypes as seen in extract_haplotypes' non-source_to_sink." << endl;
+    // for (auto hap : get<1>(haplotypes))
+    // {
+    //     for (handle_t handle : hap)
+    //     {
+    //         cerr << _graph.get_sequence(handle) << " ";
+
+    //     }
+    //     cerr << endl;
+    // }
+    // //todo: end debug_print
     // cerr << "hap original text: " << *get<0>(haplotypes).begin() << endl;
     // check to see if the leftmost or rightmost node is empty. If so, treat the blank
     // node as containing a character "A". (this is important for dealing with how
@@ -1879,6 +1984,7 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
              << " # of ends: " << to_insert_snarl_defining_handles.second.size() << endl;
         exit(1);
     }
+
 
     /// Replace start and end handles of old _graph snarl with to_insert_snarl start and
     /// end, and delete rest of old _graph snarl:
