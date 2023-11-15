@@ -975,8 +975,8 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
                 }
                 cerr << endl;
                 cerr << "these are the path names running through the cur_snarl: " << endl;
-                vector<step_handle_t> steps_of_cluster =  _graph.steps_of_handle(_graph.get_handle(cur_snarl_i->first), false);
-                for (auto step : steps_of_cluster)
+                vector<step_handle_t> steps_of_snarl =  _graph.steps_of_handle(_graph.get_handle(cur_snarl_i->first), false);
+                for (auto step : steps_of_snarl)
                 {
                     cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " " << endl;
 
