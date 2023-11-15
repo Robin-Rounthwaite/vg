@@ -907,6 +907,9 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
         // int test_3 = distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0);
         // cerr << test_1 << " " << test_2 << " " << test_3 << endl;
         
+
+
+
         right_gap = distance_index.maximum_distance(cur_cluster.second, false, _graph.get_sequence(_graph.get_handle(cur_cluster.second)).size() - 1, cur_snarl_i->first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
         left_gap = distance_index.maximum_distance(cur_snarl_i->second, false, _graph.get_sequence(_graph.get_handle(cur_snarl_i->second)).size() - 1, cur_cluster.first, false, 0, true) + 1; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
         snarl_gap = min(left_gap, right_gap);
@@ -959,6 +962,30 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
             {
                 cerr << "in snarl " << cur_snarl_i->first << " " << cur_snarl_i->second << endl;
                 cerr << "unfortunately, distance index's maximum_distance acts differently than I thought. two sizes that should have been different were treated as identical." << endl;
+                cerr << "right_gap between cur_cluster and the cur_snarl is: " << right_gap << endl;
+                cerr << "left_gap between cur_cluster and the cur_snarl is: " << left_gap << endl;
+                //todo: debug-code
+                //get path names on the nodes:
+                cerr << "these are the path names running through the cur_cluster: " << endl;
+                vector<step_handle_t> steps_of_cluster =  _graph.steps_of_handle(_graph.get_handle(cur_cluster.second), false);
+                for (auto step : steps_of_cluster)
+                {
+                    cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " " << endl;
+
+                }
+                cerr << endl;
+                cerr << "these are the path names running through the cur_snarl: " << endl;
+                vector<step_handle_t> steps_of_cluster =  _graph.steps_of_handle(_graph.get_handle(cur_snarl_i->first), false);
+                for (auto step : steps_of_cluster)
+                {
+                    cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " " << endl;
+
+                }
+                cerr << endl;
+                //print the gap sizes:
+                
+
+                //todo: end debug-code
                 exit(1);
             }
             
