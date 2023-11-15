@@ -88,9 +88,10 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     
 
     // //todo: debug_code
-    // _debug_print=true;
-    // split_normalize_regions.clear();
-    // split_normalize_regions.push_back(make_pair(157206, 157209));
+    _debug_print=true;
+    split_normalize_regions.clear();
+    split_normalize_regions.push_back(make_pair(1898335, 1898346));
+    // split_normalize_regions.push_back(make_pair(2624390, 2624421));
     int num_snarls_normalized = 0;
         // Record start time
     auto start = std::chrono::high_resolution_clock::now();
@@ -279,12 +280,12 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             cerr << "======================about to integrate snarl " << get<3>(snarl) << " " << get<4>(snarl) << "======================" << endl;
         }
 
-        cerr << "integration" << endl;
+        // cerr << "integration" << endl;
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
-        cerr << "extraction" << endl;
+        // cerr << "extraction" << endl;
         SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
-        cerr << "log changes" << endl;
+        // cerr << "log changes" << endl;
         log_gbwt_changes(get<6>(snarl), integrated_snarl);
 
     }
@@ -435,7 +436,7 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
 {
     //make sure that all handles in the snarl are represented by the gbwt.
     bool all_handles_in_gbwt = true;
-    bool all_edges_in_gbwt = true;
+    // bool all_edges_in_gbwt = true;
     // try 
     // {
     //     snarl.for_each_handle([&](handle_t handle){
@@ -469,31 +470,58 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
             return;
         }
 
-        set<id_t> right_neighbors;
-        _graph.follow_edges(handle, false, [&](handle_t next_handle)
-        {
-            right_neighbors.emplace(_graph.get_id(next_handle));
-        });
+        // set<id_t> right_neighbors;
+        // _graph.follow_edges(handle, false, [&](handle_t next_handle)
+        // {
+        //     right_neighbors.emplace(_graph.get_id(next_handle));
+        // });
 
-        _gbwt_graph.follow_paths(handle_state,
-        [&](const gbwt::SearchState next_search) -> bool {
-            if (right_neighbors.find(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node))) == right_neighbors.end())
-            {
-                // cerr << "looking for node id " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node)) << " equivalence: " << (right_neighbors.find(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(handle_state.node))) == right_neighbors.end()) << endl;
-                // cerr << "nodes in right_neighbors: " << endl;
-                // for (auto node : right_neighbors)
-                // {
-                //     cerr << node << " ";
-                // }
-                // cerr << endl;
-                if (_debug_print)
-                {
-                    cerr << "handle " << snarl.get_id(handle) << " not connect to " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node)) << " in gbwt." << endl;
-                }
-                all_edges_in_gbwt = false;
-            }
-            return true;
-        });
+        // if (snarl.get_id(handle) == 2624390)
+        // {
+        //     cerr << "at handle 2624390, looking at right neighbors: " << endl;
+        //     for (auto n : right_neighbors)
+        //     {
+        //         cerr << n << " ";
+        //     }
+        //     cerr << endl;
+        // }
+        //todo: uncomment if I decide to check that all edges in the graph are in the gbwt:
+        // set<id_t> gbwt_right_neighbors;
+
+
+        // _gbwt_graph.follow_paths(handle_state,
+        // [&](const gbwt::SearchState next_search) -> bool {
+        //     gbwt_right_neighbors.emplace(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node)));
+        //     // if (right_neighbors.find(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node))) == right_neighbors.end())
+        //     // {
+        //     //     if (snarl.get_id(handle) == 2624390)
+        //     //     {
+                    
+        //     //         cerr << "looking for node id " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node)) << " equivalence: " << (right_neighbors.find(_gbwt_graph.get_id(_gbwt_graph.node_to_handle(handle_state.node))) == right_neighbors.end()) << endl;
+        //     //         // cerr << "nodes in right_neighbors: " << endl;
+        //     //         // for (auto node : right_neighbors)
+        //     //         // {
+        //     //         //     cerr << node << " ";
+        //     //         // }
+        //     //         // cerr << endl;
+        //     //     }
+                
+        //     //     if (_debug_print)
+        //     //     {
+        //     //         cerr << "handle " << snarl.get_id(handle) << " not connect to " << _gbwt_graph.get_id(_gbwt_graph.node_to_handle(next_search.node)) << " in gbwt." << endl;
+        //     //     }
+        //     //     all_edges_in_gbwt = false;
+        //     // }
+        //     return true;
+        // });
+        // _graph.follow_edges(handle, false, [&](handle_t next_handle)
+        // {
+        //     if (gbwt_right_neighbors.find(_graph.get_id(next_handle)) ==  gbwt_right_neighbors.end())
+        //     {
+        //         all_edges_in_gbwt = false;
+        //     }
+        // });
+        //todo: end uncoment.
 
     // cerr << "all_edges_in_gbwt " << all_edges_in_gbwt << endl << endl << endl; 
     }, true);
@@ -512,20 +540,20 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
         return false;
     }
 
-    if (!all_edges_in_gbwt)
-    {
-        if (_debug_print)
-        {
-            cerr << "test failed because !all_edges_in_gbwt. " << endl;
-        }
-        #pragma omp critical(error_update_1_5)
-        {
-        _sizes_of_snarls_skipped_because_gbwt_misses_edges.push_back(snarl_size);
-        _snarls_skipped_because_gbwt_misses_edges.push_back(region);
-        }
-        // cerr << "!all handles in gbwt!" << "number of snarls skipped for this reason is: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl;
-        return false;
-    }
+    // if (!all_edges_in_gbwt)
+    // {
+    //     if (_debug_print)
+    //     {
+    //         cerr << "test failed because !all_edges_in_gbwt. " << endl;
+    //     }
+    //     #pragma omp critical(error_update_1_5)
+    //     {
+    //     _sizes_of_snarls_skipped_because_gbwt_misses_edges.push_back(snarl_size);
+    //     _snarls_skipped_because_gbwt_misses_edges.push_back(region);
+    //     }
+    //     // cerr << "!all handles in gbwt!" << "number of snarls skipped for this reason is: " << _snarls_skipped_because_gbwt_misses_handles.size() << endl;
+    //     return false;
+    // }
 
     // check for cyclic snarls
     if (!handlealgs::is_acyclic(&snarl)) {

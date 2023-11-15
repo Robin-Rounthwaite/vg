@@ -51,8 +51,8 @@ vector<pair<vector<handle_t>, int>> SnarlNormalizer::find_possible_path_starts(c
  */
 vector<handle_t> SnarlNormalizer::extend_possible_paths(vector<pair<vector<handle_t>, int>> &possible_path_starts, const string &path_str, const handle_t leftmost_handle, const handle_t rightmost_handle, const pair<bool, bool> path_spans_left_right, const pair<id_t, id_t> main_graph_source_and_sink)
 {
-    cerr << "path string (note: should be left-to-right at this point, e.g. TTACT, not AGTAA: " << path_str << endl;
-    cerr << "leftmost handle id and seq: " << _graph.get_id(leftmost_handle) << " " << _graph.get_sequence(leftmost_handle) << endl;
+    // cerr << "path string (note: should be left-to-right at this point, e.g. TTACT, not AGTAA: " << path_str << endl;
+    // cerr << "leftmost handle id and seq: " << _graph.get_id(leftmost_handle) << " " << _graph.get_sequence(leftmost_handle) << endl;
     vector<handle_t> correct_path;
     // Now that we have all the possible leftmost starting positions for the path in
     // possible_paths, search to the right of those positions for possible extensions
@@ -82,7 +82,7 @@ vector<handle_t> SnarlNormalizer::extend_possible_paths(vector<pair<vector<handl
             possible_path_str += " " + _graph.get_sequence(handle);
         }
 
-        cerr << "cur_possible_path is size " << cur_possible_path.first.size() << " with seq length " << cur_possible_path.second << " and sequence " << possible_path_str << endl;
+        // cerr << "cur_possible_path is size " << cur_possible_path.first.size() << " with seq length " << cur_possible_path.second << " and sequence " << possible_path_str << endl;
         // extend the path through all right-extending edges to see if any subsequent
         // paths still satisfy the requirements for being a possible_path:
         _graph.follow_edges(
@@ -93,11 +93,11 @@ vector<handle_t> SnarlNormalizer::extend_possible_paths(vector<pair<vector<handl
 
                 // decide if "next" is a valid extension of possible_path.
                 string next_seq = _graph.get_sequence(next);
-                cerr << "next_seq is from candidate node for extension. next_seq: " << next_seq << endl;
+                // cerr << "next_seq is from candidate node for extension. next_seq: " << next_seq << endl;
                 //todo: test that this compare functions properly.
                 if ((path_str.compare(possible_path.second, next_seq.size(), next_seq) == 0))
                 {
-                    cerr << "candidate for extension passed!" << endl;
+                    // cerr << "candidate for extension passed!" << endl;
                     possible_path.first.push_back(next);
                     pair<vector<handle_t>, int> new_possible_path = make_pair(possible_path.first, possible_path.second + next_seq.size());
                     // If we've reached the end of the path, we've either reached the proper end point (anywhere if path_spans_left_right.second==false; else, the rightmost node.), or we've yet to find a valid new_possible_path.
@@ -115,7 +115,7 @@ vector<handle_t> SnarlNormalizer::extend_possible_paths(vector<pair<vector<handl
                 }
                 else 
                 {
-                    cerr << "candidate for extension failed." << endl;
+                    // cerr << "candidate for extension failed." << endl;
                 }
                 // return false;
             });
