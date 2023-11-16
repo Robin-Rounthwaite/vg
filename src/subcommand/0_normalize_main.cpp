@@ -383,29 +383,29 @@ int main_normalize(int argc, char **argv) {
         cerr << "segregating regions for parallelization" << endl; //so that edits in two parallel jobs can't touch the same node.
         vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
 
-        //todo: debug-code:
-        auto problem = make_pair(vg::id_t(78157365), vg::id_t(78157368));
-        auto problem_spot = std::find(snarl_roots.begin(), snarl_roots.end(), problem);
-        vector<pair<vg::id_t,vg::id_t>> problem_context; //several snarls on either side. 
-        auto before_problem = std::prev(problem_spot, 5);
-        cerr << "problem: " << problem.first << " " << problem.second << endl;
-        cerr << "problem with context: " << endl;
-        for (int i = 0; i != 11; i++)
-        {
-            cerr << before_problem->first << " " << before_problem->second << " ; ";
-            problem_context.push_back(*before_problem);
-            before_problem++;
-        }
-        cerr << endl;
+        // //todo: debug-code: (for looking at a specific snarl from distance index + surrounding context.)
+        // auto problem = make_pair(vg::id_t(78157365), vg::id_t(78157368));
+        // auto problem_spot = std::find(snarl_roots.begin(), snarl_roots.end(), problem);
+        // vector<pair<vg::id_t,vg::id_t>> problem_context; //several snarls on either side. 
+        // auto before_problem = std::prev(problem_spot, 5);
+        // cerr << "problem: " << problem.first << " " << problem.second << endl;
+        // cerr << "problem with context: " << endl;
+        // for (int i = 0; i != 11; i++)
+        // {
+        //     cerr << before_problem->first << " " << before_problem->second << " ; ";
+        //     problem_context.push_back(*before_problem);
+        //     before_problem++;
+        // }
+        // cerr << endl;
 
 
-        snarl_roots.clear();
-        for (auto snarl : problem_context)
-        {
-            snarl_roots.push_back(snarl);
-        }
+        // snarl_roots.clear();
+        // for (auto snarl : problem_context)
+        // {
+        //     snarl_roots.push_back(snarl);
+        // }
 
-        //todo: end debug-code:
+        // //todo: end debug-code:
 
         parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, *distance_index, parallel_normalize_regions, desegregation_candidates);
         cerr << "found " << parallel_normalize_regions.size() << " regions to normalize." << endl;

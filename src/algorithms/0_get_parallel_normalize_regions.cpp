@@ -770,17 +770,17 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
     {
         SubHandleGraph snarl_graph = extract_subgraph(_graph, cur_snarl_i->first, cur_snarl_i->second);
 
-        //todo: begin debug_code:
-        cerr << "cur_cluster: " << cur_cluster.first << " " << cur_cluster.second << endl;
-        if (cur_cluster.first != -1)
-        {
-            cerr << " reverse? " << _graph.get_is_reverse(_graph.get_handle(cur_cluster.first)) << " " << _graph.get_is_reverse(_graph.get_handle(cur_cluster.second)) << endl;
-        }
-        cerr << "cur_snarl: " << cur_snarl_i->first << " " << cur_snarl_i->second << endl;
-        if (cur_snarl_i->first != -1)
-        {
-            cerr << " reverse? " << _graph.get_is_reverse(_graph.get_handle(cur_snarl_i->first)) << " " << _graph.get_is_reverse(_graph.get_handle(cur_snarl_i->second)) << endl;
-        }
+        // //todo: begin debug_code:
+        // cerr << "cur_cluster: " << cur_cluster.first << " " << cur_cluster.second << endl;
+        // if (cur_cluster.first != -1)
+        // {
+        //     cerr << " reverse? " << _graph.get_is_reverse(_graph.get_handle(cur_cluster.first)) << " " << _graph.get_is_reverse(_graph.get_handle(cur_cluster.second)) << endl;
+        // }
+        // cerr << "cur_snarl: " << cur_snarl_i->first << " " << cur_snarl_i->second << endl;
+        // if (cur_snarl_i->first != -1)
+        // {
+        //     cerr << " reverse? " << _graph.get_is_reverse(_graph.get_handle(cur_snarl_i->first)) << " " << _graph.get_is_reverse(_graph.get_handle(cur_snarl_i->second)) << endl;
+        // }
         // for (auto node_id : {cur_cluster.first, cur_cluster.second, cur_snarl_i->first, cur_snarl_i->second})
         // {
         //     cerr << "follow edges of " << node_id << endl;
@@ -935,7 +935,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
         }
         else if (right_gap == 0 && left_gap == 0)
         {
-            cerr << "both gaps are 0. Starting a new cluster." << endl;
+            // cerr << "both gaps are 0. Starting a new cluster." << endl;
             //this means that the new snarl is on a separate connected component of the graph (e.g. another chromosome).
             //save the previous cluster and make this the new cluster.
             clustered_snarls.push_back(cur_cluster);

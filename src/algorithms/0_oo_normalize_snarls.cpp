@@ -88,9 +88,9 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     
 
     // //todo: debug_code
-    _debug_print=true;
-    split_normalize_regions.clear();
-    split_normalize_regions.push_back(make_pair(1898335, 1898346));
+    // _debug_print=true;
+    // split_normalize_regions.clear();
+    // split_normalize_regions.push_back(make_pair(1898335, 1898346));
     // split_normalize_regions.push_back(make_pair(2624390, 2624421));
     int num_snarls_normalized = 0;
         // Record start time
