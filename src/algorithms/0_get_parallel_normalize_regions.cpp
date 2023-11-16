@@ -935,6 +935,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
         }
         else if (right_gap == 0 && left_gap == 0)
         {
+            cerr << "both gaps are 0. Starting a new cluster." << endl;
             //this means that the new snarl is on a separate connected component of the graph (e.g. another chromosome).
             //save the previous cluster and make this the new cluster.
             clustered_snarls.push_back(cur_cluster);
