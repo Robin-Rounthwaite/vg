@@ -384,7 +384,8 @@ int main_normalize(int argc, char **argv) {
         vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
 
         //todo: debug-code:
-        auto problem_spot = std::find(snarl_roots.begin(), snarl_roots.end(), make_pair(78157365, 78157368));
+        auto problem = make_pair(vg::id_t(78157365), vg::id_t(78157368));
+        auto problem_spot = std::find(snarl_roots.begin(), snarl_roots.end(), problem);
         vector<pair<vg::id_t,vg::id_t>> problem_context; //several snarls on either side. 
         auto before_problem = std::prev(problem_spot, 5);
         for (int i = 0; i != 11; i++)
@@ -392,7 +393,7 @@ int main_normalize(int argc, char **argv) {
             problem_context.push_back(*before_problem);
             before_problem++;
         }
-        
+
         snarl_roots.clear();
         for (auto snarl : problem_context)
         {
