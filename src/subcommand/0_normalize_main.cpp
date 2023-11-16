@@ -383,6 +383,12 @@ int main_normalize(int argc, char **argv) {
         cerr << "segregating regions for parallelization" << endl; //so that edits in two parallel jobs can't touch the same node.
         vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
 
+        //todo: debug-code:
+        snarl_roots.clear();
+        snarl_roots.push_back(make_pair(78157368, 78157371));
+        snarl_roots.push_back(make_pair(78157365, 78157368));
+        //todo: end debug-code:
+
         parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, *distance_index, parallel_normalize_regions, desegregation_candidates);
         cerr << "found " << parallel_normalize_regions.size() << " regions to normalize." << endl;
         if (run_tests)

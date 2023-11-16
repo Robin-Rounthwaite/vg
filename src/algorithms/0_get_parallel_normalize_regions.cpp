@@ -974,6 +974,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
                 cerr << "unfortunately, distance index's maximum_distance acts differently than I thought. two sizes that should have been different were treated as identical." << endl;
                 cerr << "right_gap between cur_cluster and the cur_snarl is: " << right_gap << endl;
                 cerr << "left_gap between cur_cluster and the cur_snarl is: " << left_gap << endl;
+                cerr << "the cur_cluster in question is: " << cur_cluster.first << " " << cur_cluster.second << endl;
                 //todo: debug-code
                 //get path names on the nodes:
                 cerr << "these are the path names running through the cur_cluster: " << endl;
