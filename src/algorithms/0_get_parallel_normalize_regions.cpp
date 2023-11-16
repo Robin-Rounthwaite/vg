@@ -933,6 +933,16 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
 
             continue;
         }
+        else if (right_gap == 0 && left_gap == 0)
+        {
+            //this means that the new snarl is on a separate connected component of the graph (e.g. another chromosome).
+            //save the previous cluster and make this the new cluster.
+            clustered_snarls.push_back(cur_cluster);
+            cur_cluster_size = cur_snarl_size; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
+            cur_cluster = *cur_snarl_i;
+            continue;
+
+        }
         else if (snarl_gap > _max_region_gap)
         {
             //reset the cluster, but do not skip/discard the cur_snarl.
