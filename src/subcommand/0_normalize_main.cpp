@@ -388,11 +388,16 @@ int main_normalize(int argc, char **argv) {
         auto problem_spot = std::find(snarl_roots.begin(), snarl_roots.end(), problem);
         vector<pair<vg::id_t,vg::id_t>> problem_context; //several snarls on either side. 
         auto before_problem = std::prev(problem_spot, 5);
+        cerr << "problem: " << problem.first << " " << problem.second << endl;
+        cerr << "problem with context: " << endl;
         for (int i = 0; i != 11; i++)
         {
+            cerr << before_problem->first << " " << before_problem->second << " ; ";
             problem_context.push_back(*before_problem);
             before_problem++;
         }
+        cerr << endl;
+
 
         snarl_roots.clear();
         for (auto snarl : problem_context)
