@@ -941,6 +941,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
             clustered_snarls.push_back(cur_cluster);
             cur_cluster_size = cur_snarl_size; //+1 to inclusively count the last base in the handle; .size() without -1 in maximum_dist has undefined behavior.
             cur_cluster = *cur_snarl_i;
+            cur_snarl_i++;
             continue;
 
         }
