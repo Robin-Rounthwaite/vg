@@ -10,7 +10,6 @@
 #include <seqan/graph_msa.h>
 
 #include <gbwtgraph/gbwtgraph.h>
-#include "../gbwt_helper.hpp"
 
 #include "../gbwt_helper.hpp"
 #include "../handle.hpp"
