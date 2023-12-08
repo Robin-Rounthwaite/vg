@@ -14,6 +14,8 @@
 
 #include <bdsg/hash_graph.hpp>
 
+#include "../io/save_handle_graph.hpp"
+
 using namespace std;
 using namespace vg;
 using namespace vg::subcommand;
@@ -348,9 +350,9 @@ int main_construct(int argc, char** argv) {
         msa_converter.show_progress = show_progress;
         
         msa_converter.load_alignments(msa_file, msa_format);
-        VG msa_graph = msa_converter.make_graph(keep_paths, max_node_size);
+        unique_ptr<HandleGraph> msa_graph = msa_converter.make_graph(keep_paths, max_node_size);
         
-        msa_graph.serialize_to_ostream(cout);
+        vg::io::save_handle_graph(&(*msa_graph), std::cout);
     }
     else {
         cerr << "error:[vg construct] a reference or an MSA is required for construct" << endl;

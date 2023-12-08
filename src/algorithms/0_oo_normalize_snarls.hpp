@@ -122,11 +122,12 @@ class SnarlNormalizer {
     //////////////////////////////////////////////////////////////////////////////////////
     // creation of noramlized graph:
     //////////////////////////////////////////////////////////////////////////////////////
-    bool poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, VG& output_subgraph, const bool output_msa=false);
+    unique_ptr<MutablePathDeletableHandleGraph> poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const bool output_msa=false);
+    // bool poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, HandleGraph* output_subgraph, const bool output_msa=false);
 
-    VG kalign_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
+    MutablePathDeletableHandleGraph* kalign_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 
-    VG align_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
+    unique_ptr<MutablePathDeletableHandleGraph> align_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 
     pair<handle_t, handle_t> integrate_snarl(SubHandleGraph &old_snarl, const HandleGraph &new_snarl,
                          vector<pair<step_handle_t, step_handle_t>>& embedded_paths,

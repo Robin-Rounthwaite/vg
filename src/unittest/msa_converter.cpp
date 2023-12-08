@@ -30,7 +30,7 @@ namespace vg {
                 MSAConverter msa_converter;
                 msa_converter.load_alignments(strm, "fasta");
                 
-                VG graph = msa_converter.make_graph();
+                unique_ptr<HandleGraph> graph = msa_converter.make_graph();
             }
             
             SECTION("MSAConverter can build from Clustal input") {
@@ -42,14 +42,13 @@ namespace vg {
                 MSAConverter msa_converter;
                 msa_converter.load_alignments(strm, "clustal");
                 
-                VG graph = msa_converter.make_graph();
+                unique_ptr<HandleGraph> graph = msa_converter.make_graph();
             }
         }
         
         TEST_CASE("MSAConverter produces correct graphs from MSAs", "[msa]") {
             
             SECTION("MSAConverter produces one node from a completely matching alignment") {
-                
                 string input = ">seq1\nAAA\n>seq2\nAAA\n";
                 
                 istringstream strm(input);
@@ -57,13 +56,15 @@ namespace vg {
                 MSAConverter msa_converter;
                 msa_converter.load_alignments(strm, "fasta");
                 
-                VG graph = msa_converter.make_graph();
+                unique_ptr<HandleGraph> graph = msa_converter.make_graph();
                 
-                Graph& g = graph.graph;
-                
-                REQUIRE(g.node_size() == 1);
-                REQUIRE(g.edge_size() == 0);
-                REQUIRE(g.node(0).sequence() == "AAA");
+                // REQUIRE(graph->get_node_count() == 1);
+                // REQUIRE(graph->get_edge_count() == 0);
+                // REQUIRE(g.node(0).sequence() == "AAA");
+
+                REQUIRE(graph->get_node_count() == 1);
+                REQUIRE(graph->get_edge_count() == 0);
+                REQUIRE(graph->get_sequence(graph->get_handle(1)) == "AAA");
             }
             
             SECTION("MSAConverter respects the max node length") {
@@ -75,12 +76,10 @@ namespace vg {
                 MSAConverter msa_converter;
                 msa_converter.load_alignments(strm, "fasta");
                 
-                VG graph = msa_converter.make_graph(true, 1);
+                unique_ptr<HandleGraph> graph = msa_converter.make_graph(true, 1);
                 
-                Graph& g = graph.graph;
-                
-                REQUIRE(g.node_size() == 3);
-                REQUIRE(g.edge_size() == 2);
+                REQUIRE(graph->get_node_count() == 3);
+                REQUIRE(graph->get_edge_count() == 2);
             }
             
             SECTION("MSAConverter splits columns that mismatch into multiple nodes") {
@@ -92,28 +91,27 @@ namespace vg {
                 MSAConverter msa_converter;
                 msa_converter.load_alignments(strm, "fasta");
                 
-                VG graph = msa_converter.make_graph();
+                unique_ptr<HandleGraph> graph = msa_converter.make_graph();
                 
-                Graph& g = graph.graph;
+                unordered_map<string, handle_t> handles;
                 
-                unordered_map<string, int64_t> nodes;
-                for (size_t i = 0; i < g.node_size(); i++) {
-                    const Node& n = g.node(i);
-                    nodes[n.sequence()] = n.id();
-                }
+                graph->for_each_handle([&](handle_t handle)
+                {
+                    handles[graph->get_sequence(handle)] = handle;
+                });
                 
-                REQUIRE(g.node_size() == 4);
-                REQUIRE(g.edge_size() == 4);
+                REQUIRE(graph->get_node_count() == 4);
+                REQUIRE(graph->get_edge_count() == 4);
                 
-                REQUIRE(nodes.count("A"));
-                REQUIRE(nodes.count("C"));
-                REQUIRE(nodes.count("G"));
-                REQUIRE(nodes.count("T"));
+                REQUIRE(handles.count("A"));
+                REQUIRE(handles.count("C"));
+                REQUIRE(handles.count("G"));
+                REQUIRE(handles.count("T"));
                 
-                REQUIRE(graph.has_edge(NodeSide(nodes["A"], true), NodeSide(nodes["C"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["A"], true), NodeSide(nodes["T"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["T"], true), NodeSide(nodes["G"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["C"], true), NodeSide(nodes["G"], false)));
+                REQUIRE(graph->has_edge(handles["A"], handles["C"]));
+                REQUIRE(graph->has_edge(handles["A"], handles["T"]));
+                REQUIRE(graph->has_edge(handles["T"], handles["G"]));
+                REQUIRE(graph->has_edge(handles["C"], handles["G"]));
             }
             
             SECTION("MSAConverter adds edges over gap") {
@@ -125,26 +123,25 @@ namespace vg {
                 MSAConverter msa_converter;
                 msa_converter.load_alignments(strm, "fasta");
                 
-                VG graph = msa_converter.make_graph();
+                unique_ptr<HandleGraph> graph = msa_converter.make_graph();
                 
-                Graph& g = graph.graph;
+                unordered_map<string, handle_t> handles;
+                graph->for_each_handle([&](handle_t handle)
+                {
+                    handles[graph->get_sequence(handle)] = handle;
+                });
                 
-                unordered_map<string, int64_t> nodes;
-                for (size_t i = 0; i < g.node_size(); i++) {
-                    const Node& n = g.node(i);
-                    nodes[n.sequence()] = n.id();
-                }
+
+                REQUIRE(graph->get_node_count() == 3);
+                REQUIRE(graph->get_edge_count() == 3);
                 
-                REQUIRE(g.node_size() == 3);
-                REQUIRE(g.edge_size() == 3);
+                REQUIRE(handles.count("A"));
+                REQUIRE(handles.count("C"));
+                REQUIRE(handles.count("G"));
                 
-                REQUIRE(nodes.count("A"));
-                REQUIRE(nodes.count("C"));
-                REQUIRE(nodes.count("G"));
-                
-                REQUIRE(graph.has_edge(NodeSide(nodes["A"], true), NodeSide(nodes["C"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["A"], true), NodeSide(nodes["G"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["C"], true), NodeSide(nodes["G"], false)));
+                REQUIRE(graph->has_edge(handles["A"], handles["C"]));
+                REQUIRE(graph->has_edge(handles["A"], handles["G"]));
+                REQUIRE(graph->has_edge(handles["C"], handles["G"]));
             }
             
             SECTION("MSAConverter handles overlapping gaps") {
@@ -156,31 +153,29 @@ namespace vg {
                 MSAConverter msa_converter;
                 msa_converter.load_alignments(strm, "fasta");
                 
-                VG graph = msa_converter.make_graph();
+                unique_ptr<HandleGraph> graph = msa_converter.make_graph();
                 
-                Graph& g = graph.graph;
+                unordered_map<string, handle_t> handles;
+                graph->for_each_handle([&](handle_t handle)
+                {
+                    handles[graph->get_sequence(handle)] = handle;
+                });
                 
-                unordered_map<string, int64_t> nodes;
-                for (size_t i = 0; i < g.node_size(); i++) {
-                    const Node& n = g.node(i);
-                    nodes[n.sequence()] = n.id();
-                }
+                REQUIRE(graph->get_node_count() == 5);
+                REQUIRE(graph->get_edge_count() == 6);
                 
-                REQUIRE(g.node_size() == 5);
-                REQUIRE(g.edge_size() == 6);
+                REQUIRE(handles.count("AA"));
+                REQUIRE(handles.count("A"));
+                REQUIRE(handles.count("C"));
+                REQUIRE(handles.count("G"));
+                REQUIRE(handles.count("TT"));
                 
-                REQUIRE(nodes.count("AA"));
-                REQUIRE(nodes.count("A"));
-                REQUIRE(nodes.count("C"));
-                REQUIRE(nodes.count("G"));
-                REQUIRE(nodes.count("TT"));
-                
-                REQUIRE(graph.has_edge(NodeSide(nodes["AA"], true), NodeSide(nodes["A"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["AA"], true), NodeSide(nodes["G"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["A"], true), NodeSide(nodes["C"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["A"], true), NodeSide(nodes["TT"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["C"], true), NodeSide(nodes["G"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["G"], true), NodeSide(nodes["TT"], false)));
+                REQUIRE(graph->has_edge(handles["AA"], handles["A"]));
+                REQUIRE(graph->has_edge(handles["AA"], handles["G"]));
+                REQUIRE(graph->has_edge(handles["A"], handles["C"]));
+                REQUIRE(graph->has_edge(handles["A"], handles["TT"]));
+                REQUIRE(graph->has_edge(handles["C"], handles["G"]));
+                REQUIRE(graph->has_edge(handles["G"], handles["TT"]));
             }
             
             SECTION("MSAConverter handles nested gaps") {
@@ -192,31 +187,29 @@ namespace vg {
                 MSAConverter msa_converter;
                 msa_converter.load_alignments(strm, "fasta");
                 
-                VG graph = msa_converter.make_graph();
+                unique_ptr<HandleGraph> graph = msa_converter.make_graph();
                 
-                Graph& g = graph.graph;
+                unordered_map<string, handle_t> handles;
+                graph->for_each_handle([&](handle_t handle)
+                {
+                    handles[graph->get_sequence(handle)] = handle;
+                });
                 
-                unordered_map<string, int64_t> nodes;
-                for (size_t i = 0; i < g.node_size(); i++) {
-                    const Node& n = g.node(i);
-                    nodes[n.sequence()] = n.id();
-                }
+                REQUIRE(graph->get_node_count() == 5);
+                REQUIRE(graph->get_edge_count() == 6);
                 
-                REQUIRE(g.node_size() == 5);
-                REQUIRE(g.edge_size() == 6);
+                REQUIRE(handles.count("AA"));
+                REQUIRE(handles.count("A"));
+                REQUIRE(handles.count("C"));
+                REQUIRE(handles.count("G"));
+                REQUIRE(handles.count("TT"));
                 
-                REQUIRE(nodes.count("AA"));
-                REQUIRE(nodes.count("A"));
-                REQUIRE(nodes.count("C"));
-                REQUIRE(nodes.count("G"));
-                REQUIRE(nodes.count("TT"));
-                
-                REQUIRE(graph.has_edge(NodeSide(nodes["AA"], true), NodeSide(nodes["A"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["AA"], true), NodeSide(nodes["TT"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["A"], true), NodeSide(nodes["C"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["A"], true), NodeSide(nodes["G"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["C"], true), NodeSide(nodes["G"], false)));
-                REQUIRE(graph.has_edge(NodeSide(nodes["G"], true), NodeSide(nodes["TT"], false)));
+                REQUIRE(graph->has_edge(handles["AA"], handles["A"]));
+                REQUIRE(graph->has_edge(handles["AA"], handles["TT"]));
+                REQUIRE(graph->has_edge(handles["A"], handles["C"]));
+                REQUIRE(graph->has_edge(handles["A"], handles["G"]));
+                REQUIRE(graph->has_edge(handles["C"], handles["G"]));
+                REQUIRE(graph->has_edge(handles["G"], handles["TT"]));
             }
         }
     }
