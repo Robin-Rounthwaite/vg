@@ -305,19 +305,10 @@ using namespace std;
      * @param max_node_length // length of a node/handle before a new handle must be started.
      * @return MutablePathDeletableHandleGraph* 
      */
-    unique_ptr<MutablePathDeletableHandleGraph> MSAConverter::make_graph(bool keep_paths, size_t max_node_length) {
-        // cerr << "about to make graph. seqs: " << endl;
-        // for (auto align : alignments)
-        // {
-
-        // }
-        
-        
+    //todo: implement paths:
+    // unique_ptr<MutablePathDeletableHandleGraph> MSAConverter::make_graph(bool keep_paths, size_t max_node_length) {
+    unique_ptr<MutablePathDeletableHandleGraph> MSAConverter::make_graph(size_t max_node_length) {
         unordered_set<char> alphabet{'A', 'C', 'T', 'G', 'N', '-'};
-        
-        // MutablePathDeletableHandleGraph graph;
-        // bdsg::PackedGraph pg;
-        // MutableHandleGraph* graph = &pg;
 
         MSAGraph graph;
 
@@ -361,118 +352,66 @@ using namespace std;
         }
         
         for (const unordered_map<string, string>& alignment : alignments) {
-            // cerr << "looking at alignment: " << endl;
-            // for (auto align : alignment)
-            // {
-            //     cerr << align.first << " " << align.second << endl;
-            // }
             
             // the node that each input sequence is extending
             unordered_map<string, MSANode*> current_node;
             
-            // the path we're building for each aligned sequence
-            unordered_map<string, Path*> aln_path;
+            //todo: reimplement paths
+            // // the path we're building for each aligned sequence
+            // unordered_map<string, MSAPath*> aln_path;
             
             // start all of the alignments on a dummy node
-            string dummy_str = "N";
-            // cerr << "running create_node (dummy_node)" << " dummy_str.size() " << dummy_str.size() << endl;
-            MSANode* dummy_node = graph.create_node(dummy_str);
-            // cerr << "dummy_node id. " << dummy_node->get_id() << endl;
+            MSANode* dummy_node = graph.create_node("N");
 
-            // cerr << "dummy_node->get_sequence().size() " << dummy_node->get_sequence().size() << endl;
             for (const auto& seq : alignment) {
                 current_node[seq.first] = dummy_node;
                 
-                //todo: reimpliment keep paths.
+                // //todo: reimplement paths.
                 // if (keep_paths) {
-                //     Path* path = graph.graph.add_path();
+                //     MSAPath* path = graph.add_path(seq.first);
                 //     aln_path[seq.first] = path;
-                //     path->set_name(seq.first);
                 // }
             }
             
             // nodes that we don't want to extend any more
             // (we never want to extend the dummy node)
-            // cerr << "completed_nodes.insert(node_here) (effectively) because dummy_node never extends." << endl;
             unordered_set<MSANode*> completed_nodes{dummy_node};
-            // cerr << "dummy_node id after. " << dummy_node->get_id() << endl;
 
             size_t aln_len;
             if (alignment.begin()->second.empty())
             {
-                // cerr << "setting to 0" << endl;
                 aln_len = 0;
             }
             else
             {
-                // cerr << "not setting to to zero. Settin instead to: " << alignment.begin()->second.size() << endl;
                 aln_len = alignment.begin()->second.size();
             }
-            // cerr << "aln_len: " << aln_len << endl;
             
             for (size_t i = 0; i < aln_len; i++) {
-                cerr << "## beginning column " << i << endl;
-
 #ifdef debug_msa_converter
                 cerr << "## beginning column " << i << endl;
 #endif
                 unordered_map<MSANode*, char> forward_transitions;
                 unordered_map<char, pair<unordered_set<MSANode*>, vector<string>>> transitions;
-                // cerr << "alignments.size() " << alignments.size() << endl;
                 for (const auto& seq : alignment) {
-                    // cerr << "going through seqs. Here is current seq: " << seq.first << " " << seq.second << endl;
                     char aln_char = toupper(seq.second[i]);
-                    // cerr << "aln_char: " << aln_char << endl;
                     
                     if (!alphabet.count(aln_char)) {
                         cerr << "error:[MSAConverter] MSA contains non-nucleotide characters" << endl;
                         exit(1);
                         
                     }
-                    // cerr << "current contents of current_node: " << endl;
-                    // for (auto node : current_node)
-                    // {
-                    //     cerr << "node.first: " << node.first << " node.second: " << node.second << " " << node.second->get_id() << " " << node.second->get_sequence() <<  endl;
-                    // }
-
-                        
-                    cerr << "current contents of transitions: " << endl;
-                    for (auto node : transitions)
-                    {
-                        cerr << "node.first: " << node.first;
-                        cerr << " node.second.first. (set of nodes): " ;
-                        for (auto node_in_set : node.second.first)
-                        {
-                            cerr << node_in_set << " ";
-                        } 
-                        cerr << " node.second.second (contents of vector): ";
-                        for (auto item : node.second.second)
-                        {
-                            cerr << item << " ";
-                        } 
-                        cerr << endl;
-                    }
-
-                    cerr << "current contents of forward_transitions: " << endl;
-                    for (auto node : forward_transitions)
-                    {
-                        cerr << "node.first: " << node.first << " node.second: " << node.second << endl;
-                    }
 
                     MSANode* node_here = current_node[seq.first];
-                    cerr << "node_here: " << node_here->get_id() << " " << node_here->get_sequence() << endl;
                     if (aln_char != '-') {
-                        // cerr << "transitioning char" << endl;
                         // this alignment is transitioning to a new aligned character
                         transitions[aln_char].first.insert(node_here);
                         transitions[aln_char].second.push_back(seq.first);
 
                         auto iter = forward_transitions.find(node_here);
-                        // cerr << "forward_transitions.find(node_here) == forward_transitions.end() " << (forward_transitions.find(node_here) == forward_transitions.end()) << endl;
                         if (iter != forward_transitions.end()) {
                             if (iter->second != aln_char) {
                                 // this node splits in the current column, so don't extend it anymore
-                                // cerr << "completed_nodes.insert(node_here) because this node splits in the current column, so don't extend it anymore." << endl;
                                 completed_nodes.insert(node_here);
                             }
                         }
@@ -481,15 +420,11 @@ using namespace std;
                         }
                     }
                     else {
-                        // cerr << "not transitioning, saving node_here as " << node_here->get_id() << " " << node_here->get_sequence() << endl;
                         // this alignment isn't transitioning anywhere yet
-                        
                         // we don't want to extend nodes where we'll need to attach a gap edge later
-                        // cerr << "completed_nodes.insert(node_here) because we don't want to extend nodes where we'll need to attach a gap edge later." << endl;
                         completed_nodes.insert(node_here);
                     }
                 }
-                // cerr << "itering through transitions of length " << transitions.size() << endl;
                 for (const auto& transition : transitions) {
 #ifdef debug_msa_converter
                     cerr << "transition to " << transition.first << endl;
@@ -502,11 +437,9 @@ using namespace std;
                         cerr << "\t" << s << endl;
                     }
 #endif
-                    //build an empty node to initialize at_node:
-                    // cerr << "about to build an empty node to initialize at_node:" << endl;
-                    MSANode* at_node;// = graph.create_node("");
+                    //initialize at_node pointer:
+                    MSANode* at_node;
 
-                    // cerr << "transition.second.first.size(). If >1, we make a new node. If =1, we extend the node. " << transition.second.first.size() << endl;
                     //determine if there are more than one transitions 
                     if (transition.second.first.size() > 1) {
                         // cerr << "running create_node because there is more than one transition option." << endl;
@@ -515,7 +448,6 @@ using namespace std;
                         for (MSANode* attaching_node : transition.second.first) {
                             graph.create_edge(attaching_node, new_node);
                             // we don't want to extend nodes that already have edges out of their ends
-                            // cerr << "creating edge between attaching node " << attaching_node->get_id() << " " <<  attaching_node->get_sequence() <<  " and new node " << new_node->get_id() << " " <<  new_node->get_sequence() << endl;
                             completed_nodes.insert(attaching_node);
                         }
                         
@@ -531,18 +463,12 @@ using namespace std;
                         int at_node_size;
                         if (transition.second.first.empty())
                         {
-                            // cerr << "at_node_size = 0" << endl;
                             at_node_size = 0;
                         }
                         else
                         {
-                            // cerr << "at_node_size = transition.second.first.size(), which is " << transition.second.first.size() << endl;
                             at_node_size = transition.second.first.size();
                         }
-                        // cerr << "*transition.second.first.size() " << transition.second.first.size() << endl;
-                        
-                        // cerr << "at_node_size: " << at_node_size << "max_node_length: " << max_node_length << endl;
-                        // cerr << "completed_nodes.count(at_node) " << completed_nodes.count(at_node) << endl;
                         if (at_node_size >= max_node_length ||
                             completed_nodes.count(at_node)) {
                             // we either want to split this node just because of length or because
@@ -566,11 +492,13 @@ using namespace std;
                     for (const string& name : transition.second.second) {
                         current_node[name] = at_node;
 
-                    //todo: reimplement paths.
-                    //     if (keep_paths) {
-                    //         Path* path = aln_path[name];
+                    // //todo: reimplement paths.
+                    //     if (keep_paths) 
+                    //     {
+                    //         MSAPath* path = aln_path[name];
                     //         if (path->mapping_size() == 0 ? true :
-                    //             at_node->get_id() != path->mapping(path->mapping_size() - 1).position().node_id()) {
+                    //             at_node->get_id() != path->mapping(path->mapping_size() - 1).position().node_id()) 
+                    //         {
                     //             Mapping* mapping = path->add_mapping();
                     //             mapping->mutable_position()->set_node_id(at_node->get_id());
                     //             mapping->set_rank(path->mapping_size());
@@ -605,22 +533,17 @@ using namespace std;
             //     graph.paths.extend(*path);
             // }
             
-            // cerr << "destroying dummy_node." << dummy_node->get_id() << endl;
             graph.destroy_node(*dummy_node);
+            //todo: reimplement keep paths
             // graph.sync_paths();
         }
-        
-        // destroy_progress();
         
         return graph.make_handlegraph();
     }
 
+    //MSANode code:
+    MSAConverter::MSANode::MSANode(int id, string seq) : _id(id), _seq(seq) {};
 
-    //MSAGraph code:
-    MSAConverter::MSAGraph::MSAGraph() {
-        // nothing to do
-    }
-    
     int MSAConverter::MSANode::get_id() const
     {
         return _id;
@@ -636,14 +559,40 @@ using namespace std;
         return &_seq;
     }
 
+    // //MSAPath code:
+
+    // MSAConverter::MSAPath::MSAPath(string name) : _name(name) {};
+
+    // void MSAConverter::MSAPath::extend(MSANode* node) 
+    // {
+    //     _nodes.push_back(node);
+    // }
+    
+    // string MSAConverter::MSAPath::get_name()
+    // {
+    //     return _name;
+    // }
+
+    // vector<MSAConverter::MSANode*> MSAConverter::MSAPath::get_nodes()
+    // {
+    //     return _nodes;
+    // }
+
     //MSAGraph code:
-    MSAConverter::MSANode::MSANode(int id, string seq) : _id(id), _seq(seq) {};
+    MSAConverter::MSAGraph::MSAGraph() {};
+
+    //todo: implement paths:
+    // MSAConverter::MSAPath* MSAConverter::MSAGraph::add_path(string name)
+    // {
+    //     _paths.push_back(shared_ptr<MSAPath>(new MSAPath(name)));
+
+    // }
 
     MSAConverter::MSANode* MSAConverter::MSAGraph::create_node(string str)
     {
         _ids_to_nodes[_highest_node_id] = shared_ptr<MSANode>(new MSANode(_highest_node_id, str));
         int this_node_id = _highest_node_id;
-        cerr << "in MSAGraph's create_node, we're creating node " << _ids_to_nodes[this_node_id]->get_id() << " " << _ids_to_nodes[this_node_id]->get_sequence() << endl;
+        // cerr << "in MSAGraph's create_node, we're creating node " << _ids_to_nodes[this_node_id]->get_id() << " " << _ids_to_nodes[this_node_id]->get_sequence() << endl;
 
         _highest_node_id++;
         return &(*_ids_to_nodes[this_node_id]);
@@ -707,6 +656,234 @@ using namespace std;
                         graph->create_edge(graph->get_handle(node_entry.first), graph->get_handle(right_node->get_id()));
                 }
         }
-        
+    
+        //todo: implement paths.
+        // // insert paths:
+        // // for (pair<string, vector<MSANode*>> path : _paths)
+        // for (auto path : _paths)
+        // {
+        //     path_handle_t path_handle = graph->create_path_handle(path->get_name());
+        //     for (MSANode* node : path->get_nodes())
+        //     {
+        //         graph->append_step(path_handle,graph->get_handle(node->get_id(), false)); 
+        //     }
+        // }
+
         return graph;
     }
+
+
+    //this is the original make_graph function. It uses the (bad!) VG type, but it has the keep_paths option currently implemented.
+    VG MSAConverter::make_graph_use_vg_type_keep_paths(bool keep_paths, size_t max_node_length) {
+    
+    
+    unordered_set<char> alphabet{'A', 'C', 'T', 'G', 'N', '-'};
+    
+    VG graph;
+    
+    // detect sequences with duplicate names and determine the size of the conversion
+    bool contains_duplicate_seq_names = false;
+    size_t total_size = 0;
+    unordered_map<string, pair<size_t, size_t>> seq_name_count;
+    for (const unordered_map<string, string>& alignment : alignments) {
+        for (const pair<string, string>& sequence : alignment) {
+            total_size += sequence.second.size();
+            seq_name_count[sequence.first].first++;
+            contains_duplicate_seq_names |= (seq_name_count[sequence.first].first > 1);
+        }
+    }
+    
+    create_progress("converting to graph", total_size);
+    
+    // append a number to each duplicate name
+    if (contains_duplicate_seq_names) {
+        for (unordered_map<string, string>& alignment : alignments) {
+            
+            // collect the names in this block that have duplicates
+            vector<string> duplicate_names;
+            for (const pair<string, string>& sequence : alignment) {
+                if (seq_name_count[sequence.first].first > 1) {
+                    duplicate_names.push_back(sequence.first);
+                }
+            }
+            
+            // TODO: it's technically possible that the new key might collide with one already
+            // in the map, although this would have required some weird naming
+            // swap the key in the map for the modified one
+            for (string& seq_name : duplicate_names) {
+                size_t name_num = ++seq_name_count[seq_name].second;
+                stringstream sstrm;
+                sstrm << seq_name << "." << name_num;
+                alignment[sstrm.str()] = move(alignment[seq_name]);
+                alignment.erase(seq_name);
+            }
+        }
+    }
+    
+    for (const unordered_map<string, string>& alignment : alignments) {
+        
+        // the node that each input sequence is extending
+        unordered_map<string, Node*> current_node;
+        
+        // the path we're building for each aligned sequence
+        unordered_map<string, Path*> aln_path;
+        
+        // start all of the alignments on a dummy node
+        Node* dummy_node = graph.create_node("N");
+        for (const auto& seq : alignment) {
+            current_node[seq.first] = dummy_node;
+            
+            if (keep_paths) {
+                Path* path = graph.graph.add_path();
+                aln_path[seq.first] = path;
+                path->set_name(seq.first);
+            }
+        }
+        
+        // nodes that we don't want to extend any more
+        // (we never want to extend the dummy node)
+        unordered_set<Node*> completed_nodes{dummy_node};
+        
+        size_t aln_len = alignment.begin()->second.size();
+        for (size_t i = 0; i < aln_len; i++) {
+#ifdef debug_msa_converter
+            cerr << "## beginning column " << i << endl;
+#endif
+            unordered_map<Node*, char> forward_transitions;
+            unordered_map<char, pair<unordered_set<Node*>, vector<string>>> transitions;
+            for (const auto& seq : alignment) {
+                char aln_char = toupper(seq.second[i]);
+                
+                if (!alphabet.count(aln_char)) {
+                    cerr << "error:[MSAConverter] MSA contains non-nucleotide characters" << endl;
+                    exit(1);
+                    
+                }
+                
+                Node* node_here = current_node[seq.first];
+                
+                if (aln_char != '-') {
+                    // this alignment is transitioning to a new aligned character
+                    transitions[aln_char].first.insert(node_here);
+                    transitions[aln_char].second.push_back(seq.first);
+                    
+                    auto iter = forward_transitions.find(node_here);
+                    if (iter != forward_transitions.end()) {
+                        if (iter->second != aln_char) {
+                            // this node splits in the current column, so don't extend it anymore
+                            completed_nodes.insert(node_here);
+                        }
+                    }
+                    else {
+                        forward_transitions[node_here] = aln_char;
+                    }
+                }
+                else {
+                    // this alignment isn't transitioning anywhere yet
+                    
+                    // we don't want to extend nodes where we'll need to attach a gap edge later
+                    completed_nodes.insert(node_here);
+                }
+            }
+            
+            for (const auto& transition : transitions) {
+#ifdef debug_msa_converter
+                cerr << "transition to " << transition.first << endl;
+                cerr << "from nodes:" << endl;
+                for (const Node* n : transition.second.first) {
+                    cerr << "\t" << n->id() << ": " << n->sequence() << endl;
+                }
+                cerr << "on sequences:" << endl;
+                for (const string& s : transition.second.second) {
+                    cerr << "\t" << s << endl;
+                }
+#endif
+                Node* at_node;
+                
+                if (transition.second.first.size() > 1) {
+                    Node* new_node = graph.create_node(string(1, transition.first));
+                    
+                    for (Node* attaching_node : transition.second.first) {
+                        graph.create_edge(attaching_node, new_node);
+                        // we don't want to extend nodes that already have edges out of their ends
+                        completed_nodes.insert(attaching_node);
+                    }
+                    
+                    // keep track of the fact that now we are on the new node
+                    at_node = new_node;
+                    
+                }
+                else {
+                    // there's only one node that wants to transition to this
+                    // character, so we might be able to just extend the node
+                    at_node = *transition.second.first.begin();
+                    
+                    if (at_node->sequence().size() >= max_node_length ||
+                        completed_nodes.count(at_node)) {
+                        // we either want to split this node just because of length or because
+                        // we've already marked it as unextendable
+                        
+                        Node* new_node = graph.create_node(string(1, transition.first));
+                        
+                        graph.create_edge(at_node, new_node);
+                        completed_nodes.insert(at_node);
+                        
+                        // keep track of the fact that now we are on the new node
+                        at_node = new_node;
+                    }
+                    else {
+                        at_node->mutable_sequence()->append(1, transition.first);
+                    }
+                }
+                
+                // update which node the paths are currently extending
+                for (const string& name : transition.second.second) {
+                    current_node[name] = at_node;
+                    
+                    if (keep_paths) {
+                        Path* path = aln_path[name];
+                        if (path->mapping_size() == 0 ? true :
+                            at_node->id() != path->mapping(path->mapping_size() - 1).position().node_id()) {
+                            Mapping* mapping = path->add_mapping();
+                            mapping->mutable_position()->set_node_id(at_node->id());
+                            mapping->set_rank(path->mapping_size());
+                        }
+                    }
+                }
+            }
+            
+            update_progress(alignment.size());
+            
+#ifdef debug_msa_converter
+            cerr << "graph: " << pb2json(graph.graph) << endl;
+            cerr << "node locations of sequences:" << endl;
+            for (const auto& curr : current_node) {
+                cerr << "\t" << curr.first << " " << curr.second->id() << endl;
+            }
+#endif
+        }
+        
+        for (pair<const string, Path*> path_record : aln_path) {
+            Path* path = path_record.second;
+            for (size_t i = 0; i < path->mapping_size(); i++) {
+                Mapping* mapping = path->mutable_mapping(i);
+                assert(mapping->edit_size() == 0);
+                Edit* edit = mapping->add_edit();
+                
+                size_t node_length = graph.get_node(mapping->position().node_id())->sequence().size();
+                edit->set_from_length(node_length);
+                edit->set_to_length(node_length);
+            }
+            graph.paths.extend(*path);
+        }
+        
+        graph.destroy_node(dummy_node);
+        graph.sync_paths();
+    }
+    
+    destroy_progress();
+    
+    return graph;
+}
+    
+}

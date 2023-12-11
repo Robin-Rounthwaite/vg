@@ -76,7 +76,8 @@ namespace vg {
                 MSAConverter msa_converter;
                 msa_converter.load_alignments(strm, "fasta");
                 
-                unique_ptr<HandleGraph> graph = msa_converter.make_graph(true, 1);
+                // unique_ptr<HandleGraph> graph = msa_converter.make_graph(true, 1);
+                unique_ptr<HandleGraph> graph = msa_converter.make_graph(1);
                 
                 REQUIRE(graph->get_node_count() == 3);
                 REQUIRE(graph->get_edge_count() == 2);

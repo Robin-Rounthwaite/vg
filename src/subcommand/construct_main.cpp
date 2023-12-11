@@ -350,9 +350,14 @@ int main_construct(int argc, char** argv) {
         msa_converter.show_progress = show_progress;
         
         msa_converter.load_alignments(msa_file, msa_format);
-        unique_ptr<HandleGraph> msa_graph = msa_converter.make_graph(keep_paths, max_node_size);
         
-        vg::io::save_handle_graph(&(*msa_graph), std::cout);
+        //keep_paths is nearly implemented, but has been skipped over due to deadlines. 
+        //todo: implement keep paths without using the VG object!
+        // unique_ptr<HandleGraph> msa_graph = msa_converter.make_graph(keep_paths, max_node_size);
+        // vg::io::save_handle_graph(&(*msa_graph), std::cout);
+        VG msa_graph = msa_converter.make_graph_use_vg_type_keep_paths(keep_paths, max_node_size);
+        
+        msa_graph.serialize_to_ostream(cout);
     }
     else {
         cerr << "error:[vg construct] a reference or an MSA is required for construct" << endl;
