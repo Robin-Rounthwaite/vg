@@ -89,8 +89,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     vector< tuple< SubHandleGraph, shared_ptr<MutablePathDeletableHandleGraph>, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls;
     
 
-    // //todo: debug_code
-    _debug_print=true;
+    //todo: debug_code
+    // _debug_print=true;
     // split_normalize_regions.clear();
     // split_normalize_regions.push_back(make_pair(1898335, 1898346));
     // split_normalize_regions.push_back(make_pair(2624390, 2624421));

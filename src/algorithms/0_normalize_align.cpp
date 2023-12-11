@@ -12,16 +12,16 @@ namespace algorithms{
 //Note: you probably don't want to set output_msa to true while sending other things to cout. Because the msa is outputted to cout as well.
 unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const bool output_msa/*=false*/) {
     // unique_ptr<HandleGraph> output_subgraph;
-    cerr << "in poa_source_to_sink" << endl;
+    // cerr << "in poa_source_to_sink" << endl;
     // bool run_successful = true;
     // uint8_t ***msa_seq = NULL;
-    cerr << "size of source_to_sink_haplotypes " << source_to_sink_haplotypes.size() << endl;
-    cerr << "size (and sequence) of each hap in source_to_sink_haplotypes: " << endl;
-    for (auto hap : source_to_sink_haplotypes)
-    {
-        cerr << hap.size() << " ";
-        cerr << hap << endl;
-    }
+    // cerr << "size of source_to_sink_haplotypes " << source_to_sink_haplotypes.size() << endl;
+    // cerr << "size (and sequence) of each hap in source_to_sink_haplotypes: " << endl;
+    // for (auto hap : source_to_sink_haplotypes)
+    // {
+    //     cerr << hap.size() << " ";
+    //     cerr << hap << endl;
+    // }
     
     // replace the source and sink chars with X, to force match at source and sink.
     //todo: if copying out the set takes significant time, try using unordered_set::extract() here. (https://stackoverflow.com/questions/42519867/efficiently-moving-contents-of-stdunordered-set-to-stdvector)
@@ -36,10 +36,10 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
     char first_char = edited_source_to_sink_haplotypes.back().front();
     char last_char = edited_source_to_sink_haplotypes.back().back();
     bool two_char_hap_exists = 0;
-    cerr << "haps, in sorted order, to be aligned: " << endl;
+    // cerr << "haps, in sorted order, to be aligned: " << endl;
     for (string hap : edited_source_to_sink_haplotypes)
     {
-        cerr << hap << endl;
+        // cerr << hap << endl;
         if (hap.size() == 2) 
         {
             // then we need to remove this sequence from the alignment process. Because 
@@ -71,12 +71,12 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
                 
 
                 MSAConverter myMSAConverter = MSAConverter();
-                cerr << "before align example " << endl;
-                for (auto align : msa_output)
-                {
-                    cerr << "align example: " << align << endl;
-                }
-                cerr << "after align example " << endl;
+                // cerr << "before align example " << endl;
+                // for (auto align : msa_output)
+                // {
+                //     cerr << "align example: " << align << endl;
+                // }
+                // cerr << "after align example " << endl;
                 myMSAConverter.load_alignments_from_vector(msa_output);
                 // return myMSAConverter.make_graph(false, 32);;
                 return myMSAConverter.make_graph(32);;
@@ -91,13 +91,13 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
             }
         }
     }
-    cerr << "edited_source_to_sink_haplotypes.size()" << edited_source_to_sink_haplotypes.size() << endl;
+    // cerr << "edited_source_to_sink_haplotypes.size()" << edited_source_to_sink_haplotypes.size() << endl;
 
-    cerr << "deleting first and last characters:" << endl;
+    // cerr << "deleting first and last characters:" << endl;
 
     for (auto it = edited_source_to_sink_haplotypes.begin(); it != edited_source_to_sink_haplotypes.end(); it++)
     {
-        cerr << "before delete: " << *it << endl;
+        // cerr << "before delete: " << *it << endl;
         //todo: remove debug code lines:
         // it->erase(0, 8);
         // it->erase(it->size() - 14, 14); //14-n is the amount of flanking sequence, n given to erase.
@@ -110,10 +110,10 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
         // it->insert(0, string("AAAAAAAAAAAAAAAAAAAAAAAAAA"));
         // //todo: end debug_code:
 
-        cerr << "after delete: " << *it << endl;
+        // cerr << "after delete: " << *it << endl;
     }
 
-    cerr << "edited_source_to_sink_haplotypes.size()" << edited_source_to_sink_haplotypes.size() << endl;
+    // cerr << "edited_source_to_sink_haplotypes.size()" << edited_source_to_sink_haplotypes.size() << endl;
 
     //todo: make sPOA and abPOA sections separate functions?
     // if the alignment is for <=750 bases, use sPOA. 
@@ -130,11 +130,11 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
         // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 6, -9, -11, -9); // modified inputs, with increased gap-open cost.
         auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kNW, 6, -9, -11, -6); // modified inputs, with increased gap-open cost.
         spoa::Graph spoa_graph{};
-        cerr << "about to add sequences" << endl;
+        // cerr << "about to add sequences" << endl;
         for (string sequence : edited_source_to_sink_haplotypes)
         {
-            cerr << "adding seq of size " << sequence.size() << endl;
-            cerr << "adding seq: " << sequence << endl;
+            // cerr << "adding seq of size " << sequence.size() << endl;
+            // cerr << "adding seq: " << sequence << endl;
             auto alignment = alignment_engine->Align(sequence, spoa_graph);
             spoa_graph.AddAlignment(alignment, sequence);
         }
@@ -165,11 +165,11 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
             //otherwise, just directly generate the MSA output.
             msa_output = spoa_graph.GenerateMultipleSequenceAlignment();
         }
-        cerr << "msa_output" << endl;
-        for (auto align : msa_output)
-        {
-            cerr << align << endl;
-        }
+        // cerr << "msa_output" << endl;
+        // for (auto align : msa_output)
+        // {
+        //     cerr << align << endl;
+        // }
         // cerr << "about to return true. Here is the snarl ids: ";
         // output_subgraph.for_each_handle([&] (handle_t handle)
         // {
