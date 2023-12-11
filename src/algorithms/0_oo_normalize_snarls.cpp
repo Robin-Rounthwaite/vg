@@ -130,18 +130,17 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
+        auto start_alignment = std::chrono::high_resolution_clock::now();
         #pragma omp critical(print_progress)
         {
         if (num_snarls_normalized%10000 == 0)
         // if (num_snarls_normalized%1 == 0)
         {
-            auto cur_time = std::chrono::high_resolution_clock::now();
-
-            std::chrono::duration<double> elapsed = cur_time - start;
+            std::chrono::duration<double> elapsed = start_alignment - start;
             
             cerr << "normalizing " << num_snarls_normalized+1 << "/" << split_normalize_regions.size() << " regions by time " << elapsed.count() << endl;
-            
-        }
+        }            
+
         num_snarls_normalized++;
         }
         pair<bool, bool> sequence_added_because_empty_node = make_pair(false, false);
@@ -212,19 +211,19 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            cerr << "get<0>(haplotypes), new_snarl, false) " << get<0>(haplotypes).size() << endl;
-            cerr << "new_snarl interaction: " << endl;
-            new_snarl->for_each_handle([&](handle_t handle){
-                cerr << new_snarl->get_id(handle) << endl;
-            });
+            // cerr << "get<0>(haplotypes), new_snarl, false) " << get<0>(haplotypes).size() << endl;
+            // cerr << "new_snarl interaction: " << endl;
+            // new_snarl->for_each_handle([&](handle_t handle){
+            //     cerr << new_snarl->get_id(handle) << endl;
+            // });
 
-            cerr << "about to run poa_source_to_sink_haplotypes. " << endl;
+            // cerr << "about to run poa_source_to_sink_haplotypes. " << endl;
             new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), false);
-            cerr << "finished running poa_source_to_sink_haplotypes. " << endl;
-            new_snarl->for_each_handle([&](handle_t handle){
-                cerr << new_snarl->get_id(handle) << endl;
-            });
-            cerr << "done checking handles after poa fxn" << endl;
+            // cerr << "finished running poa_source_to_sink_haplotypes. " << endl;
+            // new_snarl->for_each_handle([&](handle_t handle){
+            //     cerr << new_snarl->get_id(handle) << endl;
+            // });
+            // cerr << "done checking handles after poa fxn" << endl;
             if (!new_snarl)
             {
                 //note: this snippet should never run, because it's also handled by the "if (hap.size() > max_spoa_length)" condition a in test_haplotypes.
@@ -284,6 +283,20 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         normalized_snarls.emplace_back(make_tuple(snarl, new_snarl, embedded_paths, region.first, region.second, false, source_to_sink_gbwt_paths));
         }
         // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, embedded_paths, region.first, region.second, false);
+
+        #pragma omp critical(note_long_aligns)
+        { 
+            auto end_alignment = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed = end_alignment - start_alignment;
+            
+            int too_long = 15;
+
+            if (elapsed.count() > too_long)
+            {
+                cerr <<  "An alignment took time greater than " << too_long << ". Snarl: " << region.first << " " << region.second << " Duration of alignment: " << elapsed.count() << endl;
+            }
+        }
+        
     }
 
     auto align_time = std::chrono::high_resolution_clock::now();
