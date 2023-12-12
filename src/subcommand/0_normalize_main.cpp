@@ -150,6 +150,9 @@ void help_normalize(char **argv) {
             "regions gbwt, gg, and graph, contains all the program needs to continue a run "
             "of normalize after the first segregation of regions. (distance index "
             "may be passed to the program untouched.)." << endl
+        << "    -j, --skip_desegregate       Instead of desegregating the regions in "
+        "the graph (requiring two full updates to the gbwt), simply save the normalized "
+        "graph in the segregated_regions format." << endl
         << "    -u, --run_tests       run tests to make sure that normalize is still functioning properly." << endl
         << "    -b, --debug_print       print some information during normalization for debugging." << endl
         // << "    -D, --robin_debug       runs robin-defined debug code using given objects, and nothing else." << endl
@@ -173,6 +176,7 @@ int main_normalize(int argc, char **argv) {
     int threads = 14;
     string output_segregate_regions_only_file;
     string input_segregate_regions_only_file;
+    bool skip_desegregate = false;
     bool run_tests = false;
     bool debug_print = false;
 
@@ -200,12 +204,13 @@ int main_normalize(int argc, char **argv) {
             {"threads", required_argument, 0, 't'},
             {"output_segregate_regions_only_file", required_argument, 0, 's'},
             {"input_segregate_regions_only_file", required_argument, 0, 'S'},
+            {"skip_desegregate", no_argument, 0, 'j'},
             {"run_tests", no_argument, 0, 'u'},
             {"debug_print", no_argument, 0, 'b'},
             {"robin_debug", no_argument, 0, 'D'},
             {0, 0, 0, 0}};
         int option_index = 0;
-        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:s:S:ubD", long_options,
+        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:s:S:jubD", long_options,
                         &option_index);
         // Detect the end of the options.
         if (c == -1)
@@ -251,6 +256,10 @@ int main_normalize(int argc, char **argv) {
 
         case 'S':
             input_segregate_regions_only_file = optarg;
+            break;
+
+        case 'j':
+            skip_desegregate = true;
             break;
 
         case 'u':
@@ -631,6 +640,15 @@ int main_normalize(int argc, char **argv) {
       *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, max_handle_size, max_region_size, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
 
     std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
+
+    if (skip_desegregate)
+    {
+        cerr << "skipping desegregation of normalize regions because of argument j (skip_desegregate)." << endl;
+        cerr << "saving updated graph to file" << endl;
+        //save normalized graph
+        vg::io::save_handle_graph(graph.get(), std::cout);
+        return 0;
+    }
 
     cerr << "normalize ran with arguments: " << endl;
     cerr << "max_region_size (-m): " << max_region_size << endl;

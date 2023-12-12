@@ -289,11 +289,11 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             auto end_alignment = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> elapsed = end_alignment - start_alignment;
             
-            int too_long = 15;
+            int too_long = 1;
 
             if (elapsed.count() > too_long)
             {
-                cerr <<  "An alignment took time greater than " << too_long << ". Snarl: " << region.first << " " << region.second << " Duration of alignment: " << elapsed.count() << endl;
+                cerr <<  "An alignment took time greater than " << too_long << " seconds. Snarl: " << region.first << " " << region.second << " Duration of alignment: " << elapsed.count() << endl;
             }
         }
         
