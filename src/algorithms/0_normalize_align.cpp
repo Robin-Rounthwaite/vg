@@ -128,7 +128,9 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
         // match and mismatch score of alignment based off of table 1 from https://www.sciencedirect.com/science/article/pii/S1046202305801653
         // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 6, -9, -36, -18); // modified inputs, with increased gap-open cost.
         // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 6, -9, -11, -9); // modified inputs, with increased gap-open cost.
-        auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kNW, 6, -9, -11, -6); // modified inputs, with increased gap-open cost.
+        cerr << "starting alignment: kNW 6, -9, -11, -6" << endl;
+        // auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kNW, 6, -9, -11, -6); // modified inputs, with increased gap-open cost.
+        auto alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kNW, 25, -26, -100, -8); // modified inputs based on Glenn's abPOA scores
         spoa::Graph spoa_graph{};
         // cerr << "about to add sequences" << endl;
         for (string sequence : edited_source_to_sink_haplotypes)
@@ -148,7 +150,9 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
             // Seed the alignment with the consensus
             spoa::Graph seeded_spoa_graph{};
             // auto seeded_alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 6, -2, -4, -1);
-            auto seeded_alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kSW, 6, -9, -11, -6);
+            cerr << "starting seeded alignment for >2 haplotypes: kNW 6, -9, -11, -6" << endl;
+                // auto seeded_alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kNW, 6, -9, -11, -6);
+            auto seeded_alignment_engine = spoa::AlignmentEngine::Create(spoa::AlignmentType::kNW, 25, -26, -100, -8);
             auto cons_alignment = seeded_alignment_engine->Align(consensus, seeded_spoa_graph);
             seeded_spoa_graph.AddAlignment(cons_alignment, consensus);
 
@@ -163,13 +167,14 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
         else
         {
             //otherwise, just directly generate the MSA output.
+            cerr << "did not make a seeded alignment; MSA output for <= 2 haplotypes." << endl;
             msa_output = spoa_graph.GenerateMultipleSequenceAlignment();
         }
-        // cerr << "msa_output" << endl;
-        // for (auto align : msa_output)
-        // {
-        //     cerr << align << endl;
-        // }
+        cerr << "msa_output" << endl;
+        for (auto align : msa_output)
+        {
+            cerr << align << endl;
+        }
         // cerr << "about to return true. Here is the snarl ids: ";
         // output_subgraph.for_each_handle([&] (handle_t handle)
         // {

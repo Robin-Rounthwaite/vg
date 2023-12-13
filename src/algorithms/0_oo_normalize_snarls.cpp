@@ -102,7 +102,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
 
     //todo: begin debug_code:
-    // split_normalize_regions.clear();
+    split_normalize_regions.clear();
+    split_normalize_regions.push_back(make_pair(996832, 997083));
     // split_normalize_regions.push_back(make_pair(2369282, 2369288));
     // split_normalize_regions.push_back(make_pair(2555912, 2555931));
     // // vector<pair<id_t, id_t>> debug_split_normalize_regions;

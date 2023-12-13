@@ -155,7 +155,7 @@ void help_normalize(char **argv) {
         "graph in the segregated_regions format." << endl
         << "    -u, --run_tests       run tests to make sure that normalize is still functioning properly." << endl
         << "    -b, --debug_print       print some information during normalization for debugging." << endl
-        // << "    -D, --robin_debug       runs robin-defined debug code using given objects, and nothing else." << endl
+        << "    -D, --debug_get_snarl_nodes A:B       runs robin-defined debug code using given objects, and nothing else. TODO: move to vg find." << endl
         << "    -h, --help      print this help info." << endl;
 }
 
@@ -179,8 +179,9 @@ int main_normalize(int argc, char **argv) {
     bool skip_desegregate = false;
     bool run_tests = false;
     bool debug_print = false;
-
-    bool robin_debug = false;
+    
+    vector<string> nodes;
+    pair<int, int> debug_get_snarl_nodes = make_pair(0, 0);
 
     //todo: make options for these variables.
     // dictates the number of snarls that may be clustered into a single region.
@@ -207,10 +208,10 @@ int main_normalize(int argc, char **argv) {
             {"skip_desegregate", no_argument, 0, 'j'},
             {"run_tests", no_argument, 0, 'u'},
             {"debug_print", no_argument, 0, 'b'},
-            {"robin_debug", no_argument, 0, 'D'},
+            {"debug_get_snarl_nodes", required_argument, 0, 'D'},
             {0, 0, 0, 0}};
         int option_index = 0;
-        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:s:S:jubD", long_options,
+        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:s:S:jubD:", long_options,
                         &option_index);
         // Detect the end of the options.
         if (c == -1)
@@ -271,7 +272,12 @@ int main_normalize(int argc, char **argv) {
             break;
 
         case 'D':
-            robin_debug = true;
+            cerr << "a" << endl;
+            nodes = split_delims(optarg, ":");
+            cerr << "b" << endl;
+
+            debug_get_snarl_nodes = make_pair(parse<int>(nodes.front()), parse<int>(nodes.back()));
+            cerr << "C" << endl;
             break;
 
         case 'h':
@@ -294,16 +300,20 @@ int main_normalize(int argc, char **argv) {
     //graph
     cerr << "loading graph" << endl;
     shared_ptr<MutablePathDeletableHandleGraph> graph;
+    // cerr << "loading" << endl;
     get_input_file(optind, argc, argv, [&](istream &in) {
       graph = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(in);
     });
 
-
-    if (robin_debug)
+    cerr << "after graph" << endl;
+    if (debug_get_snarl_nodes.first != 0 || debug_get_snarl_nodes.second != 0)
     {
-        vg::id_t leftmost_id = 996832;
-        vg::id_t rightmost_id = 997083;
-        SubHandleGraph snarl =   extract_subgraph(*graph, leftmost_id, rightmost_id);
+        cerr << "in get_snarl_nodes." << endl;
+        // vg::id_t leftmost_id = 996832;
+        // vg::id_t rightmost_id = 997083;
+        // debug_get_snarl_nodes.first = 996832;
+        // debug_get_snarl_nodes.second = 997083;
+        SubHandleGraph snarl =   extract_subgraph(*graph, debug_get_snarl_nodes.first, debug_get_snarl_nodes.second);
         snarl.for_each_handle([&](handle_t handle){
             // cout << snarl.get_id(handle) << "\t" << snarl.get_sequence(handle) << endl;
             cout << snarl.get_id(handle) << endl;
