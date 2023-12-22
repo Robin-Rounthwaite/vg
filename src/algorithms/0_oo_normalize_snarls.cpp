@@ -67,6 +67,15 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
 /// @param split_normalize_regions 
 std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions)
 {
+    vector<path_handle_t> all_paths;
+    _graph.for_each_path_handle([&](path_handle_t path)
+    {
+        all_paths.push_back(path);
+    });
+    for (auto path: all_paths)
+    {
+        _graph.destroy_path(path);
+    }
     // cerr << "list of all to-delete handles:" << endl;
     // for (auto deletable : _nodes_to_delete)
     // {
@@ -86,12 +95,17 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: change to make more memory efficient? 
     //todo: I could also at least re-derive the SubHandleGraph if I needed to.
     // vector< pair< vg::VG, pair<id_t,id_t> > > normalized_snarls;
-    vector< tuple< SubHandleGraph, shared_ptr<MutablePathDeletableHandleGraph>, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls;
+    vector< tuple< SubHandleGraph, shared_ptr<MutablePathDeletableHandleGraph>, vector<pair<tuple<string, id_t, bool>, tuple<string, id_t, bool>>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls;
     
 
     //todo: debug_code
     // _debug_print=true;
+    //todo: remove debug_code:
     // split_normalize_regions.clear();
+    // split_normalize_regions.push_back(make_pair(1045507, 3814085));
+    // split_normalize_regions.push_back(make_pair(2329621, 2329624));
+    // split_normalize_regions.push_back(make_pair(3030735, 3030771));
+    // split_normalize_regions.push_back(make_pair(3680755, 3821999));
     // split_normalize_regions.push_back(make_pair(1898335, 1898346));
     // split_normalize_regions.push_back(make_pair(2624390, 2624421));
     int num_snarls_normalized = 0;
@@ -102,8 +116,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
 
     //todo: begin debug_code:
-    split_normalize_regions.clear();
-    split_normalize_regions.push_back(make_pair(996832, 997083));
+    // split_normalize_regions.clear();
+    // split_normalize_regions.push_back(make_pair(996832, 997083));
     // split_normalize_regions.push_back(make_pair(2369282, 2369288));
     // split_normalize_regions.push_back(make_pair(2555912, 2555931));
     // // vector<pair<id_t, id_t>> debug_split_normalize_regions;
@@ -140,10 +154,11 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             std::chrono::duration<double> elapsed = start_alignment - start;
             
             cerr << "normalizing " << num_snarls_normalized+1 << "/" << split_normalize_regions.size() << " regions by time " << elapsed.count() << endl;
-        }            
+        }
 
         num_snarls_normalized++;
         }
+
         pair<bool, bool> sequence_added_because_empty_node = make_pair(false, false);
 
         // _debug_print=true;
@@ -277,11 +292,20 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
         //record snarl size change statistic
 
+
+        // Because log_gbwt_changes now invalidates step_handle_ts when there are 
+        // empty nodes passed to it (because we have to fill them for bandedglobalaligner 
+        // to work), I need to transform embedded_paths to contain all the info for the 
+        // steps without actually containing the steps themselves.
+        //todo: make it so bandedglobalaligner doesn't do this, so I don't have to do this. 
+        //format is vector<pair<first step, last step>>, except each step is replaced with tuple<path_name, node_id, reverse_bool>
+        vector<pair<tuple<string, id_t, bool>, tuple<string, id_t, bool>>> reformatted_embedded_paths = reformat_embedded_paths(embedded_paths);
+
         #pragma omp critical(save_snarl)
         {
         _snarl_size_changes[make_pair(region.first, region.second)] = make_pair(original_snarl_size, new_snarl_size);
         // std::vector<std::tuple<vg::SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, vg::id_t, vg::id_t, bool, std::vector<std::pair<gbwt::vector_type, std::string>>>> normalized_snarls
-        normalized_snarls.emplace_back(make_tuple(snarl, new_snarl, embedded_paths, region.first, region.second, false, source_to_sink_gbwt_paths));
+        normalized_snarls.emplace_back(make_tuple(snarl, new_snarl, reformatted_embedded_paths, region.first, region.second, false, source_to_sink_gbwt_paths));
         }
         // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, embedded_paths, region.first, region.second, false);
 
@@ -304,6 +328,17 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     std::chrono::duration<double> align_elapsed = align_time - start;
     cerr << "all snarls normalized at time " << align_elapsed.count() << ". About to start integrating snarls." << endl;
 
+    // for (auto snarl : normalized_snarls)
+    // {
+    //     if (get<3>(snarl) == 2329621)
+    //     {
+    //         cerr << "before integrating snarls:" << endl;
+    //         cerr << "the path_spans_left_right is being compared to source/sink " << get<3>(snarl) << " " << get<4>(snarl) << endl;
+    //         // cerr << "the path name " << _graph.get_path_name(_graph.get_path_handle_of_step(get<2>(snarl)[1].first)) << endl;
+    //         // cerr << "the path_spans_left_right.first and .second: " << _graph.get_id(_graph.get_handle_of_step(get<2>(snarl)[1].first)) << " " << _graph.get_id(_graph.get_handle_of_step(get<2>(snarl)[1].second)) << endl;
+    //     }
+    // }
+
     //integrate all the normalized snarls formed in the parallel loop above.
     for (auto snarl : normalized_snarls)
     {
@@ -313,13 +348,57 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             cerr << "======================about to integrate snarl " << get<3>(snarl) << " " << get<4>(snarl) << "======================" << endl;
         }
 
+        // since we're at a place where the embedded_paths can be reconstructed without being invalidated, do so here.
+        vector<pair<step_handle_t, step_handle_t>> embedded_paths_reconstructed = reconstruct_embedded_paths(get<2>(snarl));
+
+        for (int i = 0; i != embedded_paths_reconstructed.size(); i++)
+        {
+            // pair<bool, bool> path_spans_left_right;
+            // cerr << "the path_spans_left_right is being compared to source/sink " << source_id << " " << sink_id << endl;
+            cerr << "the path name " << _graph.get_path_name(_graph.get_path_handle_of_step(embedded_paths_reconstructed[i].first)) << endl;
+            // cerr << "the path_spans_left_right.first and .second: " << _graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) << " " << _graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) << endl;
+            // path_spans_left_right.first = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) == source_id);
+            // path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) == sink_id); // not get_previous_step because stop_inclusive=true for extract haplotype paths.
+
+            // embedded_paths[i] = move_path_to_new_snarl(embedded_paths[i], temp_snarl_leftmost_id, temp_snarl_rightmost_id, path_spans_left_right, !backwards, make_pair(source_id, sink_id));
+        }
+
+
         // cerr << "integration" << endl;
-        pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), *get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
+        pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), *get<1>(snarl), embedded_paths_reconstructed, get<3>(snarl), get<4>(snarl), get<5>(snarl));
+
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
         // cerr << "extraction" << endl;
-        SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
+        // SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
+
+        
+        // leftmost_id = _graph.get_id(new_left_right.first);
+        // rightmost_id = _graph.get_id(new_left_right.second);
+        // cerr << "seq to be aligned is " << path.second << endl;
+        // cerr << "snarl nodes are: " << endl;
+        // new_snarl.for_each_handle([&](handle_t handle){
+        //     if (new_snarl.get_sequence(handle).size()==0)
+        //     {
+        //         cerr << "replacing sequence at " << new_snarl.get_id(handle) << " with N." << endl;
+        //         string new_node_seq = "N";  //new_snarl.get_sequence(to_insert_snarl_defining_handles.first.back());
+        //         // id_t new_node_id = new_snarl.get_id(to_insert_snarl_defining_handles.first.back());
+        //         // cerr << "1 contents of replace node using sequence: " << new_node_id << " " <<  new_node_seq << " " << new_node_seq.substr(1) << endl;
+        //         replace_node_using_sequence(new_snarl.get_id(handle), new_node_seq, _graph);
+        //         cerr << "done." << endl;
+                
+        //     }
+        //     cerr << new_snarl.get_id(handle) << " " << new_snarl.get_sequence(handle) << endl;
+        // });
+        
         // cerr << "log changes" << endl;
-        log_gbwt_changes(get<6>(snarl), integrated_snarl);
+        // get<6>(snarl).for_each_handle([&](handle_t handle){
+        //     cerr << get<6>(snarl).get_id(handle) << " " << get<6>(snarl).get_sequence(handle) << endl;
+        //     if (get<6>(snarl).get_sequence(handle).size()==0)
+        //     {
+                
+        //     }
+        // });
+        log_gbwt_changes(get<6>(snarl), new_left_right);
 
     }
     auto integration_time = std::chrono::high_resolution_clock::now();
@@ -458,6 +537,51 @@ void SnarlNormalizer::print_parallel_statistics()
         cerr << region.first.first << "   " << region.first.second << "   " << region.second.first << "   " << region.second.second << "   (" << region.second.second - region.second.first << ";" << "   " << ((((double)region.second.second - (double)region.second.first)/(double)region.second.first)*100.0) << "%)" << endl;
     }
 
+}
+
+vector<pair<tuple<string, id_t, bool>, tuple<string, id_t, bool>>> SnarlNormalizer::reformat_embedded_paths(const vector<pair<step_handle_t, step_handle_t>> embedded_paths)
+{
+    vector<pair<tuple<string, id_t, bool>, tuple<string, id_t, bool>>> reformatted_embedded_paths;
+    for (auto path : embedded_paths)
+    {
+        string path_name = _graph.get_path_name(_graph.get_path_handle_of_step(path.first));
+        auto left = make_tuple(path_name, _graph.get_id(_graph.get_handle_of_step(path.first)), _graph.get_is_reverse(_graph.get_handle_of_step(path.first)));
+        auto right = make_tuple(path_name, _graph.get_id(_graph.get_handle_of_step(path.second)), _graph.get_is_reverse(_graph.get_handle_of_step(path.second)));
+        reformatted_embedded_paths.push_back(make_pair(left, right));
+    } 
+    return reformatted_embedded_paths;
+}
+
+vector<pair<step_handle_t, step_handle_t>> SnarlNormalizer::reconstruct_embedded_paths(vector<pair<tuple<string, id_t, bool>, tuple<string, id_t, bool>>> reformatted_embedded_paths)
+{
+
+    vector<pair<step_handle_t, step_handle_t>> embedded_paths_reconstructed;
+    for (auto path : reformatted_embedded_paths)
+    {
+        //get all steps at the positions of the original step_handle.
+        vector<step_handle_t> lefts = _graph.steps_of_handle(_graph.get_handle(get<1>(path.first), get<2>(path.first)));
+        vector<step_handle_t> rights = _graph.steps_of_handle(_graph.get_handle(get<1>(path.second), get<2>(path.second)));
+        
+        //find which one corresponds with the path of the original step_handle.
+        step_handle_t left;
+        step_handle_t right;
+        for (auto step : lefts)
+        {
+            if (_graph.get_path_name(_graph.get_path_handle_of_step(step)) == get<0>(path.first))
+            {
+                left = step;
+            } 
+        }
+        for (auto step : rights)
+        {
+            if (_graph.get_path_name(_graph.get_path_handle_of_step(step)) == get<0>(path.first))
+            {
+                right = step;
+            } 
+        }
+        embedded_paths_reconstructed.push_back(make_pair(left, right));
+    }
+    return embedded_paths_reconstructed;
 }
 
 /// @brief 
@@ -1644,10 +1768,10 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, *new_snarl, embedded_paths, source_id, sink_id, backwards);
         _unskipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
 
-        // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
-        SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
+        // // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
+        // SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
 
-        log_gbwt_changes(source_to_sink_gbwt_paths, integrated_snarl);
+        log_gbwt_changes(source_to_sink_gbwt_paths, new_left_right);
 
         // integrated_snarl.for_each_handle([&](const handle_t handle) {
         //     if (integrated_snarl.get_id(handle) == 2605470)
@@ -2140,6 +2264,9 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     for (int i = 0; i != embedded_paths.size(); i++)
     {
         pair<bool, bool> path_spans_left_right;
+        cerr << "the path_spans_left_right is being compared to source/sink " << source_id << " " << sink_id << endl;
+        cerr << "the path name " << _graph.get_path_name(_graph.get_path_handle_of_step(embedded_paths[i].first)) << endl;
+        cerr << "the path_spans_left_right.first and .second: " << _graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) << " " << _graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) << endl;
         path_spans_left_right.first = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) == source_id);
         path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) == sink_id); // not get_previous_step because stop_inclusive=true for extract haplotype paths.
 
@@ -2227,8 +2354,13 @@ handle_t SnarlNormalizer::replace_node_using_sequence(const id_t old_node_id, co
     });
 
     // delete the old_handle:
+    cerr << "deleting the old handle with id " << graph.get_id(old_handle) << endl;;
     graph.destroy_handle(old_handle);
-    return new_handle;
+
+    //now make the handle have the old node id.
+    handle_t new_handle_with_old_id = overwrite_node_id(graph.get_id(new_handle), old_node_id);
+
+    return new_handle_with_old_id;
 }
 
 /**
@@ -2274,37 +2406,104 @@ handle_t SnarlNormalizer::overwrite_node_id(const id_t old_node_id, const id_t n
 
 /**
  * Updates the changes that need making to the gbwt after the graph is finished being
- * normalized, so that an updated gbwt can be made.
+ * normalized, so that an updated gbwt can be made. //todo: update this description.
  * @param  {list<string>} old_paths : the paths in the gbwt that need moving to the new
  * graph.
  * @param  {HandleGraph} new_snarl  : the normalized portion of the graph. Probably a 
  * subhandlegraph.
  */
-void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const HandleGraph &new_snarl){
+// void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const HandleGraph &new_snarl, const bool left_extended/*=false*/, const bool right_extended/*=false*/){
+void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const pair<handle_t, handle_t> left_and_right_id){
+
+    //because the vg::Aligner object has undefined behavior when it is passed a subgraph with empty nodes, I make sure to fill any empty nodes I have before running the alignment. Then the empty nodes are removed after.  
+
+    // cerr << "showing node 3822739 first: " <<  _graph.get_id(_graph.get_handle(3822739)) << " " << _graph.get_sequence(_graph.get_handle(3822739)) << endl;
+
+    pair<handle_t, handle_t> new_left_right;
+    handle_t new_left = left_and_right_id.first;
+    handle_t new_right = left_and_right_id.second;
+    bool new_left_necessary = false;
+    bool new_right_necessary = false;
+    if (_graph.get_sequence(new_left).size() == 0)
+    {
+        new_left_necessary = true;
+        new_left = replace_node_using_sequence(_graph.get_id(new_left), "N", _graph);
+    }
+    if (_graph.get_sequence(new_right).size() == 0)
+    {
+        new_right_necessary = true;
+        new_right = replace_node_using_sequence(_graph.get_id(new_right), "N", _graph);
+        
+    }
+    new_left_right = make_pair(new_left, new_right);
+    
     //todo: move Aligner to initialization of object, since I'm not supposed to make a new one each time I do alignments.
     Aligner aligner = Aligner();
+    SubHandleGraph snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
+
     // cerr << "in log_gbwt_changes" << endl;
     // cerr << old_paths.size() << endl;
     for (auto path : source_to_sink_gbwt_paths)
     {
         Alignment alignment;
-        alignment.set_sequence(path.second);
-        aligner.align_global_banded(alignment, new_snarl,0, false);
+        string sequence = path.second;
+        if (new_left_necessary)
+        {
+            sequence = "N" + sequence;
+        } 
+        if (new_right_necessary)
+        {
+            sequence = sequence + "N";
+        } 
+        alignment.set_sequence(sequence);
+        // alignment.set_sequence(path.second);
+        // cerr << "seq to be aligned is " << path.second << endl;
+        // cerr << "showing node 3822739 third: " <<  _graph.get_id(_graph.get_handle(3822739)) << " " << _graph.get_sequence(_graph.get_handle(3822739)) << endl;
+        // snarl.for_each_handle([&](handle_t handle){
+        //     // if (snarl.get_sequence(handle).size()==0)
+        //     // {
+        //     //     cerr << "replacing sequence at " << snarl.get_id(handle) << " with N." << endl;
+        //     //     string new_node_seq = "N";  //snarl.get_sequence(to_insert_snarl_defining_handles.first.back());
+        //     //     // id_t new_node_id = snarl.get_id(to_insert_snarl_defining_handles.first.back());
+        //     //     // cerr << "1 contents of replace node using sequence: " << new_node_id << " " <<  new_node_seq << " " << new_node_seq.substr(1) << endl;
+        //     //     replace_node_using_sequence(snarl.get_id(handle), new_node_seq, _graph);
+        //     //     cerr << "done." << endl;
+
+        //     // }
+        //     cerr << snarl.get_id(handle) << " " << snarl.get_sequence(handle) << endl;
+        // });
+        aligner.align_global_banded(alignment, snarl, 0, false);
+
+
+
+
         // cerr << "gbwt path being sent to new graph: " << endl;
         // cerr << "ALIGNMENT PATH FOR " << path << ":" << endl;
-        gbwt::vector_type alignment_full_path;
+        gbwt::vector_type alignment_full_path;  
         for (auto mapping : alignment.path().mapping())
         {
             // gbwt::Node::encode(id, is_reverse)
             // mapping.position().
             alignment_full_path.emplace_back(gbwt::Node::encode(mapping.position().node_id(), mapping.position().is_reverse()));
-            // cerr << "mapping.position().node_id() " << mapping.position().node_id() << _graph.get_sequence(_graph.get_handle( mapping.position().node_id() )) << endl;
         }
         _gbwt_changelog.emplace_back(path.first, alignment_full_path);
+
+
+        
         // cerr << pb2json(alignment.path()) << endl << alignment.query_position() << endl << alignment.path().mapping().begin() << endl << endl;
         // alignment.path().mapping()
     }
-    
+    //Now that alignment is over, return any artificially-filled handles to empty.
+    if (new_left_necessary)
+    {
+        new_left = replace_node_using_sequence(_graph.get_id(new_left), "", _graph);
+        cerr << "we replaced leftmost node " << _graph.get_id(new_left) << endl;
+    }
+    if (new_right_necessary)
+    {
+        new_right = replace_node_using_sequence(_graph.get_id(new_right), "", _graph);
+        cerr << "we replaced rightmost node " << _graph.get_id(new_right) << endl;
+    }
     // use banded global aligner. optimizations for finidng one perfect match from source to sink.
 
 }

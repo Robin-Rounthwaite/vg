@@ -40,6 +40,11 @@ class SnarlNormalizer {
     static unordered_set<string> format_handle_haplotypes_to_strings(const HandleGraph& graph, const gbwtgraph::GBWTGraph & gbwt_graph,
         const vector<vector<handle_t>> &haplotype_handle_vectors);
 
+    vector<pair<tuple<string, id_t, bool>, tuple<string, id_t, bool>>> reformat_embedded_paths(const vector<pair<step_handle_t, step_handle_t>> embedded_paths);
+
+    vector<pair<step_handle_t, step_handle_t>> reconstruct_embedded_paths(vector<pair<tuple<string, id_t, bool>, tuple<string, id_t, bool>>> reformatted_embedded_paths);
+
+
   protected:
     // member variables:
     // the handle graph with snarls to normalize
@@ -137,7 +142,7 @@ class SnarlNormalizer {
 
     handle_t overwrite_node_id(const id_t old_node_id, const id_t new_node_id);
 
-    void log_gbwt_changes(const vector<pair<vector<gbwt::vector_type::value_type>, string>>& source_to_sink_gbwt_paths, const HandleGraph &new_snarl);
+    void log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const pair<handle_t, handle_t> left_and_right_id);
 
     bool source_and_sink_handles_map_properly(
         const HandleGraph &graph, const id_t new_source_id, const id_t new_sink_id,
