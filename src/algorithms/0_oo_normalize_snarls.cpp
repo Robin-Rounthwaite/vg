@@ -67,6 +67,18 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
 /// @param split_normalize_regions 
 std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions)
 {
+    //todo: someday, remove this deletion of all paths in the graph, and fix the issues I had with path inclusion including undefined behavior.
+    //todo:         see branch "robin-path-moving-has-bugs" for WIP.
+    vector<path_handle_t> all_paths;
+    _graph.for_each_path_handle([&](path_handle_t path)
+    {
+        all_paths.push_back(path);
+    });
+    for (auto path: all_paths)
+    {
+        _graph.destroy_path(path);
+    }
+    
     // cerr << "list of all to-delete handles:" << endl;
     // for (auto deletable : _nodes_to_delete)
     // {
