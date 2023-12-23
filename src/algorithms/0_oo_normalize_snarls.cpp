@@ -329,9 +329,9 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), *get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
         // cerr << "extraction" << endl;
-        SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
+        // SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
         // cerr << "log changes" << endl;
-        log_gbwt_changes(get<6>(snarl), integrated_snarl);
+        log_gbwt_changes(get<6>(snarl), new_left_right);
 
     }
     auto integration_time = std::chrono::high_resolution_clock::now();
@@ -1657,9 +1657,9 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         _unskipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
 
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
-        SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
+        // SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
 
-        log_gbwt_changes(source_to_sink_gbwt_paths, integrated_snarl);
+        log_gbwt_changes(source_to_sink_gbwt_paths, new_left_right);
 
         // integrated_snarl.for_each_handle([&](const handle_t handle) {
         //     if (integrated_snarl.get_id(handle) == 2605470)

@@ -137,7 +137,8 @@ class SnarlNormalizer {
 
     handle_t overwrite_node_id(const id_t old_node_id, const id_t new_node_id);
 
-    void log_gbwt_changes(const vector<pair<vector<gbwt::vector_type::value_type>, string>>& source_to_sink_gbwt_paths, const HandleGraph &new_snarl);
+    void log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const pair<handle_t, handle_t> left_and_right_id);
+    // void log_gbwt_changes(const vector<pair<vector<gbwt::vector_type::value_type>, string>>& source_to_sink_gbwt_paths, const HandleGraph &new_snarl);
 
     bool source_and_sink_handles_map_properly(
         const HandleGraph &graph, const id_t new_source_id, const id_t new_sink_id,
