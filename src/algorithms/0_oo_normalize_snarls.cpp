@@ -114,8 +114,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
 
     //todo: begin debug_code:
-    split_normalize_regions.clear();
-    split_normalize_regions.push_back(make_pair(996832, 997083));
+    // split_normalize_regions.clear();
+    // split_normalize_regions.push_back(make_pair(996832, 997083));
     // split_normalize_regions.push_back(make_pair(2369282, 2369288));
     // split_normalize_regions.push_back(make_pair(2555912, 2555931));
     // // vector<pair<id_t, id_t>> debug_split_normalize_regions;
@@ -2377,12 +2377,12 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
     if (new_left_necessary)
     {
         new_left = replace_node_using_sequence(_graph.get_id(new_left), "", _graph);
-        cerr << "we replaced leftmost node " << _graph.get_id(new_left) << endl;
+        // cerr << "we replaced leftmost node " << _graph.get_id(new_left) << endl;
     }
     if (new_right_necessary)
     {
         new_right = replace_node_using_sequence(_graph.get_id(new_right), "", _graph);
-        cerr << "we replaced rightmost node " << _graph.get_id(new_right) << endl;
+        // cerr << "we replaced rightmost node " << _graph.get_id(new_right) << endl;
     }
     // use banded global aligner. optimizations for finidng one perfect match from source to sink.
 
