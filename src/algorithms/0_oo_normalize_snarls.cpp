@@ -2286,37 +2286,104 @@ handle_t SnarlNormalizer::overwrite_node_id(const id_t old_node_id, const id_t n
 
 /**
  * Updates the changes that need making to the gbwt after the graph is finished being
- * normalized, so that an updated gbwt can be made.
+ * normalized, so that an updated gbwt can be made. //todo: update this description.
  * @param  {list<string>} old_paths : the paths in the gbwt that need moving to the new
  * graph.
  * @param  {HandleGraph} new_snarl  : the normalized portion of the graph. Probably a 
  * subhandlegraph.
  */
-void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const HandleGraph &new_snarl){
+// void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const HandleGraph &new_snarl, const bool left_extended/*=false*/, const bool right_extended/*=false*/){
+void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const pair<handle_t, handle_t> left_and_right_id){
+
+    //because the vg::Aligner object has undefined behavior when it is passed a subgraph with empty nodes, I make sure to fill any empty nodes I have before running the alignment. Then the empty nodes are removed after.  
+
+    // cerr << "showing node 3822739 first: " <<  _graph.get_id(_graph.get_handle(3822739)) << " " << _graph.get_sequence(_graph.get_handle(3822739)) << endl;
+
+    pair<handle_t, handle_t> new_left_right;
+    handle_t new_left = left_and_right_id.first;
+    handle_t new_right = left_and_right_id.second;
+    bool new_left_necessary = false;
+    bool new_right_necessary = false;
+    if (_graph.get_sequence(new_left).size() == 0)
+    {
+        new_left_necessary = true;
+        new_left = replace_node_using_sequence(_graph.get_id(new_left), "N", _graph);
+    }
+    if (_graph.get_sequence(new_right).size() == 0)
+    {
+        new_right_necessary = true;
+        new_right = replace_node_using_sequence(_graph.get_id(new_right), "N", _graph);
+        
+    }
+    new_left_right = make_pair(new_left, new_right);
+    
     //todo: move Aligner to initialization of object, since I'm not supposed to make a new one each time I do alignments.
     Aligner aligner = Aligner();
+    SubHandleGraph snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
+
     // cerr << "in log_gbwt_changes" << endl;
     // cerr << old_paths.size() << endl;
     for (auto path : source_to_sink_gbwt_paths)
     {
         Alignment alignment;
-        alignment.set_sequence(path.second);
-        aligner.align_global_banded(alignment, new_snarl,0, false);
+        string sequence = path.second;
+        if (new_left_necessary)
+        {
+            sequence = "N" + sequence;
+        } 
+        if (new_right_necessary)
+        {
+            sequence = sequence + "N";
+        } 
+        alignment.set_sequence(sequence);
+        // alignment.set_sequence(path.second);
+        // cerr << "seq to be aligned is " << path.second << endl;
+        // cerr << "showing node 3822739 third: " <<  _graph.get_id(_graph.get_handle(3822739)) << " " << _graph.get_sequence(_graph.get_handle(3822739)) << endl;
+        // snarl.for_each_handle([&](handle_t handle){
+        //     // if (snarl.get_sequence(handle).size()==0)
+        //     // {
+        //     //     cerr << "replacing sequence at " << snarl.get_id(handle) << " with N." << endl;
+        //     //     string new_node_seq = "N";  //snarl.get_sequence(to_insert_snarl_defining_handles.first.back());
+        //     //     // id_t new_node_id = snarl.get_id(to_insert_snarl_defining_handles.first.back());
+        //     //     // cerr << "1 contents of replace node using sequence: " << new_node_id << " " <<  new_node_seq << " " << new_node_seq.substr(1) << endl;
+        //     //     replace_node_using_sequence(snarl.get_id(handle), new_node_seq, _graph);
+        //     //     cerr << "done." << endl;
+
+        //     // }
+        //     cerr << snarl.get_id(handle) << " " << snarl.get_sequence(handle) << endl;
+        // });
+        aligner.align_global_banded(alignment, snarl, 0, false);
+
+
+
+
         // cerr << "gbwt path being sent to new graph: " << endl;
         // cerr << "ALIGNMENT PATH FOR " << path << ":" << endl;
-        gbwt::vector_type alignment_full_path;
+        gbwt::vector_type alignment_full_path;  
         for (auto mapping : alignment.path().mapping())
         {
             // gbwt::Node::encode(id, is_reverse)
             // mapping.position().
             alignment_full_path.emplace_back(gbwt::Node::encode(mapping.position().node_id(), mapping.position().is_reverse()));
-            // cerr << "mapping.position().node_id() " << mapping.position().node_id() << _graph.get_sequence(_graph.get_handle( mapping.position().node_id() )) << endl;
         }
         _gbwt_changelog.emplace_back(path.first, alignment_full_path);
+
+
+        
         // cerr << pb2json(alignment.path()) << endl << alignment.query_position() << endl << alignment.path().mapping().begin() << endl << endl;
         // alignment.path().mapping()
     }
-    
+    //Now that alignment is over, return any artificially-filled handles to empty.
+    if (new_left_necessary)
+    {
+        new_left = replace_node_using_sequence(_graph.get_id(new_left), "", _graph);
+        cerr << "we replaced leftmost node " << _graph.get_id(new_left) << endl;
+    }
+    if (new_right_necessary)
+    {
+        new_right = replace_node_using_sequence(_graph.get_id(new_right), "", _graph);
+        cerr << "we replaced rightmost node " << _graph.get_id(new_right) << endl;
+    }
     // use banded global aligner. optimizations for finidng one perfect match from source to sink.
 
 }
