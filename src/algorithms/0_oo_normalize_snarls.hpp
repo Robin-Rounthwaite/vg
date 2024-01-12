@@ -195,6 +195,12 @@ class SnarlNormalizer {
     // -------------------------------- DEBUG CODE BELOW:
     // ------------------------------------
 
+    int _graph_integrated_count = 0;
+    int _msaconverter_graph_made_count = 0;
+    
+    //graph source and sink, unnormalized size, normalized size.
+    vector<tuple<pair<id_t, id_t>, int, int>> _debug_snarl_sizes;
+
     pair<vector<handle_t>, vector<handle_t>>
     debug_get_sources_and_sinks(const HandleGraph &graph);
 

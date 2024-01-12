@@ -232,6 +232,21 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
             // cerr << "about to run poa_source_to_sink_haplotypes. " << endl;
             new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), false);
+            
+            int old_size;
+            snarl.for_each_handle([&](handle_t handle)
+            {
+                old_size += snarl.get_sequence(handle).size();
+            });
+            int new_size;
+            new_snarl->for_each_handle([&](handle_t handle)
+            {
+                new_size += new_snarl->get_sequence(handle).size();
+            });
+            #pragma omp critical(record_snarl_sizes)
+            {
+                _debug_snarl_sizes.push_back(make_tuple(region, old_size, new_size));
+            }
             // cerr << "finished running poa_source_to_sink_haplotypes. " << endl;
             // new_snarl->for_each_handle([&](handle_t handle){
             //     cerr << new_snarl->get_id(handle) << endl;
@@ -340,6 +355,17 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     cerr << "Integration took " << integration_elapsed.count() << " seconds. Total time: " << total_elapsed.count() << endl;
 
     print_parallel_statistics();
+
+    //todo: begin_debug
+    // ofstream snarl_sizes_f("original_msa_converter_snarls.txt"); //todo: run this with original msa_converter.
+    ofstream snarl_sizes_f("handle-graphified-msa-converter-snarls.txt");
+    snarl_sizes_f << "total snarls normalized: " << _msaconverter_graph_made_count << "\t" << "total snarls integrated: " << _graph_integrated_count << endl;
+    for (auto snarl_size : _debug_snarl_sizes)
+    {
+        snarl_sizes_f << get<0>(snarl_size).first << "\t" << get<0>(snarl_size).second << "\t" << get<1>(snarl_size) << "\t" << get<2>(snarl_size) << endl;
+    }
+    snarl_sizes_f.close();
+    //todo: end_debug
     return _gbwt_changelog;
 }
 
@@ -2189,6 +2215,7 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
 
     pair<handle_t, handle_t> new_left_right = make_pair(new_leftmost_handle, new_rightmost_handle);
 
+    _graph_integrated_count += 1;
     return new_left_right;
 }
 

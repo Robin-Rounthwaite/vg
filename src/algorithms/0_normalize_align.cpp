@@ -79,7 +79,8 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
                 // cerr << "after align example " << endl;
                 myMSAConverter.load_alignments_from_vector(msa_output);
                 // return myMSAConverter.make_graph(false, 32);;
-                return myMSAConverter.make_graph(32);;
+                _msaconverter_graph_made_count+=1;
+                return myMSAConverter.make_graph(32);
             }
             else
             {
@@ -435,6 +436,7 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
     MSAConverter myMSAConverter = MSAConverter();
     myMSAConverter.load_alignments_from_vector(msa_output);
     // return myMSAConverter.make_graph(false, 32);
+    _msaconverter_graph_made_count+=1;
     return myMSAConverter.make_graph(32);
 
     // cerr << "node/sequence in output_subgraphs:" << endl;
