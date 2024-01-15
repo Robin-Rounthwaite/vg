@@ -47,6 +47,24 @@ namespace algorithms{
  * duplicate variation combined into a single variant.
 */
 
+//todo: begin_debug
+// shared_ptr<MutablePathDeletableHandleGraph> convert_to_handlegraph(MutablePathDeletableHandleGraph &graph)
+// {
+//     return make_shared<MutablePathDeletableHandleGraph>(std::move(graph));
+// }
+
+
+int whatever(HandleGraph &H)
+{
+    int new_size = 0;
+    H.for_each_handle([&](handle_t handle)
+    {
+        new_size += H.get_sequence(handle).size();
+    });
+    return new_size;
+}
+//todo: end_debug
+
 SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const gbwt::GBWT &gbwt,
                                  const gbwtgraph::GBWTGraph &gbwt_graph,
@@ -252,12 +270,12 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             //     cerr << new_snarl->get_id(handle) << endl;
             // });
             // cerr << "done checking handles after poa fxn" << endl;
-            if (!new_snarl)
-            {
-                //note: this snippet should never run, because it's also handled by the "if (hap.size() > max_spoa_length)" condition a in test_haplotypes.
-                cerr << "ERROR: poa source to sink haplotypes run unsuccessful because haps too long. But since this situation is handled in a previous check, you should never see this message." << endl;
-                exit(1);
-            }
+            // if (!new_snarl)
+            // {
+            //     //note: this snippet should never run, because it's also handled by the "if (hap.size() > max_spoa_length)" condition a in test_haplotypes.
+            //     cerr << "ERROR: poa source to sink haplotypes run unsuccessful because haps too long. But since this situation is handled in a previous check, you should never see this message." << endl;
+            //     exit(1);
+            // }
         }
         else
         {
@@ -357,8 +375,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     print_parallel_statistics();
 
     //todo: begin_debug
-    // ofstream snarl_sizes_f("original_msa_converter_snarls.txt"); //todo: run this with original msa_converter.
-    ofstream snarl_sizes_f("handle-graphified-msa-converter-snarls.txt");
+    ofstream snarl_sizes_f("original_msa_converter_snarls.txt"); //todo: run this with original msa_converter.
+    // ofstream snarl_sizes_f("handle-graphified-msa-converter-snarls.txt");
     snarl_sizes_f << "total snarls normalized: " << _msaconverter_graph_made_count << "\t" << "total snarls integrated: " << _graph_integrated_count << endl;
     for (auto snarl_size : _debug_snarl_sizes)
     {
@@ -368,6 +386,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: end_debug
     return _gbwt_changelog;
 }
+
+
 
 void SnarlNormalizer::print_parallel_statistics()
 {
@@ -1615,6 +1635,7 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         // else if (_alignment_algorithm == "sPOA")
         if (_alignment_algorithm == "sPOA")
         {
+            //todo: undo.
             new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), false);
             if (!new_snarl)
             {

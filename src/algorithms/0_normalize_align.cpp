@@ -2,11 +2,33 @@
 #include <spoa/spoa/spoa.hpp>
 #include <abpoa/abpoa.h>
 #include "../msa_converter.hpp"
+
+//todo: remove debug_code.
+#include "../../include/vg/io/vpkg.hpp"
+//todo: end_debug
+
 // extern "C" {
 // #include <libkalign.h>
 // }
 namespace vg {
 namespace algorithms{
+
+// unique_ptr<MutablePathDeletableHandleGraph> convert_to_handlegraph(MutablePathDeletableHandleGraph &graph)
+unique_ptr<MutablePathDeletableHandleGraph> convert_to_handlegraph(VG &graph)
+{
+    unique_ptr<MutablePathDeletableHandleGraph> out;
+
+    ofstream temp("temp.vg");
+    graph.serialize(temp);
+    temp.close();
+    
+    ifstream tempi("temp.vg");
+    out = vg::io::VPKG::load_one<MutablePathDeletableHandleGraph>(tempi);
+    tempi.close();
+    vg::io::remove("temp.vg");
+
+    return out;
+}
 
 
 //Note: you probably don't want to set output_msa to true while sending other things to cout. Because the msa is outputted to cout as well.
@@ -80,7 +102,10 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
                 myMSAConverter.load_alignments_from_vector(msa_output);
                 // return myMSAConverter.make_graph(false, 32);;
                 _msaconverter_graph_made_count+=1;
-                return myMSAConverter.make_graph(32);
+                VG v = myMSAConverter.make_graph_use_vg_type_keep_paths(false, 32);
+                unique_ptr<MutablePathDeletableHandleGraph> hg = convert_to_handlegraph(v);
+                return hg;
+                // return myMSAConverter.make_graph(32);
             }
             else
             {
@@ -437,8 +462,9 @@ unique_ptr<MutablePathDeletableHandleGraph> SnarlNormalizer::poa_source_to_sink_
     myMSAConverter.load_alignments_from_vector(msa_output);
     // return myMSAConverter.make_graph(false, 32);
     _msaconverter_graph_made_count+=1;
-    return myMSAConverter.make_graph(32);
-
+    VG v = myMSAConverter.make_graph_use_vg_type_keep_paths(false, 32);
+    unique_ptr<MutablePathDeletableHandleGraph> hg = convert_to_handlegraph(v);
+    return hg;
     // cerr << "node/sequence in output_subgraphs:" << endl;
     // output_subgraph.for_each_handle([&] (handle_t handle) {
     //     cerr << output_subgraph.get_id(handle) << " " << output_subgraph.get_sequence(handle) << endl;
