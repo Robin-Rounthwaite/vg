@@ -375,7 +375,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     print_parallel_statistics();
 
     //todo: begin_debug
-    ofstream snarl_sizes_f("original_msa_converter_snarls.txt"); //todo: run this with original msa_converter.
+    ofstream snarl_sizes_f("original-msa-converter-snarls.txt"); //todo: run this with original msa_converter.
     // ofstream snarl_sizes_f("handle-graphified-msa-converter-snarls.txt");
     snarl_sizes_f << "total snarls normalized: " << _msaconverter_graph_made_count << "\t" << "total snarls integrated: " << _graph_integrated_count << endl;
     for (auto snarl_size : _debug_snarl_sizes)
