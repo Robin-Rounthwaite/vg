@@ -562,13 +562,14 @@ int main_normalize(int argc, char **argv) {
     }
 
     // cerr << "output_segregate_regions_only_file.size() " << output_segregate_regions_only_file.size() << endl;
+    cerr << "saving the segregated-regions-only files and then exiting, because of option output_segregate_regions_only_file (-s)" << endl;
     if (output_segregate_regions_only_file.size()>0)
     {
-        // cerr << "saving updated graph to file" << endl;
+        cerr << "saving updated graph to file" << endl;
         //save normalized graph
         vg::io::save_handle_graph(graph.get(), std::cout);
 
-        // cerr << "saving updated gbwt" << endl;
+        cerr << "saving updated gbwt" << endl;
         save_gbwt(parallel_regions_gbwt, output_gbwt_file, true);
 
         // cerr << "saving extra segregate regions data to file " << output_segregate_regions_only_file << endl;
