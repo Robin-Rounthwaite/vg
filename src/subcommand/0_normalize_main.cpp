@@ -572,7 +572,7 @@ int main_normalize(int argc, char **argv) {
         cerr << "saving updated gbwt" << endl;
         save_gbwt(parallel_regions_gbwt, output_gbwt_file, true);
 
-        // cerr << "saving extra segregate regions data to file " << output_segregate_regions_only_file << endl;
+        cerr << "saving extra segregate regions data to file " << output_segregate_regions_only_file << endl;
         std::ofstream output_file(output_segregate_regions_only_file);
         for (auto const& region : parallel_normalize_regions)
         {

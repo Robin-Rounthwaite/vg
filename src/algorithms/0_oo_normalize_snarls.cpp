@@ -24,6 +24,7 @@
 
 #include <bdsg/packed_graph.hpp>
 
+#include "../watchdog.hpp"
 
 /*
 TODO: allow for snarls that have haplotypes that begin or end in the middle of the snarl
@@ -139,10 +140,21 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: end debug_code:
 
 
+    // Establish a watchdog to find reads that take too long to map.
+    // If we see any, we will issue a warning.
+    unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(300))); //five minutes.
+
+
     omp_set_num_threads(_threads);
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
+        auto thread_num = omp_get_thread_num();
+
+        if (watchdog) {
+            watchdog->check_in(thread_num, to_string(region.first) + ", " + to_string(region.second));
+        }
+        
         auto start_alignment = std::chrono::high_resolution_clock::now();
         #pragma omp critical(print_progress)
         {
@@ -310,6 +322,10 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             }
         }
         
+        if (watchdog) {
+            watchdog->check_out(thread_num);
+        }
+
     }
 
     auto align_time = std::chrono::high_resolution_clock::now();
