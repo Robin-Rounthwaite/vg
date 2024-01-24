@@ -142,7 +142,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
     // Establish a watchdog to find reads that take too long to map.
     // If we see any, we will issue a warning.
-    unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(300))); //five minutes.
+    // unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(300))); //five minutes.
+    unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(1)));
 
 
     omp_set_num_threads(_threads);
