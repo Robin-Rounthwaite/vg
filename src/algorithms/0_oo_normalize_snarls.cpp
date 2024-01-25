@@ -147,16 +147,16 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     for (auto region : split_normalize_regions)
     {
 
-        // Establish a watchdog to find reads that take too long to map.
-        // If we see any, we will issue a warning.
-        unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(300))); //five minutes.
+        // // Establish a watchdog to find regions that take too long to normalize.
+        // // If we see any, we will issue a warning.
+        // // unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(300))); //five minutes.
         // unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(1)));
         
-        auto thread_num = omp_get_thread_num();
+        // auto thread_num = omp_get_thread_num();
 
-        if (watchdog) {
-            watchdog->check_in(thread_num, "normalizing region " + to_string(region.first) + ", " + to_string(region.second) + " which is region #" + to_string(num_snarls_normalized));
-        }
+        // if (watchdog) {
+        //     watchdog->check_in(thread_num, "normalizing region " + to_string(region.first) + ", " + to_string(region.second) + " which is region #" + to_string(num_snarls_normalized));
+        // }
         
         auto start_alignment = std::chrono::high_resolution_clock::now();
         #pragma omp critical(print_progress)
@@ -325,9 +325,9 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
             }
         }
         
-        if (watchdog) {
-            watchdog->check_out(thread_num);
-        }
+        // if (watchdog) {
+        //     watchdog->check_out(thread_num);
+        // }
 
     }
 
