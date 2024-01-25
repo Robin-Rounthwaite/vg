@@ -449,12 +449,6 @@ int main_normalize(int argc, char **argv) {
         // //todo: end debug-code:
 
         parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, *distance_index, parallel_normalize_regions, desegregation_candidates);
-        cerr << "just checking to see if the graph currently exists:" << endl;
-        cerr << "graph->get_node_count()" << graph->get_node_count() << endl;
-        graph->for_each_handle([&](handle_t handle){
-            cerr << "handle" << graph->get_id(handle) << " " << graph->get_sequence(handle) << " exists." << endl;
-            return false;
-        });
         
         cerr << "found " << parallel_normalize_regions.size() << " regions to normalize." << endl;
         if (run_tests)
@@ -569,15 +563,9 @@ int main_normalize(int argc, char **argv) {
     }
 
     // cerr << "output_segregate_regions_only_file.size() " << output_segregate_regions_only_file.size() << endl;
-    cerr << "saving the segregated-regions-only files and then exiting, because of option output_segregate_regions_only_file (-s)" << endl;
     if (output_segregate_regions_only_file.size()>0)
     {
-        cerr << "just checking to see if the graph currently exists:" << endl;
-        cerr << "graph->get_node_count()" << graph->get_node_count() << endl;
-        graph->for_each_handle([&](handle_t handle){
-            cerr << "handle" << graph->get_id(handle) << " " << graph->get_sequence(handle) << " exists." << endl;
-            return false;
-        });
+        cerr << "saving the segregated-regions-only files and then exiting, because of option output_segregate_regions_only_file (-s)" << endl;
         cerr << "saving updated graph to file" << endl;
         //save normalized graph
         vg::io::save_handle_graph(graph.get(), std::cout);
