@@ -141,16 +141,16 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
 
 
+    // Establish a watchdog to find reads that take too long to map.
+    // If we see any, we will issue a warning.
+    // unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(300))); //five minutes.
+    unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(1)));
 
     omp_set_num_threads(_threads);
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
 
-        // Establish a watchdog to find reads that take too long to map.
-        // If we see any, we will issue a warning.
-        unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(300))); //five minutes.
-        // unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(1)));
         
         auto thread_num = omp_get_thread_num();
 
@@ -191,7 +191,15 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         // check that snarl is normalizable:
         bool passes_normalize_tests = test_snarl(snarl, region, original_snarl_size);
         // if (passes_normalize_tests == false) { cerr <<  "failed normalize tests" << endl; continue; }
-        if (passes_normalize_tests == false) { if(_debug_print){cerr <<  "failed normalize tests" << endl;} continue; }
+        if (passes_normalize_tests == false)
+        {
+            if(_debug_print){cerr <<  "failed normalize tests" << endl;} 
+            
+            if (watchdog) {
+                watchdog->check_out(thread_num);
+            }
+            continue;
+        }
 
         if (_debug_print)
         {
@@ -221,7 +229,17 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         }
         // further checks that snarl is normalizable:
         bool passes_haplotype_tests = test_haplotypes(haplotypes, region, original_snarl_size);
-        if (passes_haplotype_tests == false) { cerr <<  "failed haplotype tests" << endl; continue; }
+        if (passes_haplotype_tests == false) 
+        { 
+            if(_debug_print){cerr <<  "failed haplotype tests" << endl;}
+
+            
+            if (watchdog) 
+            {
+                watchdog->check_out(thread_num);
+            }
+            continue; 
+            }
 
         if (_debug_print)
         {
