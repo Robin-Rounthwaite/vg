@@ -140,34 +140,36 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: end debug_code:
 
 
-    // Establish a watchdog to find reads that take too long to map.
-    // If we see any, we will issue a warning.
-    // unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(300))); //five minutes.
-    unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(1)));
 
 
     omp_set_num_threads(_threads);
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
+
+        // Establish a watchdog to find reads that take too long to map.
+        // If we see any, we will issue a warning.
+        unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(300))); //five minutes.
+        // unique_ptr<Watchdog> watchdog(new Watchdog(_threads, chrono::seconds(1)));
+        
         auto thread_num = omp_get_thread_num();
 
         if (watchdog) {
-            watchdog->check_in(thread_num, to_string(region.first) + ", " + to_string(region.second));
+            watchdog->check_in(thread_num, "normalizing region " + to_string(region.first) + ", " + to_string(region.second) + " which is region #" + to_string(num_snarls_normalized));
         }
         
         auto start_alignment = std::chrono::high_resolution_clock::now();
         #pragma omp critical(print_progress)
         {
-        if (num_snarls_normalized%10000 == 0)
-        // if (num_snarls_normalized%1 == 0)
-        {
-            std::chrono::duration<double> elapsed = start_alignment - start;
-            
-            cerr << "normalizing " << num_snarls_normalized+1 << "/" << split_normalize_regions.size() << " regions by time " << elapsed.count() << endl;
-        }            
+            if (num_snarls_normalized%10000 == 0)
+            // if (num_snarls_normalized%1 == 0)
+            {
+                std::chrono::duration<double> elapsed = start_alignment - start;
+                
+                cerr << "normalizing " << num_snarls_normalized+1 << "/" << split_normalize_regions.size() << " regions by time " << elapsed.count() << endl;
+            }            
 
-        num_snarls_normalized++;
+            num_snarls_normalized++;
         }
         pair<bool, bool> sequence_added_because_empty_node = make_pair(false, false);
 

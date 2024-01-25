@@ -562,9 +562,9 @@ int main_normalize(int argc, char **argv) {
     }
 
     // cerr << "output_segregate_regions_only_file.size() " << output_segregate_regions_only_file.size() << endl;
-    cerr << "saving the segregated-regions-only files and then exiting, because of option output_segregate_regions_only_file (-s)" << endl;
     if (output_segregate_regions_only_file.size()>0)
     {
+        cerr << "saving the segregated-regions-only files and then exiting, because of option output_segregate_regions_only_file (-s)" << endl;
         cerr << "saving updated graph to file" << endl;
         //save normalized graph
         vg::io::save_handle_graph(graph.get(), std::cout);
