@@ -504,7 +504,7 @@ int main_normalize(int argc, char **argv) {
     }
     else
     {
-        
+        cerr << "getting input segregate regions file data." << endl;
         std::ifstream file( input_segregate_regions_only_file );
         string line_str;
         while(getline(file, line_str, '\n') && line_str!="-----")
@@ -611,6 +611,8 @@ int main_normalize(int argc, char **argv) {
         for (auto cand : desegregation_candidates)
         {
             // cerr << "desegregation_candidates: " << cand.first.first << " and " << cand.first.second << endl;
+            
+            //NOTE: if one of these asserts fail, it's probably because the user didn't supply the proper segregated-regions gbwt and/or gbwt-graph. 
             assert(parallel_regions_gbwt_graph.has_node(cand.first.first));
             assert(parallel_regions_gbwt_graph.has_node(cand.first.second));
             assert(graph->has_node(cand.first.first));

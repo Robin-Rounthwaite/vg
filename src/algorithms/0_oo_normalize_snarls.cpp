@@ -231,6 +231,18 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         //extract the haplotypes:
         extract_haplotypes(snarl, region, sequence_added_because_empty_node, haplotypes, embedded_paths, source_to_sink_gbwt_paths, stop_inclusive);
 
+        //todo: debug_print
+        cerr << "number of haplotypes: " << get<0>(haplotypes).size() << endl;
+        cerr << "lengths of haplotypes: ";
+        for (auto hap : get<0>(haplotypes))
+        {
+            cerr << hap.size() << " ";
+        }
+        cerr << endl;
+        //todo: end debug_print
+        
+        
+
         if (_debug_print)
         {
             cerr << "about to test haplotypes" << endl;
