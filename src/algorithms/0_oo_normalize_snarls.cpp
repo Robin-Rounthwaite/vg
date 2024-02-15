@@ -151,18 +151,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     for (auto region : split_normalize_regions)
     {
 
-        
-        auto thread_num = omp_get_thread_num();
-
-        if (watchdog) {
-            watchdog->check_in(thread_num, "normalizing region " + to_string(region.first) + ", " + to_string(region.second) + " which is region #" + to_string(num_snarls_normalized));
-        }
-
-        if (watchdog_long) {
-            watchdog_long->check_in(thread_num, "normalizing region " + to_string(region.first) + ", " + to_string(region.second) + " which is region #" + to_string(num_snarls_normalized));
-        }
-
-
         auto start_alignment = std::chrono::high_resolution_clock::now();
         #pragma omp critical(print_progress)
         {
@@ -176,7 +164,25 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
             num_snarls_normalized++;
         }
+
+        //WATCHDOG
+        auto thread_num = omp_get_thread_num();
+
+        if (watchdog) {
+            watchdog->check_in(thread_num, "normalizing region " + to_string(region.first) + ", " + to_string(region.second) + " which is region #" + to_string(num_snarls_normalized));
+        }
+
+        if (watchdog_long) {
+            watchdog_long->check_in(thread_num, "normalizing region " + to_string(region.first) + ", " + to_string(region.second) + " which is region #" + to_string(num_snarls_normalized));
+        }
+
+        // cerr << thread_num << " started" << endl;
+
+
         pair<bool, bool> sequence_added_because_empty_node = make_pair(false, false);
+
+        // cerr << thread_num << " 1" << endl;
+
 
         // _debug_print=true;
         if (_debug_print)
@@ -192,6 +198,9 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         snarl.for_each_handle([&](handle_t handle){
             original_snarl_size += snarl.get_sequence(handle).size();
         });
+
+        // cerr << thread_num << " 2" << endl;
+
 
         // check that snarl is normalizable:
         bool passes_normalize_tests = test_snarl(snarl, region, original_snarl_size);
@@ -228,17 +237,20 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>> haplotypes;
         vector<pair<step_handle_t, step_handle_t>> embedded_paths;
         vector<pair<gbwt::vector_type, string>> source_to_sink_gbwt_paths;
+        // cerr << thread_num << " 3" << endl;
+        // cerr << thread_num << " acyclic? " << handlealgs::is_acyclic(&snarl) << endl;
+
         //extract the haplotypes:
         extract_haplotypes(snarl, region, sequence_added_because_empty_node, haplotypes, embedded_paths, source_to_sink_gbwt_paths, stop_inclusive);
 
         //todo: debug_print
-        cerr << "number of haplotypes: " << get<0>(haplotypes).size() << endl;
-        cerr << "lengths of haplotypes: ";
-        for (auto hap : get<0>(haplotypes))
-        {
-            cerr << hap.size() << " ";
-        }
-        cerr << endl;
+        // cerr << "number of haplotypes: " << get<0>(haplotypes).size() << endl;
+        // cerr << "lengths of haplotypes: ";
+        // for (auto hap : get<0>(haplotypes))
+        // {
+        //     cerr << hap.size() << " ";
+        // }
+        // cerr << endl;
         //todo: end debug_print
         
         
@@ -771,7 +783,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
         // //todo: end debug_print
 
     // }
-    
+    cerr << region.first << " " << region.second << " in extract_haplotypes 1" << endl;
     // extract threads.
     // haplotypes is of format:
     // 0: a set of all the haplotypes which stretch from source to sink, in string format.
@@ -780,14 +792,20 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
     SnarlSequenceFinder sequence_finder = SnarlSequenceFinder(_graph, snarl, _gbwt_graph, region.first, region.second, false);
 
+    cerr << region.first << " " << region.second << " start find gbwt haps" << endl;
+
     //todo: here is where the exhaustive path finder would be used, if it was working.
     tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<id_t>>
         gbwt_haplotypes = sequence_finder.find_gbwt_haps();
+    
+    cerr << region.first << " " << region.second << " end find gbwt haps" << endl;
 
     unordered_set<id_t> nodes_in_snarl;
     snarl.for_each_handle([&](handle_t handle){
         nodes_in_snarl.emplace(snarl.get_id(handle));
     });
+
+    // cerr << region.first << " " << region.second << " in extract_haplotypes 2" << endl;
 
     //check that all handles touched by find_gbwt_haps is equivalent to all the 
     //  handles in the subgraph:
@@ -809,6 +827,8 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
             }
         }
     }
+
+    // cerr << region.first << " " << region.second << " in extract_haplotypes 3" << endl;
 
     // Convert the haplotypes from vector<handle_t> format to string format.
     get<0>(haplotypes) = format_handle_haplotypes_to_strings(_graph, _gbwt_graph, get<0>(gbwt_haplotypes));
@@ -875,6 +895,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
     //     cerr << "ERROR: found a node_to_delete that isn't of length zero. This shouldn't happen." << endl;
     //     exit(1);
     // }
+    // cerr << region.first << " " << region.second << " in extract_haplotypes 4" << endl;
 
     // check to see if the leftmost or rightmost node is empty. If so, treat the blank
     // node as containing a character "A". (this is important for dealing with how
@@ -928,6 +949,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
     // }
     // cerr << "hap new text: " << *get<0>(haplotypes).begin() << endl;
 
+    // cerr << region.first << " " << region.second << " in extract_haplotypes 5" << endl;
 
     //todo: possibly remove the duplicate storage of gbwt info in source_to_sink_gbwt_paths, by finding a way to only pass the gbwt info to the "log_gbwt_changes" function. (currently, get<0>haplotypes will also include any source-to-sink paths embedded in the graph.)
     //deep copy of gbwt_haplotypes.
@@ -954,6 +976,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
     // that it doesn't extend to a region that might be edited by a different snarl).
     embedded_paths = sequence_finder.find_embedded_paths(stop_inclusive);
 
+    // cerr << region.first << " " << region.second << " in extract_haplotypes 6" << endl;
 
     // TODO: once haplotypes that begin/end in the middle of the snarl have been
     //       accounted for in the code, remove next chunk of code that finds 
@@ -981,6 +1004,8 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
             }
         }
     }
+    // cerr << region.first << " " << region.second << " in extract_haplotypes 7" << endl;
+
     return;
 }
 

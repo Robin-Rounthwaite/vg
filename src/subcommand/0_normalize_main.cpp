@@ -502,7 +502,7 @@ int main_normalize(int argc, char **argv) {
             }
         }
     }
-    else
+    else //not (input_segregate_regions_only_file.size() == 0)
     {
         cerr << "getting input segregate regions file data." << endl;
         std::ifstream file( input_segregate_regions_only_file );

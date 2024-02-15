@@ -39,6 +39,11 @@ class SnarlSequenceFinder {
 
     vector<vector<handle_t>> 
     find_haplotypes_not_at_source(unordered_set<id_t> &touched_handles);
+
+    //debug fxns:
+    vector<gbwt::BidirectionalState> convert_gbwt_handles_to_hap_path(vector<handle_t> handle_path);
+  
+    
 };
 }
 }
