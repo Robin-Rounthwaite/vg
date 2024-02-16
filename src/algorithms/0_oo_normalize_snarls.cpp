@@ -783,7 +783,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
         // //todo: end debug_print
 
     // }
-    cerr << region.first << " " << region.second << " in extract_haplotypes 1" << endl;
+    // cerr << region.first << " " << region.second << " in extract_haplotypes 1" << endl;
     // extract threads.
     // haplotypes is of format:
     // 0: a set of all the haplotypes which stretch from source to sink, in string format.
@@ -792,13 +792,13 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
     // 2: a vector of all the handles ever touched by the SnarlSequenceFinder.
     SnarlSequenceFinder sequence_finder = SnarlSequenceFinder(_graph, snarl, _gbwt_graph, region.first, region.second, false);
 
-    cerr << region.first << " " << region.second << " start find gbwt haps" << endl;
+    // cerr << region.first << " " << region.second << " start find gbwt haps" << endl;
 
     //todo: here is where the exhaustive path finder would be used, if it was working.
     tuple<vector<vector<handle_t>>, vector<vector<handle_t>>, unordered_set<id_t>>
         gbwt_haplotypes = sequence_finder.find_gbwt_haps();
     
-    cerr << region.first << " " << region.second << " end find gbwt haps" << endl;
+    // cerr << region.first << " " << region.second << " end find gbwt haps" << endl;
 
     unordered_set<id_t> nodes_in_snarl;
     snarl.for_each_handle([&](handle_t handle){
