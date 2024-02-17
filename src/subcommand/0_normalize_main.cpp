@@ -679,7 +679,7 @@ int main_normalize(int argc, char **argv) {
 
 
     cerr << "generating the post-normalization gbwt graph" << endl;
-    // make a new gbwt_graph for the parallel_regions_gbwt.
+    // make a new gbwt_graph for the normalized_gbwt.
     gbwtgraph::GBWTGraph normalized_gbwt_graph = gbwtgraph::GBWTGraph(normalized_gbwt, *graph);
 
     cerr << "=======desegregating normalization regions after parallelized normalization=======" << endl;

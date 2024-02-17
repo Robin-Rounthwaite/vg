@@ -33,6 +33,8 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_no
     // parallel_normalize_regions = split_sources_and_sinks(snarl_roots, desegregation_candidates);
     parallel_normalize_regions = split_sources_and_sinks(clustered_snarls, desegregation_candidates);
 
+    cerr << "clusters were reset " << _reset_cluster_because_too_big << " times." << endl;
+
     return _gbwt_changelog;
 }
 
@@ -922,6 +924,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
         // }
         if (!test_snarl_for_clustering(snarl_graph, cur_snarl_size))
         {
+            // 
             // cerr << "cur_snarl fails the tests, reset cluster." << endl;
             // discard the cur_snarl, since it's too large.
             skipped_snarls.push_back(*cur_snarl_i);
@@ -1014,6 +1017,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::cluster_snarls(const vector<pair
             cur_cluster_size = cur_snarl_size;
             cur_cluster = *cur_snarl_i;
             cur_snarl_i++;
+            _reset_cluster_because_too_big += 1;
             continue;
         }
         

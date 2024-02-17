@@ -56,6 +56,8 @@ class NormalizeRegionFinder {
 
     bool test_snarl_for_clustering(const HandleGraph &graph, const int snarl_size);
 
+
+    int _reset_cluster_because_too_big = 0;
     // /// functions called by get_normalize_regions.
     // vector< vector<pair<vg::id_t, vg::id_t>> > cluster_snarls(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots);
 
