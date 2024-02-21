@@ -360,10 +360,26 @@ int main_normalize(int argc, char **argv) {
     // //todo end debug
 
 
-    std::vector<std::pair<vg::id_t, vg::id_t>> parallel_normalize_regions;
+    // desegregation_candidates a vector of pairs. Each pair's first item is the two
+    // new_nodes created for the parallelization process. The second item is the original
+    // node id, which will be reinstated after normalization using desegregated_nodes (via a
+    // fresh NormalizeRegionFinder object).
+    
     vector< pair< pair< vg::id_t, vg::id_t >, vg::id_t > > desegregation_candidates; // all id_t are from node ids in the graph 
+    // segregated_node_to_parent is a map for tracking which of the new_node ids
+    // correspond to which original_node id. This allows normalize to record the update_gbwt
+    // process without ever actually mentioning any of the segregated_nodes, since we'll be
+    // removing them from the graph via fxn desegregated_nodes before updating the gbwt for
+    // the 2nd and final time.
+    unordered_map<vg::id_t, vg::id_t> segregated_node_to_parent;
+    
+    // parallel_normalize_regions is the output of the segregate_regions code. It will be
+    // the input normalization regions.
+    std::vector<std::pair<vg::id_t, vg::id_t>> parallel_normalize_regions;
+
+    // used to update the gbwt after segregating regions so that normalize can use it.
     std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_updates;
-    if (input_segregate_regions_only_file.size() == 0)
+    if (input_segregate_regions_only_file.size() == 0) // We don't have an input file recording segregated nodes. So we're running segregate_nodes.
     {
         // v2 distance index
         cerr << "loading distance index" << endl;
@@ -447,8 +463,7 @@ int main_normalize(int argc, char **argv) {
         // }
 
         // //todo: end debug-code:
-
-        parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, *distance_index, parallel_normalize_regions, desegregation_candidates);
+        parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, *distance_index, parallel_normalize_regions, desegregation_candidates, segregated_node_to_parent);
         
         cerr << "found " << parallel_normalize_regions.size() << " regions to normalize." << endl;
         if (run_tests)
@@ -651,7 +666,7 @@ int main_normalize(int argc, char **argv) {
     
 
     vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
-      *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, max_handle_size, max_region_size, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
+      *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, segregated_node_to_parent, max_handle_size, max_region_size, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
 
     std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
 

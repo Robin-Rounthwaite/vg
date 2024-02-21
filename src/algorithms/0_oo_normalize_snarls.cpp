@@ -51,6 +51,7 @@ namespace algorithms{
 SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const gbwt::GBWT &gbwt,
                                  const gbwtgraph::GBWTGraph &gbwt_graph,
+                                 const unordered_map<id_t, id_t>& segregated_node_to_parent,
                                  const int max_handle_size,
                                  const int max_region_size,
                                  const int threads,
@@ -2263,17 +2264,17 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
     {
         // cerr << "!backwards" << endl;
         // cerr << "overwriting node id " << temp_snarl_leftmost_id <<  " with " << source_id << " (which is source_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_leftmost_id)) << endl;
-        new_leftmost_handle = overwrite_node_id(temp_snarl_leftmost_id, source_id);
+        new_leftmost_handle = overwrite_node_id(temp_snarl_leftmost_id, source_id, _graph);
         // cerr << "overwriting node id " << temp_snarl_rightmost_id <<  " with " << sink_id << " (which is sink_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_rightmost_id)) << endl;
-        new_rightmost_handle = overwrite_node_id(temp_snarl_rightmost_id, sink_id);
+        new_rightmost_handle = overwrite_node_id(temp_snarl_rightmost_id, sink_id, _graph);
     }
     else
     {
         // cerr << "backwards" << endl;
         // cerr << "overwriting node id " << temp_snarl_leftmost_id <<  " with " << sink_id << " (which is sink_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_leftmost_id)) << endl;
-        new_leftmost_handle = overwrite_node_id(temp_snarl_leftmost_id, sink_id);
+        new_leftmost_handle = overwrite_node_id(temp_snarl_leftmost_id, sink_id, _graph);
         // cerr << "overwriting node id " << temp_snarl_rightmost_id <<  " with " << source_id << " (which is source_id)." << " has sequence " << _graph.get_sequence(_graph.get_handle(temp_snarl_rightmost_id)) << endl;
-        new_rightmost_handle = overwrite_node_id(temp_snarl_rightmost_id, source_id);
+        new_rightmost_handle = overwrite_node_id(temp_snarl_rightmost_id, source_id, _graph);
     }  
 
     pair<handle_t, handle_t> new_left_right = make_pair(new_leftmost_handle, new_rightmost_handle);
@@ -2296,15 +2297,68 @@ handle_t SnarlNormalizer::replace_node_using_sequence(const id_t old_node_id, co
     handle_t old_handle = graph.get_handle(old_node_id);
     if (new_node_sequence.size() == 0) //special case of creating an empty node.
     {
-        pair<handle_t, handle_t> split = graph.divide_handle(old_handle, graph.get_sequence(old_handle).size());
-        graph.follow_edges(split.first, true, [&](const handle_t prev_handle) 
+        // cerr << "splitting old_node_id: " << old_node_id << endl;
+        pair<handle_t, handle_t> split = graph.divide_handle(old_handle, 0);
+
+        // cerr << "to create node ids: " << graph.get_id(split.first) << " " << graph.get_sequence(split.first) << " " << graph.get_id(split.second) << " " << graph.get_sequence(split.second) << " (of which we keep the second right now. Should we keep the first? )" << endl;
+
+        
+        graph.follow_edges(split.second, false, [&](const handle_t next_handle) 
         {
-            graph.create_edge(prev_handle, split.second);
+            graph.create_edge(split.first, next_handle);
         });
-        graph.destroy_handle(split.first);
-        return split.second;
+        
+        
+        graph.destroy_handle(split.second);
+        // cerr << "overwriting handle in if statement MAKE THE CHANGES TO CODE HERE (because I dont' keep a constant node id here. Chck inside the divide handle to maybe keep the node id the same by hcooseing hte other node id it returns?)" << endl;
+        // handle_t overwrit_handle = overwrite_node_id(graph.get_id(split.second), old_node_id, graph);
+        return split.first;
     }
+
     handle_t new_handle = graph.create_handle(new_node_sequence);
+
+    // move the edges:
+    graph.follow_edges(old_handle, true, [&](const handle_t prev_handle) 
+    {
+        graph.create_edge(prev_handle, new_handle);
+    });
+    graph.follow_edges(old_handle, false, [&](const handle_t next_handle)
+    {
+        graph.create_edge(new_handle, next_handle);
+    });
+
+    // move the paths:
+    graph.for_each_step_on_handle(old_handle, [&](step_handle_t step) 
+    {
+        handle_t properly_oriented_old_handle = graph.get_handle_of_step(step); 
+        if (graph.get_is_reverse(properly_oriented_old_handle) != graph.get_is_reverse(new_handle))
+        {
+            new_handle = graph.flip(new_handle);
+        }
+        graph.rewrite_segment(step, graph.get_next_step(step), vector<handle_t>{new_handle});
+    });
+
+    // delete the old_handle:
+    graph.destroy_handle(old_handle);
+    // cerr << "overwriting handle" << endl;
+    handle_t overwrit_handle = overwrite_node_id(graph.get_id(new_handle), old_node_id, graph);
+    return overwrit_handle;
+}
+
+/**
+ * Deletes the given handle's underlying node, and returns a new handle to a new node 
+ * with the desired node_id
+ * 
+ * @param  {id_t} handle     : The old node id, to be replaced with a new node id.
+ * @param  {id_t} node_id    : The node id for the new node. Cannot be currently in use in
+ *                              the graph.
+ * @return {handle_t}        : The new handle, in the same position as the original handle
+ *                              in the graph, but with the new node_id.
+ */
+handle_t SnarlNormalizer::overwrite_node_id(const id_t old_node_id, const id_t new_node_id, MutablePathDeletableHandleGraph& graph)
+{
+    handle_t old_handle = graph.get_handle(old_node_id);
+    handle_t new_handle = graph.create_handle(graph.get_sequence(old_handle), new_node_id);
 
     // move the edges:
     graph.follow_edges(old_handle, true, [&](const handle_t prev_handle) 
@@ -2333,47 +2387,6 @@ handle_t SnarlNormalizer::replace_node_using_sequence(const id_t old_node_id, co
 }
 
 /**
- * Deletes the given handle's underlying node, and returns a new handle to a new node 
- * with the desired node_id
- * 
- * @param  {id_t} handle     : The old node id, to be replaced with a new node id.
- * @param  {id_t} node_id    : The node id for the new node. Cannot be currently in use in
- *                              the graph.
- * @return {handle_t}        : The new handle, in the same position as the original handle
- *                              in the graph, but with the new node_id.
- */
-handle_t SnarlNormalizer::overwrite_node_id(const id_t old_node_id, const id_t new_node_id)
-{
-    handle_t old_handle = _graph.get_handle(old_node_id);
-    handle_t new_handle = _graph.create_handle(_graph.get_sequence(old_handle), new_node_id);
-
-    // move the edges:
-    _graph.follow_edges(old_handle, true, [&](const handle_t prev_handle) 
-    {
-        _graph.create_edge(prev_handle, new_handle);
-    });
-    _graph.follow_edges(old_handle, false, [&](const handle_t next_handle)
-    {
-        _graph.create_edge(new_handle, next_handle);
-    });
-
-    // move the paths:
-    _graph.for_each_step_on_handle(old_handle, [&](step_handle_t step) 
-    {
-        handle_t properly_oriented_old_handle = _graph.get_handle_of_step(step); 
-        if (_graph.get_is_reverse(properly_oriented_old_handle) != _graph.get_is_reverse(new_handle))
-        {
-            new_handle = _graph.flip(new_handle);
-        }
-        _graph.rewrite_segment(step, _graph.get_next_step(step), vector<handle_t>{new_handle});
-    });
-
-    // delete the old_handle:
-    _graph.destroy_handle(old_handle);
-    return new_handle;
-}
-
-/**
  * Updates the changes that need making to the gbwt after the graph is finished being
  * normalized, so that an updated gbwt can be made. //todo: update this description.
  * @param  {list<string>} old_paths : the paths in the gbwt that need moving to the new
@@ -2393,6 +2406,7 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
     handle_t new_right = left_and_right_id.second;
     bool new_left_necessary = false;
     bool new_right_necessary = false;
+    // cerr << "left and right ids: " << _graph.get_id(left_and_right_id.first) << " " << _graph.get_id(left_and_right_id.second) << endl;
     if (_graph.get_sequence(new_left).size() == 0)
     {
         new_left_necessary = true;
@@ -2405,6 +2419,8 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
         
     }
     new_left_right = make_pair(new_left, new_right);
+    // cerr << "new left and right ids: " << _graph.get_id(new_left_right.first) << " " << _graph.get_id(new_left_right.second) << endl;
+
     
     //todo: move Aligner to initialization of object, since I'm not supposed to make a new one each time I do alignments.
     Aligner aligner = Aligner();
@@ -2463,6 +2479,8 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
         // alignment.path().mapping()
     }
     //Now that alignment is over, return any artificially-filled handles to empty.
+    // cerr << "new left and right ids almost after log_gbwt_changes: " << _graph.get_id(new_left) << " " << _graph.get_id(new_right) << endl;
+
     if (new_left_necessary)
     {
         new_left = replace_node_using_sequence(_graph.get_id(new_left), "", _graph);
@@ -2474,6 +2492,7 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
         // cerr << "we replaced rightmost node " << _graph.get_id(new_right) << endl;
     }
     // use banded global aligner. optimizations for finidng one perfect match from source to sink.
+    // cerr << "new left and right ids after log_gbwt_changes: " << _graph.get_id(new_left) << " " << _graph.get_id(new_right) << endl;
 
 }
 

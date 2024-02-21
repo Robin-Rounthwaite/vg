@@ -15,6 +15,7 @@ class SnarlNormalizer {
     virtual ~SnarlNormalizer() = default;
 
     SnarlNormalizer(MutablePathDeletableHandleGraph &graph, const gbwt::GBWT &gbwt, const gbwtgraph::GBWTGraph & gbwt_graph,
+                    const unordered_map<id_t, id_t>& segregated_node_to_parent,
                     const int max_handle_size,
                     const int max_region_size,
                     const int threads,
@@ -135,7 +136,7 @@ class SnarlNormalizer {
 
     handle_t replace_node_using_sequence(const id_t old_node_id, const string new_node_sequence, MutablePathDeletableHandleGraph& graph);
 
-    handle_t overwrite_node_id(const id_t old_node_id, const id_t new_node_id);
+    handle_t overwrite_node_id(const id_t old_node_id, const id_t new_node_id, MutablePathDeletableHandleGraph& graph);
 
     void log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const pair<handle_t, handle_t> left_and_right_id);
     // void log_gbwt_changes(const vector<pair<vector<gbwt::vector_type::value_type>, string>>& source_to_sink_gbwt_paths, const HandleGraph &new_snarl);

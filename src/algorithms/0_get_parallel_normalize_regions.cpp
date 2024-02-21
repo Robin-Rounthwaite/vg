@@ -18,22 +18,32 @@ NormalizeRegionFinder::NormalizeRegionFinder(MutablePathDeletableHandleGraph &gr
 /// @param parallel_normalize_regions An empty vector<pair<id_t, id_t>>, to be modified by
 /// the function. This will be the regions that meet the NormalizeRegionFinder's
 /// specifications.
-/// @param nodes_to_remove An empty vector<id_t>, to be modified by the
-/// function. Because some regions may have a shared source/sink that is of length one,
-/// this function will duplicate that single node so that the leftmost of the two regions will
-/// be empty. This needs to be deduplicated after the
-/// parallelized normalization.
+/// @param desegregation_candidates a vector of pairs. Each pair's first item is the two
+/// new_nodes created for the parallelization process. The second item is the original
+/// node id, which will be reinstated after normalization using desegregated_nodes (via a
+/// fresh NormalizeRegionFinder object).
+/// @param segregated_node_to_parent this is a map for tracking which of the new_node ids
+/// correspond to which original_node id. This allows normalize to record the update_gbwt
+/// process without ever actually mentioning any of the segregated_nodes, since we'll be
+/// removing them from the graph via fxn desegregated_nodes before updating the gbwt for
+/// the 2nd and final time.
 /// @return A tuple of arguments to pass to gbwt_update_items if you want an updated gbwt
 /// to match the parallel normalize regions. Tuple: (_gbwt_graph, _gbwt_changelog, _gbwt)
-std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, const SnarlDistanceIndex& distance_index, vector<pair<id_t, id_t>>& parallel_normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates)
+std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_normalize_regions(const vector<pair<vg::id_t, vg::id_t>> &snarl_roots, const SnarlDistanceIndex& distance_index, vector<pair<id_t, id_t>>& parallel_normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates, unordered_map<id_t, id_t>& segregated_node_to_parent)
 {
     vector<pair<vg::id_t, vg::id_t>> clustered_snarls = cluster_snarls(snarl_roots, distance_index);
     // vector<pair<id_t, id_t>> clustered_regions = convert_snarl_clusters_to_regions(clustered_snarls);
 
     // parallel_normalize_regions = split_sources_and_sinks(snarl_roots, desegregation_candidates);
-    parallel_normalize_regions = split_sources_and_sinks(clustered_snarls, desegregation_candidates);
+    parallel_normalize_regions = split_sources_and_sinks(clustered_snarls, desegregation_candidates, segregated_node_to_parent);
 
     cerr << "clusters were reset " << _reset_cluster_because_too_big << " times." << endl;
+
+    // cerr << "segregated_node_to_parent output: " << endl;
+    // for (auto item : segregated_node_to_parent)
+    // {
+    //     cerr << item.first << " " << item.second << endl;
+    // }
 
     return _gbwt_changelog;
 }
@@ -80,7 +90,7 @@ std::vector<vg::RebuildJob::mapping_type> NormalizeRegionFinder::get_parallel_no
 /// id_t that was the original graph node id of the handle before splitting. This wil lbe used for
 /// de-splitting the snarl later.
 /// @return a set of sources and sinks representing each (now isolated) snarl.
-vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates){
+vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<pair<id_t, id_t>> normalize_regions, vector< pair< pair< id_t, id_t >, id_t > >& desegregation_candidates, unordered_map<id_t, id_t>& segregated_node_to_parent){
     vector<pair<id_t, id_t>> new_normalize_regions;
 
     //todo: remove debug comment:
@@ -135,6 +145,15 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             });
             pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
             desegregation_candidates.push_back(make_pair(make_pair(_graph.get_id(new_leftmosts.first), _graph.get_id(new_leftmosts.second)), original_leftmost));
+
+            if (_graph.get_id(new_leftmosts.first) != original_leftmost)
+            {
+                segregated_node_to_parent[_graph.get_id(new_leftmosts.first)] = original_leftmost;
+            }
+            if (_graph.get_id(new_leftmosts.second) != original_leftmost)
+            {
+                segregated_node_to_parent[_graph.get_id(new_leftmosts.second)] = original_leftmost;
+            }
             // cerr << "new leftmosts: 1: " << _graph.get_id(new_leftmosts.first) << " " << _graph.get_sequence(new_leftmosts.first) << " 2: " << _graph.get_id(new_leftmosts.second) << " " << _graph.get_sequence(new_leftmosts.second) << endl; 
             new_leftmost = _graph.get_id(new_leftmosts.second); 
             //// if seq is length one, mark the empty handle as to-remove after the separated regions are done with.
@@ -233,7 +252,16 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             overwrite_node_id(_graph.get_id(new_rightmosts.first), new_node_id);
             overwrite_node_id(_graph.get_id(new_rightmosts.second), region.second);
             desegregation_candidates.push_back(make_pair(make_pair(new_node_id, region.second), original_rightmost));
+            if (_graph.get_id(new_rightmosts.first) != original_rightmost)
+            {
+                segregated_node_to_parent[_graph.get_id(new_rightmosts.first)] = original_rightmost;
+            }
+            if (_graph.get_id(new_rightmosts.second) != original_rightmost)
+            {
+                segregated_node_to_parent[_graph.get_id(new_rightmosts.second)] = original_rightmost;
+            }
 
+            
 
             // cerr << "1" << endl;
             // cerr << "new rightmosts left id: " << _graph.get_id(_graph.get_handle(new_node_id)) << " " << _graph.get_sequence(_graph.get_handle(new_node_id)) << endl;
