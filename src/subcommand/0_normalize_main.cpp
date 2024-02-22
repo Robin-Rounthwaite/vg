@@ -138,8 +138,8 @@ void help_normalize(char **argv) {
         << endl
         << "    -m, --max_region_size       This determines the maximum size of an alignment region, during cluster_snarls. Default is 750, based on sPOA's known high functionality for MSAs of ~500-1000 bases per string. (But further experimentation could be helpful.)" << endl
         << "    -n, --max_region_gap       This determines the maximum length of sequence found between snarls that can still be clustered into a single snarl. Once exceeded, a new cluster is started with the next snarl. Set to 0 if you want each snarl to be evaluated individually. (not recommended, because small snarls usually need surrounding context to assist with effective realignment.)" << endl
-        //todo: allow the user to specify normalize and update_gbwt threads separately.
-        << "    -t, --threads      The number of threads used in the normalization process. In addition to the normalization step, it affects the update_gbwt step, which can grow very long without multithreading. To prevent overusing memory, the update_gbwt step will only use up to 14 threads (even if more is specified), but the normalization step can use as many as specified, so long as there are regions that still need realigning.  Default:14."
+        << "    -t, --threads      The number of threads used in the normalization process. Default:14."
+        << "    -T, --gbwt_threads      The number of threads used in the gbwt update process. Default:14." //todo: maybe lower this if it turns out that the 14 threads is what's causing signal 9 crash in mustard.
         << endl
         << "    -s, --output_segregate_regions_only_file       specify the output file for the segregation of the graph into segregated "
             "regions, and generates an updated gbwt. This allows for easy tests of "
@@ -174,6 +174,7 @@ int main_normalize(int argc, char **argv) {
     int max_region_size = 750; //todo: when abpoa added, make default region size much larger. However much that memory/time can handle.
     int max_region_gap = 32; //todo: when abpoa added, possibly make default region gap larger.
     int threads = 14;
+    int gbwt_threads = 12;
     string output_segregate_regions_only_file;
     string input_segregate_regions_only_file;
     bool skip_desegregate = false;
@@ -186,7 +187,6 @@ int main_normalize(int argc, char **argv) {
     //todo: make options for these variables.
     // dictates the number of snarls that may be clustered into a single region.
         //todo: make it be based on sequence length-related metric instead.
-    int gbwt_threads = 12;
     int max_strings_per_alignment = INT_MAX; // default cutoff used to be 200 threads in a snarl.
 
     int c;
@@ -203,6 +203,7 @@ int main_normalize(int argc, char **argv) {
             {"max_region_size", required_argument, 0, 'm'},
             {"max_region_gap", required_argument, 0, 'n'},
             {"threads", required_argument, 0, 't'},
+            {"gbwt_threads", required_argument, 0, 'T'},
             {"output_segregate_regions_only_file", required_argument, 0, 's'},
             {"input_segregate_regions_only_file", required_argument, 0, 'S'},
             {"skip_desegregate", no_argument, 0, 'j'},
@@ -211,7 +212,7 @@ int main_normalize(int argc, char **argv) {
             {"debug_get_snarl_nodes", required_argument, 0, 'D'},
             {0, 0, 0, 0}};
         int option_index = 0;
-        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:s:S:jubD:", long_options,
+        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:T:s:S:jubD:", long_options,
                         &option_index);
         // Detect the end of the options.
         if (c == -1)
@@ -249,6 +250,10 @@ int main_normalize(int argc, char **argv) {
 
         case 't':
             threads = parse<int>(optarg);
+            break;
+
+        case 'T':
+            gbwt_threads = parse<int>(optarg);
             break;
 
         case 's':
