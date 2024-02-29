@@ -313,16 +313,34 @@ int main_normalize(int argc, char **argv) {
     cerr << "after graph" << endl;
     if (debug_get_snarl_nodes.first != 0 || debug_get_snarl_nodes.second != 0)
     {
-        cerr << "in get_snarl_nodes." << endl;
-        // vg::id_t leftmost_id = 996832;
-        // vg::id_t rightmost_id = 997083;
-        // debug_get_snarl_nodes.first = 996832;
-        // debug_get_snarl_nodes.second = 997083;
-        SubHandleGraph snarl =   extract_subgraph(*graph, debug_get_snarl_nodes.first, debug_get_snarl_nodes.second);
-        snarl.for_each_handle([&](handle_t handle){
-            // cout << snarl.get_id(handle) << "\t" << snarl.get_sequence(handle) << endl;
-            cout << snarl.get_id(handle) << endl;
+        graph->for_each_handle([&](handle_t handle){
+            try 
+            {
+                if (graph->get_id(handle)==999999999){cerr << "weird." << endl; exit(0);};
+                if (graph->get_sequence(handle).size()==999999999){cerr << "weird." << endl; exit(0);};
+            }
+            catch (...)
+            {
+                cerr << "we found a handle that had an issue. Here is its id: " << endl;
+                cerr << graph->get_id(handle) << endl;
+                cerr << "and here is its sequence." << endl;
+                cerr << graph->get_sequence(handle) << endl;
+
+            }
         });
+
+        //todo: uncomment old version of this debug region:
+        // cerr << "in get_snarl_nodes." << endl;
+        // // vg::id_t leftmost_id = 996832;
+        // // vg::id_t rightmost_id = 997083;
+        // // debug_get_snarl_nodes.first = 996832;
+        // // debug_get_snarl_nodes.second = 997083;
+        // SubHandleGraph snarl =   extract_subgraph(*graph, debug_get_snarl_nodes.first, debug_get_snarl_nodes.second);
+        // snarl.for_each_handle([&](handle_t handle){
+        //     // cout << snarl.get_id(handle) << "\t" << snarl.get_sequence(handle) << endl;
+        //     cout << snarl.get_id(handle) << endl;
+        // });
+        //todo: end to-uncomment region.
         exit(0);
     }
 
