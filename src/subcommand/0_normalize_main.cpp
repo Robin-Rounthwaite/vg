@@ -313,6 +313,7 @@ int main_normalize(int argc, char **argv) {
     cerr << "after graph" << endl;
     if (debug_get_snarl_nodes.first != 0 || debug_get_snarl_nodes.second != 0)
     {
+        int handle_checked = 0;
         graph->for_each_handle([&](handle_t handle){
             try 
             {
@@ -327,8 +328,9 @@ int main_normalize(int argc, char **argv) {
                 cerr << graph->get_sequence(handle) << endl;
 
             }
+            handle_checked++;
         });
-
+        cerr << "handles checked: " << handle_checked << endl;
         //todo: uncomment old version of this debug region:
         // cerr << "in get_snarl_nodes." << endl;
         // // vg::id_t leftmost_id = 996832;
