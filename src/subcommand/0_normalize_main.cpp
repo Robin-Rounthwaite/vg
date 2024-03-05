@@ -155,7 +155,8 @@ void help_normalize(char **argv) {
         "graph in the segregated_regions format." << endl
         << "    -u, --run_tests       run tests to make sure that normalize is still functioning properly." << endl
         << "    -b, --debug_print       print some information during normalization for debugging." << endl
-        << "    -D, --debug_get_snarl_nodes A:B       runs robin-defined debug code using given objects, and nothing else. TODO: move to vg find." << endl
+        << "    -D, --debug_get_snarl_nodes A:B       runs robin-defined debug code using given objects, and nothing else." << endl //todo: move the original implementation - the one that finds all nodes between two nodes - to vg find.
+        << "    -E, --debug_export_gbwt_desegregate_data <filename.txt>       after normalization, instead of updating the gbwt, export the data passed to the update-gbwt code." << endl
         << "    -h, --help      print this help info." << endl;
 }
 
@@ -180,6 +181,7 @@ int main_normalize(int argc, char **argv) {
     bool skip_desegregate = false;
     bool run_tests = false;
     bool debug_print = false;
+    string debug_export_gbwt_desegregate_data;
     
     vector<string> nodes;
     pair<int, int> debug_get_snarl_nodes = make_pair(0, 0);
@@ -210,9 +212,10 @@ int main_normalize(int argc, char **argv) {
             {"run_tests", no_argument, 0, 'u'},
             {"debug_print", no_argument, 0, 'b'},
             {"debug_get_snarl_nodes", required_argument, 0, 'D'},
+            {"debug_export_gbwt_desegregate_data", required_argument, 0, 'E'},
             {0, 0, 0, 0}};
         int option_index = 0;
-        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:T:s:S:jubD:", long_options,
+        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:T:s:S:jubD:E:", long_options,
                         &option_index);
         // Detect the end of the options.
         if (c == -1)
@@ -285,6 +288,10 @@ int main_normalize(int argc, char **argv) {
             cerr << "C" << endl;
             break;
 
+        case 'E':
+            debug_export_gbwt_desegregate_data = optarg;
+            break;
+
         case 'h':
         case '?':
             help_normalize(argv);
@@ -313,24 +320,72 @@ int main_normalize(int argc, char **argv) {
     cerr << "after graph" << endl;
     if (debug_get_snarl_nodes.first != 0 || debug_get_snarl_nodes.second != 0)
     {
-        int handle_checked = 0;
-        graph->for_each_handle([&](handle_t handle){
-            try 
-            {
-                if (graph->get_id(handle)==999999999){cerr << "weird." << endl; exit(0);};
-                if (graph->get_sequence(handle).size()==999999999){cerr << "weird." << endl; exit(0);};
-            }
-            catch (...)
-            {
-                cerr << "we found a handle that had an issue. Here is its id: " << endl;
-                cerr << graph->get_id(handle) << endl;
-                cerr << "and here is its sequence." << endl;
-                cerr << graph->get_sequence(handle) << endl;
+        string filename = "/home/robin/paten_lab/vg-team/vg/test/tiny/custom-tiny/tiny-edited.single-base-shared-snarl-border.test-export-gbwt-desegregation.gbwt-normalize-updates.txt";
+        std::vector<vg::RebuildJob::mapping_type> result;
+        // vector<pair<vector<int>, vector<int>>> result;
+        ifstream file(filename);
 
+        if (!file.is_open()) {
+            cerr << "Error opening file " << filename << endl;
+            exit(1);
+        }
+
+        string line;
+        while (getline(file, line)) {
+            stringstream ss(line);
+            string nums1, nums2;
+            getline(ss, nums1, '|');
+            getline(ss, nums2);
+
+            // vector<gbwt::node_type> vec1, vec2;
+            gbwt::vector_type vec1, vec2;
+            stringstream ss_nums1(nums1), ss_nums2(nums2);
+            int num;
+            while (ss_nums1 >> num)
+                vec1.push_back(num);
+                // vec1.push_back(gbwt::Node::encode( gbwt::Node::id(num), gbwt::Node::is_reverse(num)) );
+            while (ss_nums2 >> num)
+                vec2.push_back(num);
+                // vec2.push_back(gbwt::Node::encode( gbwt::Node::id(num), gbwt::Node::is_reverse(num)) );
+            result.emplace_back(vec1, vec2);
+        }
+        file.close();
+
+        cerr << "here is the file reprinted to cerr:" << endl;
+        for (auto update : result)
+        {
+            for (auto original : update.first)
+            {
+                cerr << original << "\t";
             }
-            handle_checked++;
-        });
-        cerr << "handles checked: " << handle_checked << endl;
+            cerr << "|";
+            for (auto updated : update.second)
+            {
+                cerr << updated << "\t";
+            }
+            cerr << endl;
+        }
+        exit(1);
+
+        //todo: here's another section of debug_code that touches all nodes in a graph. I don't need it anymore:
+        // int handle_checked = 0;
+        // graph->for_each_handle([&](handle_t handle){
+        //     try 
+        //     {
+        //         if (graph->get_id(handle)==999999999){cerr << "weird." << endl; exit(0);};
+        //         if (graph->get_sequence(handle).size()==999999999){cerr << "weird." << endl; exit(0);};
+        //     }
+        //     catch (...)
+        //     {
+        //         cerr << "we found a handle that had an issue. Here is its id: " << endl;
+        //         cerr << graph->get_id(handle) << endl;
+        //         cerr << "and here is its sequence." << endl;
+        //         cerr << graph->get_sequence(handle) << endl;
+
+        //     }
+        //     handle_checked++;
+        // });
+        // cerr << "handles checked: " << handle_checked << endl;
         //todo: uncomment old version of this debug region:
         // cerr << "in get_snarl_nodes." << endl;
         // // vg::id_t leftmost_id = 996832;
@@ -694,6 +749,36 @@ int main_normalize(int argc, char **argv) {
       *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, segregated_node_to_parent, max_handle_size, max_region_size, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
 
     std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
+
+    if (debug_export_gbwt_desegregate_data.size()>0)
+    {
+        cerr << "instead of updating the graph, we're going to save the graph, gbwt, and gg in separate files with the base-name of " << debug_export_gbwt_desegregate_data << "." << endl;
+        cerr << "saving updated graph to file" << endl;
+        std::ofstream graph_output(debug_export_gbwt_desegregate_data + ".pg");
+        vg::io::save_handle_graph(graph.get(), graph_output);
+        graph_output.close();
+        
+        cerr << "saving updated gbwt" << endl;
+        save_gbwt(parallel_regions_gbwt, debug_export_gbwt_desegregate_data + ".gbwt", true);
+
+        cerr << "saving gbwt_normalize_updates" << endl;
+        std::ofstream gbwt_normalize_updates_output(debug_export_gbwt_desegregate_data + ".gbwt-normalize-updates.txt");
+        for (auto update : gbwt_normalize_updates)
+        {
+            for (auto original : update.first)
+            {
+                gbwt_normalize_updates_output << original << "\t";
+            }
+            gbwt_normalize_updates_output << "|";
+            for (auto updated : update.second)
+            {
+                gbwt_normalize_updates_output << updated << "\t";
+            }
+            gbwt_normalize_updates_output << endl;
+        }
+        gbwt_normalize_updates_output.close();
+        exit(0);
+    }
 
     if (skip_desegregate)
     {
