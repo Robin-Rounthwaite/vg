@@ -753,13 +753,13 @@ int main_normalize(int argc, char **argv) {
     if (debug_export_gbwt_desegregate_data.size()>0)
     {
         cerr << "instead of updating the graph, we're going to save the graph, gbwt, and gg in separate files with the base-name of " << debug_export_gbwt_desegregate_data << "." << endl;
-        cerr << "saving updated graph to file" << endl;
-        std::ofstream graph_output(debug_export_gbwt_desegregate_data + ".pg");
-        vg::io::save_handle_graph(graph.get(), graph_output);
-        graph_output.close();
+        // cerr << "saving updated graph to file" << endl;
+        // std::ofstream graph_output(debug_export_gbwt_desegregate_data + ".pg");
+        // vg::io::save_handle_graph(graph.get(), graph_output);
+        // graph_output.close();
         
-        cerr << "saving updated gbwt" << endl;
-        save_gbwt(parallel_regions_gbwt, debug_export_gbwt_desegregate_data + ".gbwt", true);
+        // cerr << "saving updated gbwt" << endl;
+        // save_gbwt(parallel_regions_gbwt, debug_export_gbwt_desegregate_data + ".gbwt", true);
 
         cerr << "saving gbwt_normalize_updates" << endl;
         std::ofstream gbwt_normalize_updates_output(debug_export_gbwt_desegregate_data + ".gbwt-normalize-updates.txt");
