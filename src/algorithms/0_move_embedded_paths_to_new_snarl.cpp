@@ -155,10 +155,10 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     // todo: address paths that don't span both source and sink.
     if (!(path_spans_left_right.first and path_spans_left_right.second))
     {
-        // cerr << "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" << endl;
-        // cerr << "in snarl with source: " << main_graph_source_and_sink.first << " and sink " << main_graph_source_and_sink.second << ":" << endl;
-        // cerr << "PATH DOESN'T SPAN SOURCE AND SINK! THIS IS CURRENTLY UNSUPPORTED. SNARL WILL BE NORMALIZED, BUT PATH WON'T BE INCLUDED." << endl;
-        // cerr << "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" << endl;
+        cerr << "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" << endl;
+        cerr << "in snarl with source: " << main_graph_source_and_sink.first << " and sink " << main_graph_source_and_sink.second << ":" << endl;
+        cerr << "PATH DOESN'T SPAN SOURCE AND SINK! THIS IS CURRENTLY UNSUPPORTED. SNARL WILL BE NORMALIZED, BUT PATH WON'T BE INCLUDED." << endl;
+        cerr << "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" << endl;
         pair<step_handle_t, step_handle_t> no_path;
         return no_path;
     }
@@ -297,7 +297,67 @@ pair<step_handle_t, step_handle_t> SnarlNormalizer::move_path_to_new_snarl(const
     //be altered.) If I ever want to allow normalization without any preparatory region
     //separation, I'd either have to change this function or change the path extraction to
     //be outside of the paralellization for loop.
+    // cerr << "OFFICIAL REWRITE_SEGMENT: moving path of name " << _graph.get_path_name(_graph.get_path_handle_of_step(old_path.first)) << " from: " << _graph.get_id(_graph.get_handle_of_step(old_path.first)) << " " << _graph.get_id(_graph.get_handle_of_step(_graph.get_next_step(old_path.second))) << " to " << leftmost_id << " " << rightmost_id << endl;
+    // cerr << "paths on original path ids: " << endl;
+    // for (handle_t handle : old_path_location)
+    // {
+    //     cerr << "looking at handle " << _graph.get_id(handle) << endl; 
+    //     vector<step_handle_t> steps = _graph.steps_of_handle(_graph.get_handle(_graph.get_id(handle)));
+    //     for (step_handle_t step : steps)
+    //     {
+    //         cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " on " << _graph.get_id(_graph.get_handle_of_step(step)) << endl; 
+    //     }
+    // }
+
+
+    // cerr << "let's try to run rewrite segment with fresh path ids." << endl;
+
+    // path_handle_t path_to_update = _graph.get_path_handle_of_step(old_path.first);
+    
+    // vector<step_handle_t> steps_left = _graph.steps_of_handle(_graph.get_handle_of_step(old_path.first));
+    // step_handle_t old_path_fresh_left;
+    // for (auto step : steps_left)
+    // {
+    //     if (_graph.get_path_handle_of_step(step) ==  path_to_update)
+    //     {
+    //         cerr << "got a fresh left." << endl;
+    //         old_path_fresh_left = step;
+    //     }
+    // }
+
+    // vector<step_handle_t> steps_right = _graph.steps_of_handle(_graph.get_handle_of_step(old_path.second));
+    // step_handle_t old_path_fresh_right;
+    // for (auto step : steps_right)
+    // {
+    //     if (_graph.get_path_handle_of_step(step) ==  path_to_update)
+    //     {
+    //         cerr << "got a fresh right." << endl;
+    //         old_path_fresh_right = step;
+    //     }
+    // }
+
+    // cerr << "OFFICIAL REWRITE_SEGMENT: moving path of name " << _graph.get_path_name(_graph.get_path_handle_of_step(old_path.first)) << " from: " << _graph.get_id(_graph.get_handle_of_step(old_path.first)) << " " << _graph.get_id(_graph.get_handle_of_step(_graph.get_next_step(old_path.second))) << " to "; // _graph.get_id(new_path_location.front()) << " " << _graph.get_id(new_path_location.back()) << endl;
+    // for (auto handle : new_path_location)
+    // {
+    //     cerr << _graph.get_id(handle) << " ";
+
+    // }
+
+    // cerr << endl;
     pair<step_handle_t, step_handle_t> new_path = _graph.rewrite_segment(old_path.first, _graph.get_next_step(old_path.second), new_path_location);
+    // pair<step_handle_t, step_handle_t> new_path = _graph.rewrite_segment(old_path_fresh_left, _graph.get_next_step(old_path_fresh_right), new_path_location);
+    // cerr << "paths on original path ids after rewriting segment." << endl;
+    // for (handle_t handle : old_path_location)
+    // {
+    //     cerr << "looking at handle " << _graph.get_id(handle) << endl; 
+    //     vector<step_handle_t> steps = _graph.steps_of_handle(_graph.get_handle(_graph.get_id(handle)));
+    //     for (step_handle_t step : steps)
+    //     {
+    //         cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " on " << _graph.get_id(_graph.get_handle_of_step(step)) << endl; 
+    //     }
+    // }
+    
+    // cerr << "does the original  " << _graph.get_path_name(_graph.get_path_handle_of_step(old_path.first)) << " from: " << _graph.get_id(_graph.get_handle_of_step(old_path.first)) << " " << _graph.get_id(_graph.get_handle_of_step(_graph.get_next_step(old_path.second))) << " to " << _graph.get_id(new_path_location.front()) << " " << _graph.get_id(new_path_location.back()) << endl;
 
     // Test that the new path exists.
     if (new_path_location.size() == 0)

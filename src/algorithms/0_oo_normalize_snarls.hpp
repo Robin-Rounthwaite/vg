@@ -68,6 +68,7 @@ class SnarlNormalizer {
     int _unskipped_snarl_num = 0;
     unordered_set<pair<id_t, id_t>> _skipped_snarls;
     unordered_set<pair<id_t, id_t>> _unskipped_snarls;
+    unordered_set<string> _deleted_paths;
     //left bool signifies that an "A" is added to the left of the current snarl being
     //normalized. Same for the right bool with an "A" to the right.
     // pair<bool, bool> _sequence_added_because_empty_node = make_pair(false, false);
@@ -121,6 +122,11 @@ class SnarlNormalizer {
 
 
     //////////////////////////////////////////////////////////////////////////////////////
+    // converting formats:
+    //////////////////////////////////////////////////////////////////////////////////////
+    vector<tuple<path_handle_t, id_t, id_t>> convert_embedded_path_regions_to_ids(vector<pair<step_handle_t, step_handle_t>> embedded_path_region);
+
+    //////////////////////////////////////////////////////////////////////////////////////
     // creation of noramlized graph:
     //////////////////////////////////////////////////////////////////////////////////////
     unique_ptr<MutablePathDeletableHandleGraph> poa_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes, const bool output_msa=false);
@@ -131,7 +137,7 @@ class SnarlNormalizer {
     unique_ptr<MutablePathDeletableHandleGraph> align_source_to_sink_haplotypes(const unordered_set<string>& source_to_sink_haplotypes);
 
     pair<handle_t, handle_t> integrate_snarl(SubHandleGraph &old_snarl, const HandleGraph &new_snarl,
-                         vector<pair<step_handle_t, step_handle_t>>& embedded_paths,
+                        vector<tuple<path_handle_t, id_t, id_t>>& embedded_paths_input, 
                          const id_t source_id, const id_t sink_id, const bool backwards);
 
     handle_t replace_node_using_sequence(const id_t old_node_id, const string new_node_sequence, MutablePathDeletableHandleGraph& graph);
@@ -154,6 +160,8 @@ class SnarlNormalizer {
     vector<handle_t> extend_possible_paths(vector<pair<vector<handle_t>, int>> &possible_path_starts, const string &path_str, const handle_t leftmost_handle, const handle_t rightmost_handle, const pair<bool, bool> path_spans_left_right, const pair<id_t, id_t> main_graph_source_and_sink);
 
     pair<step_handle_t, step_handle_t> move_path_to_new_snarl(const pair<step_handle_t, step_handle_t> old_path, const id_t source, const id_t sink, const pair<bool, bool> path_spans_left_right, const bool path_directed_left_to_right, const pair<id_t, id_t> main_graph_source_and_sink);
+
+
 
     // void delete_blanks_on_flanks(pair<handle_t, handle_t> new_left_right);
 
@@ -201,6 +209,11 @@ class SnarlNormalizer {
 
     void make_one_edit(id_t leftmost_id, id_t rightmost_id);
     void get_all_gbwt_sequences(id_t source, id_t sink_id, bool backwards);
+
+    void fill_custom_split_normalize_regions(vector<pair<id_t, id_t>>& split_normalize_regions);
+    step_handle_t _crashing_step;
+
+
 
     // void SnarlNormalizer::snarl_stats(const vector<const Snarl *> &snarl_roots);
 

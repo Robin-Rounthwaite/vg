@@ -280,12 +280,8 @@ int main_normalize(int argc, char **argv) {
             break;
 
         case 'D':
-            cerr << "a" << endl;
             nodes = split_delims(optarg, ":");
-            cerr << "b" << endl;
-
             debug_get_snarl_nodes = make_pair(parse<int>(nodes.front()), parse<int>(nodes.back()));
-            cerr << "C" << endl;
             break;
 
         case 'E':
@@ -320,52 +316,49 @@ int main_normalize(int argc, char **argv) {
     cerr << "after graph" << endl;
     if (debug_get_snarl_nodes.first != 0 || debug_get_snarl_nodes.second != 0)
     {
-        string filename = "/home/robin/paten_lab/vg-team/vg/test/tiny/custom-tiny/tiny-edited.single-base-shared-snarl-border.test-export-gbwt-desegregation.gbwt-normalize-updates.txt";
-        std::vector<vg::RebuildJob::mapping_type> result;
-        // vector<pair<vector<int>, vector<int>>> result;
-        ifstream file(filename);
+        /////////SNIPPET: for testing import of gbwt-update .txt file.
+        // string filename = "/home/robin/paten_lab/vg-team/vg/test/tiny/custom-tiny/tiny-edited.single-base-shared-snarl-border.test-export-gbwt-desegregation.gbwt-normalize-updates.txt";
+        // std::vector<vg::RebuildJob::mapping_type> result;
+        // ifstream file(filename);
 
-        if (!file.is_open()) {
-            cerr << "Error opening file " << filename << endl;
-            exit(1);
-        }
+        // if (!file.is_open()) {
+        //     cerr << "Error opening file " << filename << endl;
+        //     exit(1);
+        // }
 
-        string line;
-        while (getline(file, line)) {
-            stringstream ss(line);
-            string nums1, nums2;
-            getline(ss, nums1, '|');
-            getline(ss, nums2);
+        // string line;
+        // while (getline(file, line)) {
+        //     stringstream ss(line);
+        //     string nums1, nums2;
+        //     getline(ss, nums1, '|');
+        //     getline(ss, nums2);
 
-            // vector<gbwt::node_type> vec1, vec2;
-            gbwt::vector_type vec1, vec2;
-            stringstream ss_nums1(nums1), ss_nums2(nums2);
-            int num;
-            while (ss_nums1 >> num)
-                vec1.push_back(num);
-                // vec1.push_back(gbwt::Node::encode( gbwt::Node::id(num), gbwt::Node::is_reverse(num)) );
-            while (ss_nums2 >> num)
-                vec2.push_back(num);
-                // vec2.push_back(gbwt::Node::encode( gbwt::Node::id(num), gbwt::Node::is_reverse(num)) );
-            result.emplace_back(vec1, vec2);
-        }
-        file.close();
+        //     gbwt::vector_type vec1, vec2;
+        //     stringstream ss_nums1(nums1), ss_nums2(nums2);
+        //     int num;
+        //     while (ss_nums1 >> num)
+        //         vec1.push_back(num);
+        //     while (ss_nums2 >> num)
+        //         vec2.push_back(num);
+        //     result.emplace_back(vec1, vec2);
+        // }
+        // file.close();
 
-        cerr << "here is the file reprinted to cerr:" << endl;
-        for (auto update : result)
-        {
-            for (auto original : update.first)
-            {
-                cerr << original << "\t";
-            }
-            cerr << "|";
-            for (auto updated : update.second)
-            {
-                cerr << updated << "\t";
-            }
-            cerr << endl;
-        }
-        exit(1);
+        // cerr << "here is the file reprinted to cerr:" << endl;
+        // for (auto update : result)
+        // {
+        //     for (auto original : update.first)
+        //     {
+        //         cerr << original << "\t";
+        //     }
+        //     cerr << "|";
+        //     for (auto updated : update.second)
+        //     {
+        //         cerr << updated << "\t";
+        //     }
+        //     cerr << endl;
+        // }
+        // exit(1);
 
         //todo: here's another section of debug_code that touches all nodes in a graph. I don't need it anymore:
         // int handle_checked = 0;
@@ -387,16 +380,17 @@ int main_normalize(int argc, char **argv) {
         // });
         // cerr << "handles checked: " << handle_checked << endl;
         //todo: uncomment old version of this debug region:
-        // cerr << "in get_snarl_nodes." << endl;
-        // // vg::id_t leftmost_id = 996832;
-        // // vg::id_t rightmost_id = 997083;
-        // // debug_get_snarl_nodes.first = 996832;
-        // // debug_get_snarl_nodes.second = 997083;
-        // SubHandleGraph snarl =   extract_subgraph(*graph, debug_get_snarl_nodes.first, debug_get_snarl_nodes.second);
-        // snarl.for_each_handle([&](handle_t handle){
-        //     // cout << snarl.get_id(handle) << "\t" << snarl.get_sequence(handle) << endl;
-        //     cout << snarl.get_id(handle) << endl;
-        // });
+        ////////SNIPPET: this one exports all nodes in a graph, even if the nodes are non-consecutive (unlike in vg find). Important for script visualize-graphs/visualize-subgraph.sh
+        cerr << "in get_snarl_nodes." << endl;
+        // vg::id_t leftmost_id = 996832;
+        // vg::id_t rightmost_id = 997083;
+        // debug_get_snarl_nodes.first = 996832;
+        // debug_get_snarl_nodes.second = 997083;
+        SubHandleGraph snarl =   extract_subgraph(*graph, debug_get_snarl_nodes.first, debug_get_snarl_nodes.second);
+        snarl.for_each_handle([&](handle_t handle){
+            // cout << snarl.get_id(handle) << "\t" << snarl.get_sequence(handle) << endl;
+            cout << snarl.get_id(handle) << endl;
+        });
         //todo: end to-uncomment region.
         exit(0);
     }

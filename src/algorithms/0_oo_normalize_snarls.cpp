@@ -39,8 +39,7 @@ TODO:    the snarl.
 
 int _big_snarl_alignment_job = 900;
 
-namespace vg {
-namespace algorithms{
+namespace vg { namespace algorithms{
 /**
  * To "normalize" a snarl, SnarlNormalizer extracts all the sequences in the snarl as
  * represented in the gbwt, and then realigns them to create a replacement snarl. 
@@ -69,25 +68,10 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
 /// @param split_normalize_regions 
 std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions)
 {
-    //todo: someday, remove this deletion of all paths in the graph, and fix the issues I had with path inclusion including undefined behavior.
-    //todo:         see branch "robin-path-moving-has-bugs" for WIP.
-    vector<path_handle_t> all_paths;
-    _graph.for_each_path_handle([&](path_handle_t path)
-    {
-        all_paths.push_back(path);
-    });
-    for (auto path: all_paths)
-    {
-        _graph.destroy_path(path);
-    }
-    
-    // cerr << "list of all to-delete handles:" << endl;
-    // for (auto deletable : _nodes_to_delete)
-    // {
-    //     cerr << deletable << endl;
-    //     cerr << "sequence: " << _graph.get_sequence(_graph.get_handle(deletable)) << endl;
-    // }
-    
+    // fill_custom_split_normalize_regions(split_normalize_regions);
+    // vector<step_handle_t> steps = _graph.steps_of_handle(_graph.get_handle(3234226));
+    // _crashing_step = steps.back();
+
     //todo: add back the exhaustive path finder option?
     assert(_path_finder=="GBWT");
 
@@ -100,12 +84,13 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //todo: change to make more memory efficient? 
     //todo: I could also at least re-derive the SubHandleGraph if I needed to.
     // vector< pair< vg::VG, pair<id_t,id_t> > > normalized_snarls;
-    vector< tuple< SubHandleGraph, shared_ptr<MutablePathDeletableHandleGraph>, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls;
+    vector< tuple< SubHandleGraph, shared_ptr<MutablePathDeletableHandleGraph>, std::vector<std::tuple<path_handle_t, id_t, id_t>>, id_t, id_t, bool, vector<pair<gbwt::vector_type, string>> >> normalized_snarls;
     
 
     //todo: debug_code
     // _debug_print=true;
     // split_normalize_regions.clear();
+    // split_normalize_regions.push_back(make_pair(66174, 66176));
     // split_normalize_regions.push_back(make_pair(1898335, 1898346));
     // split_normalize_regions.push_back(make_pair(2624390, 2624421));
     int num_snarls_normalized = 0;
@@ -151,7 +136,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
-
         auto start_alignment = std::chrono::high_resolution_clock::now();
         #pragma omp critical(print_progress)
         {
@@ -294,12 +278,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         }
         else if (_alignment_algorithm == "sPOA")
         {
-            // cerr << "get<0>(haplotypes), new_snarl, false) " << get<0>(haplotypes).size() << endl;
-            // cerr << "new_snarl interaction: " << endl;
-            // new_snarl->for_each_handle([&](handle_t handle){
-            //     cerr << new_snarl->get_id(handle) << endl;
-            // });
-
             // cerr << "about to run poa_source_to_sink_haplotypes. " << endl;
             new_snarl = poa_source_to_sink_haplotypes(get<0>(haplotypes), false);
             // cerr << "finished running poa_source_to_sink_haplotypes. " << endl;
@@ -363,7 +341,8 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
         {
         _snarl_size_changes[make_pair(region.first, region.second)] = make_pair(original_snarl_size, new_snarl_size);
         // std::vector<std::tuple<vg::SubHandleGraph, vg::VG, std::vector<std::pair<vg::step_handle_t, vg::step_handle_t>>, vg::id_t, vg::id_t, bool, std::vector<std::pair<gbwt::vector_type, std::string>>>> normalized_snarls
-        normalized_snarls.emplace_back(make_tuple(snarl, new_snarl, embedded_paths, region.first, region.second, false, source_to_sink_gbwt_paths));
+        vector<tuple<path_handle_t, id_t, id_t>>embedded_path_id_format = convert_embedded_path_regions_to_ids(embedded_paths);
+        normalized_snarls.emplace_back(make_tuple(snarl, new_snarl, embedded_path_id_format, region.first, region.second, false, source_to_sink_gbwt_paths));
         }
         // pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, new_snarl, embedded_paths, region.first, region.second, false);
 
@@ -404,10 +383,6 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
 
         // cerr << "integration" << endl;
         pair<handle_t, handle_t> new_left_right = integrate_snarl(get<0>(snarl), *get<1>(snarl), get<2>(snarl), get<3>(snarl), get<4>(snarl), get<5>(snarl));
-        // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
-        // cerr << "extraction" << endl;
-        // SubHandleGraph integrated_snarl = extract_subgraph(_graph, _graph.get_id(new_left_right.first), _graph.get_id(new_left_right.second));
-        // cerr << "log changes" << endl;
         log_gbwt_changes(get<6>(snarl), new_left_right);
 
     }
@@ -736,7 +711,20 @@ bool SnarlNormalizer::test_haplotypes(const tuple<unordered_set<string>, vector<
     return true;
 }
 
-//todo: make the return value void, and instead be returned by reference in arguments passed to extract_haplotypes.
+//converts the format I used to record ranges of embedded paths. This way, 
+//step_handle_ts are not at risk of being invalidated by updates to paths in neighboring snarls.
+vector<tuple<path_handle_t, id_t, id_t>> SnarlNormalizer::convert_embedded_path_regions_to_ids(vector<pair<step_handle_t, step_handle_t>> embedded_path_region)
+{
+    vector<tuple<path_handle_t, id_t, id_t>> new_format;
+    for (auto path : embedded_path_region)
+    {
+        tuple<path_handle_t, id_t, id_t> converted = make_tuple(_graph.get_path_handle_of_step(path.first), _graph.get_id(_graph.get_handle_of_step(path.first)), _graph.get_id(_graph.get_handle_of_step(path.second)));
+        new_format.push_back(converted);
+    }
+    return new_format;
+}
+
+//todo (done): make the return value void, and instead be returned by reference in arguments passed to extract_haplotypes.
 void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair<id_t, id_t>& region, 
         pair<bool, bool>& sequence_added_because_empty_node, 
         tuple<unordered_set<string>, vector<vector<handle_t>>, unordered_set<id_t>>& haplotypes, 
@@ -975,7 +963,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
     // for parallelization), then final path handle will point to the actual handle in the
     // graph that is the furthest we want for the alignment, not one beyond. (to ensure
     // that it doesn't extend to a region that might be edited by a different snarl).
-    embedded_paths = sequence_finder.find_embedded_paths(stop_inclusive);
+    vector<pair<step_handle_t, step_handle_t>> embedded_paths_draft = sequence_finder.find_embedded_paths(stop_inclusive);
 
     // cerr << region.first << " " << region.second << " in extract_haplotypes 6" << endl;
 
@@ -983,17 +971,34 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
     //       accounted for in the code, remove next chunk of code that finds 
     //       source-to-sink paths.
     // find the paths that stretch from source to sink:
-    for (auto path : embedded_paths) 
+    for (auto path : embedded_paths_draft) 
     {
-        if (_graph.get_id(_graph.get_handle_of_step(path.first)) == region.first &&
-            _graph.get_id(_graph.get_handle_of_step(
-                _graph.get_previous_step(path.second))) == region.second)  {
+        bool path_source_to_sink = false;
+        if (stop_inclusive)
+        {
+            if (_graph.get_id(_graph.get_handle_of_step(path.first)) == region.first &&
+                _graph.get_id(_graph.get_handle_of_step(path.second)) == region.second)  
+            {
+                path_source_to_sink=true;
+            }
+        }
+        else
+        {
+            if (_graph.get_id(_graph.get_handle_of_step(path.first)) == region.first &&
+                _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) == region.second)
+            {
+                path_source_to_sink=true;
+            }
+        }
+        if (path_source_to_sink)  {
             // get the sequence of the source to sink path, and add it to the
             // paths to be aligned.
             string path_seq;
+            step_handle_t prev_step = _graph.get_previous_step(path.first);
             step_handle_t cur_step = path.first;
-            while (cur_step != path.second) {
+            while (_graph.get_id(_graph.get_handle_of_step(prev_step)) != region.second) { //that is, stop after we have ran the while loop on the subgraph sink 
                 path_seq += _graph.get_sequence(_graph.get_handle_of_step(cur_step));
+                prev_step = cur_step;
                 cur_step = _graph.get_next_step(cur_step);
             }
             if (backwards) //guaranteed false, here. (but not where code was copied from)
@@ -1003,8 +1008,36 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
             else {
                 get<0>(haplotypes).emplace(path_seq);
             }
+            embedded_paths.push_back(path);
+        }
+        else
+        {
+            //this path goes halfway across the graph, and thus must be dropped.
+            //todo: actually implement this. Currently just _debug_code.
+            // paths_to_delete.emplace(path);
+            // string deleted_path = _graph.get_path_name(_graph.get_path_handle_of_step(path.first));
+            // _deleted_paths.emplace(deleted_path);
+            // _graph.destroy_path(_graph.get_path_handle_of_step(path.first));
+            // if (deleted_path.substr(0,4)!="_alt")
+            // {
+            //     cerr << "destroyed path " << deleted_path << endl;
+            //     cerr <<
+            //      " _graph.get_id(_graph.get_handle_of_step(path.first)) " << _graph.get_id(_graph.get_handle_of_step(path.first)) << 
+            //      " region.first " << region.first << 
+            //      " _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) " << _graph.get_id(_graph.get_handle_of_step(_graph.get_previous_step(path.second))) << 
+            //      " region.second " << region.second << 
+            //      endl;
+            // }
         }
     }
+
+    //todo: delete all embedded paths that don't cross the full genome. And add the
+    //deleted path to an unordered_set that can be queried whenever we're messing with a
+    //path that extends to this position. 
+    //todo: something to consider here is to see if
+    //chr19 path *would* be deleted in this hierarchy, and also to maybe add a feature
+    //where the ref path can be marked as "treasured" and thus we skip any snarls where
+    //the code suggests to remove it.
     // cerr << region.first << " " << region.second << " in extract_haplotypes 7" << endl;
 
     return;
@@ -1743,7 +1776,8 @@ vector<int> SnarlNormalizer::normalize_snarl(const id_t source_id, const id_t si
         // integrate the new_snarl into the _graph, removing the old snarl as you go.
         // //todo: debug_statement
         // integrate_snarl(new_snarl, embedded_paths, sink_id, source_id);
-        pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, *new_snarl, embedded_paths, source_id, sink_id, backwards);
+        std::vector<std::tuple<vg::path_handle_t, vg::id_t, vg::id_t>> converted_embedded_paths = convert_embedded_path_regions_to_ids(embedded_paths);
+        pair<handle_t, handle_t> new_left_right = integrate_snarl(snarl, *new_snarl, converted_embedded_paths, source_id, sink_id, backwards);
         _unskipped_snarls.emplace(make_pair(leftmost_id, rightmost_id));
 
         // make a subhandlegraph of the normalized snarl to find the new gbwt paths in the graph.
@@ -2129,10 +2163,47 @@ SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
 // Return: a pair of node ids, representing source and sink of the newly integrated snarl.
 pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_snarl, 
     const HandleGraph &to_insert_snarl,
-    vector<pair<step_handle_t, step_handle_t>>& embedded_paths, 
+    vector<tuple<path_handle_t, id_t, id_t>>& embedded_paths_input, 
     const id_t source_id, const id_t sink_id, const bool backwards) 
 {
-    
+
+    //Since we're in the non-parallelized part of the code, I can create fresh, safe-to-use step_handle_ts in the original embedded_paths format:
+    vector<pair<step_handle_t, step_handle_t>> embedded_paths;
+    for(auto path : embedded_paths_input)
+    {
+        step_handle_t proper_step_left;
+        step_handle_t proper_step_right;
+        bool found_left = false;
+        bool found_right = false;
+        vector<step_handle_t> steps_left = _graph.steps_of_handle(_graph.get_handle(get<1>(path)));
+        for (auto step : steps_left)
+        {
+            if (_graph.get_path_handle_of_step(step) == get<0>(path))
+            {
+                //we've found the proper step for this path. Add it to embedded_paths.
+                proper_step_left = step;
+                found_left = true;
+            }
+        }
+        vector<step_handle_t> steps_right = _graph.steps_of_handle(_graph.get_handle(get<2>(path)));
+        for (auto step : steps_right)
+        {
+            if (_graph.get_path_handle_of_step(step) == get<0>(path))
+            {
+                //we've found the proper step for this path. Add it to embedded_paths.
+                proper_step_right = step;
+                found_right = true;
+            }
+        }
+
+        if (!(found_left && found_right))
+        {
+            cerr << "ERROR: unexpected event: there's an embedded_path that was supposed to be included in the integration of the snarl, but no longer exists. (NOTE: if this is a non-important, e.g. non-reference path, then this code could be safely replaced with simply dropping the embedded paths that can't be moved between unnormalized and normalized.)" << endl;
+            exit(1);
+        }
+        embedded_paths.emplace_back(proper_step_left, proper_step_right);
+    }
+
     // TODO: debug_statement: Check to make sure that newly made snarl has only one start
     // and end.
     // TODO:     (shouldn't be necessary once we've implemented alignment with
@@ -2244,7 +2315,6 @@ pair<handle_t, handle_t> SnarlNormalizer::integrate_snarl(SubHandleGraph &old_sn
         pair<bool, bool> path_spans_left_right;
         path_spans_left_right.first = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].first)) == source_id);
         path_spans_left_right.second = (_graph.get_id(_graph.get_handle_of_step(embedded_paths[i].second)) == sink_id); // not get_previous_step because stop_inclusive=true for extract haplotype paths.
-
         embedded_paths[i] = move_path_to_new_snarl(embedded_paths[i], temp_snarl_leftmost_id, temp_snarl_rightmost_id, path_spans_left_right, !backwards, make_pair(source_id, sink_id));
     }
 
@@ -2297,21 +2367,42 @@ handle_t SnarlNormalizer::replace_node_using_sequence(const id_t old_node_id, co
     handle_t old_handle = graph.get_handle(old_node_id);
     if (new_node_sequence.size() == 0) //special case of creating an empty node.
     {
-        // cerr << "splitting old_node_id: " << old_node_id << endl;
         pair<handle_t, handle_t> split = graph.divide_handle(old_handle, 0);
+
+        // move all paths off split.second, keep them on split.first and the step following the split handle.:
+        graph.for_each_step_on_handle(split.second, [&](step_handle_t step) 
+        {
+            step_handle_t next_step = graph.get_next_step(step);
+            step_handle_t split_first_step = graph.get_previous_step(step);
+
+            vector<handle_t> new_path;
+            new_path.push_back(split.first);
+            new_path.push_back(graph.get_handle_of_step(next_step));
+
+            graph.rewrite_segment(split_first_step, graph.get_next_step(next_step), new_path);
+            
+        });
+
+        // // get paths of split.second: 
+        // vector<step_handle_t> steps = graph.steps_of_handle(split.second);
+        // for (auto step : steps)
+        // {
+        //     path_handle_t path = graph.get_path_handle_of_step(step);
+        //     graph.
+        //     cerr << "step id: " << _graph.get_id(_graph.get_handle_of_step(step)) << " step path: " << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << endl;
+        // }
+
+        // if (split.second)
 
         // cerr << "to create node ids: " << graph.get_id(split.first) << " " << graph.get_sequence(split.first) << " " << graph.get_id(split.second) << " " << graph.get_sequence(split.second) << " (of which we keep the second right now. Should we keep the first? )" << endl;
 
-        
         graph.follow_edges(split.second, false, [&](const handle_t next_handle) 
         {
             graph.create_edge(split.first, next_handle);
         });
         
-        
         graph.destroy_handle(split.second);
-        // cerr << "overwriting handle in if statement MAKE THE CHANGES TO CODE HERE (because I dont' keep a constant node id here. Chck inside the divide handle to maybe keep the node id the same by hcooseing hte other node id it returns?)" << endl;
-        // handle_t overwrit_handle = overwrite_node_id(graph.get_id(split.second), old_node_id, graph);
+        // cerr << "about to return early" << endl;
         return split.first;
     }
 
@@ -2484,16 +2575,13 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
     if (new_left_necessary)
     {
         new_left = replace_node_using_sequence(_graph.get_id(new_left), "", _graph);
-        // cerr << "we replaced leftmost node " << _graph.get_id(new_left) << endl;
     }
     if (new_right_necessary)
     {
         new_right = replace_node_using_sequence(_graph.get_id(new_right), "", _graph);
-        // cerr << "we replaced rightmost node " << _graph.get_id(new_right) << endl;
     }
     // use banded global aligner. optimizations for finidng one perfect match from source to sink.
     // cerr << "new left and right ids after log_gbwt_changes: " << _graph.get_id(new_left) << " " << _graph.get_id(new_right) << endl;
-
 }
 
 
