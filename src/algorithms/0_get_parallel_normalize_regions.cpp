@@ -268,8 +268,8 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
 
             // cerr << "original node id: " << _graph.get_id(rightmost_handle) << endl;
 
+            id_t original_rightmost = _graph.get_id(rightmost_handle);
             //todo: begin debug_code
-            // id_t original_rightmost = _graph.get_id(rightmost_handle);
             // if (original_rightmost==170311)
             // {
 
