@@ -49,6 +49,7 @@ class SnarlNormalizer {
     // GBWTPathFinder approach.
     const gbwt::GBWT &_gbwt;
     const gbwtgraph::GBWTGraph &_gbwt_graph;
+    const unordered_map<id_t, id_t>& _segregated_node_to_parent;
     // const gbwtgraph::GBWTGraph _gbwt_graph = gbwtgraph::GBWTGraph(_gbwt, _graph);
     // const gbwtgraph::GBWTGraph &_gbwt_graph = gbwtgraph::GBWTGraph(_gbwt, _graph);
     // vector<pair<vector<std::uint32_t>, vector<std::uint32_t>>> _gbwt_changelog; //todo: delete this
@@ -125,6 +126,8 @@ class SnarlNormalizer {
     // converting formats:
     //////////////////////////////////////////////////////////////////////////////////////
     vector<tuple<path_handle_t, id_t, id_t>> convert_embedded_path_regions_to_ids(vector<pair<step_handle_t, step_handle_t>> embedded_path_region);
+
+    gbwt::vector_type apply_segregated_node_to_parent(gbwt::vector_type& path);
 
     //////////////////////////////////////////////////////////////////////////////////////
     // creation of noramlized graph:

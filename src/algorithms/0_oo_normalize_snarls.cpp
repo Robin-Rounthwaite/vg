@@ -59,7 +59,7 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
                                  const string alignment_algorithm, /*= "sPOA"*/
                                  const bool disable_gbwt_update, /*= false*/
                                  const bool debug_print /*= false*/)
-: _graph(graph), _gbwt(gbwt), _gbwt_graph(gbwt_graph), _max_alignment_size(max_alignment_size),
+: _graph(graph), _gbwt(gbwt), _gbwt_graph(gbwt_graph), _segregated_node_to_parent(segregated_node_to_parent), _max_alignment_size(max_alignment_size),
       _max_handle_size(max_handle_size), _max_region_size(max_region_size), _threads(threads), _path_finder(path_finder),
        _alignment_algorithm(alignment_algorithm), _disable_gbwt_update(disable_gbwt_update), _debug_print(debug_print){}
 
@@ -2562,7 +2562,11 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
             // mapping.position().
             alignment_full_path.emplace_back(gbwt::Node::encode(mapping.position().node_id(), mapping.position().is_reverse()));
         }
-        _gbwt_changelog.emplace_back(path.first, alignment_full_path);
+
+        gbwt::vector_type before = apply_segregated_node_to_parent(path.first);
+        gbwt::vector_type after = apply_segregated_node_to_parent(alignment_full_path);
+        // _gbwt_changelog.emplace_back(path.first, alignment_full_path);
+        _gbwt_changelog.emplace_back(before, after);
 
 
         
@@ -2584,6 +2588,38 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
     // cerr << "new left and right ids after log_gbwt_changes: " << _graph.get_id(new_left) << " " << _graph.get_id(new_right) << endl;
 }
 
+
+//uses _segregated_node_to_parent to edit out any changes that refers to "segregated
+//nodes," i.e. nodes that exist in the graph after running
+//region_finder.get_parallel_normalize_regions in normalize_main, but not before. Instead
+//of including these nodes, normalize will replace them with the original nodes. That way
+//I can avoid running update_gbwt twice after normalization - once after normalization,
+//and another after desegregation. (because desegregation will be lumped in with the
+//normalization process).
+gbwt::vector_type SnarlNormalizer::apply_segregated_node_to_parent(gbwt::vector_type& path)
+{
+    //new path that won't have any "segregated nodes."
+    gbwt::vector_type desegregated_path;
+
+    //go through the vector_type node by node.
+    for(gbwt::node_type node : path)
+    {
+        //decode the node.
+        vg::id_t id = gbwt::Node::id(node);
+        if (_segregated_node_to_parent.find(id)!= _segregated_node_to_parent.end())
+        {
+            //if it's a "segregated node," replace it with its parent.
+            id = _segregated_node_to_parent[id];
+            desegregated_path.emplace_back(gbwt::Node::encode(id, false)); //inserting as non-reverse because source and sink shouldn't ever be reversed.
+        }
+        else
+        {
+            //otherwise, keep it as is.
+            desegregated_path.emplace_back(node);
+        }
+    }
+    return desegregated_path;
+}
 
 
 
@@ -2812,6 +2848,7 @@ void SnarlNormalizer::make_one_edit(id_t leftmost_id, id_t rightmost_id)
         {
            replacement_string.append(_gbwt_graph.get_sequence(old_handle)); 
         }
+
         old_path.push_back(gbwt::Node::encode(_gbwt_graph.get_id(old_handle), _gbwt_graph.get_is_reverse(old_handle)));
     }
 
