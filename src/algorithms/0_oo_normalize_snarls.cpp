@@ -375,7 +375,17 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     //integrate all the normalized snarls formed in the parallel loop above.
     for (auto snarl : normalized_snarls)
     {
-        
+        cerr << "======================about to integrate snarl " << get<3>(snarl) << " " << get<4>(snarl) << "======================" << endl;
+        cerr << "integration 1: is chr19 path still in graph? ";
+        bool chr19_in_graph = false;
+        _graph.for_each_path_handle([&](path_handle_t path){
+            if (_graph.get_path_name(path) == "chr19")
+            {
+                chr19_in_graph = true;
+            }
+
+        });
+        cerr << chr19_in_graph << endl;
         if (_debug_print)
         {
             cerr << "======================about to integrate snarl " << get<3>(snarl) << " " << get<4>(snarl) << "======================" << endl;
