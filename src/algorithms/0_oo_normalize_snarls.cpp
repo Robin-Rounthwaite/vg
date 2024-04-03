@@ -2609,8 +2609,8 @@ gbwt::vector_type SnarlNormalizer::apply_segregated_node_to_parent(gbwt::vector_
         if (_segregated_node_to_parent.find(id)!= _segregated_node_to_parent.end())
         {
             //if it's a "segregated node," replace it with its parent.
-            id = _segregated_node_to_parent[id];
-            desegregated_path.emplace_back(gbwt::Node::encode(id, false)); //inserting as non-reverse because source and sink shouldn't ever be reversed.
+            id_t parent_id = _segregated_node_to_parent.at(id);
+            desegregated_path.emplace_back(gbwt::Node::encode(parent_id, false)); //inserting as non-reverse because source and sink shouldn't ever be reversed.
         }
         else
         {

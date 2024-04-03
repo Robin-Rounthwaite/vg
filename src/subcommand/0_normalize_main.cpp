@@ -788,24 +788,25 @@ int main_normalize(int argc, char **argv) {
     cerr << "max_region_gap (-n): " << max_region_gap << endl;
     cerr << "threads (-t): " << threads << endl;
 
-    cerr << "=======updating gbwt after normalization and before desegregating regions=======" << endl;
-    cerr << "updating gbwt after normalization" << endl;
-    auto _post_norm_gbwt_update_start = chrono::high_resolution_clock::now();
-    gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(parallel_regions_gbwt_graph, gbwt_normalize_updates, parallel_regions_gbwt, gbwt_threads, false);
-    auto _post_norm_gbwt_update_end = chrono::high_resolution_clock::now();    
-    chrono::duration<double> _post_norm_gbwt_update_elapsed = _post_norm_gbwt_update_end - _post_norm_gbwt_update_start;
-    cerr << "elapsed time from updating gbwt after normalization: " << _post_norm_gbwt_update_elapsed.count() << " s" << endl;
+    // cerr << "=======updating gbwt after normalization and before desegregating regions=======" << endl;
+    // cerr << "updating gbwt after normalization" << endl;
+    // auto _post_norm_gbwt_update_start = chrono::high_resolution_clock::now();
+    // gbwt::GBWT normalized_gbwt = vg::algorithms::apply_gbwt_changelog(parallel_regions_gbwt_graph, gbwt_normalize_updates, parallel_regions_gbwt, gbwt_threads, false);
+    // auto _post_norm_gbwt_update_end = chrono::high_resolution_clock::now();    
+    // chrono::duration<double> _post_norm_gbwt_update_elapsed = _post_norm_gbwt_update_end - _post_norm_gbwt_update_start;
+    // cerr << "elapsed time from updating gbwt after normalization: " << _post_norm_gbwt_update_elapsed.count() << " s" << endl;
 
 
-    cerr << "generating the post-normalization gbwt graph" << endl;
-    // make a new gbwt_graph for the normalized_gbwt.
-    gbwtgraph::GBWTGraph normalized_gbwt_graph = gbwtgraph::GBWTGraph(normalized_gbwt, *graph);
+    // cerr << "generating the post-normalization gbwt graph" << endl;
+    // // make a new gbwt_graph for the normalized_gbwt.
+    // gbwtgraph::GBWTGraph normalized_gbwt_graph = gbwtgraph::GBWTGraph(normalized_gbwt, *graph);
 
     cerr << "=======desegregating normalization regions after parallelized normalization=======" << endl;
     cerr << "desegregating the normalize regions." << endl;
     vg::algorithms::NormalizeRegionFinder post_norm_region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
     //merges nodes, updates entries in gbwt_normalize to match those merged nodes. (note: is there a way to make this O(n), rather than O(n^2)? Maybe a reverse index... seems possibly a distraction. Could be worth just running desegregate nodes after updating the gbwt, and update the gbwt a third time.)
-    std::vector<vg::RebuildJob::mapping_type> desegregated_regions_gbwt_updates = post_norm_region_finder.desegregate_nodes(desegregation_candidates);
+    // std::vector<vg::RebuildJob::mapping_type> desegregated_regions_gbwt_updates = post_norm_region_finder.desegregate_nodes(desegregation_candidates);
+    post_norm_region_finder.desegregate_nodes(desegregation_candidates);
 
     cerr << "======preparing and saving output=======" << endl;
 
@@ -815,7 +816,7 @@ int main_normalize(int argc, char **argv) {
 
     cerr << "updating gbwt after de-isolation." << endl;
     auto _desegregated_regions_gbwt_update_start = chrono::high_resolution_clock::now();    
-    gbwt::GBWT normalized_desegregated_gbwt = vg::algorithms::apply_gbwt_changelog(normalized_gbwt_graph, desegregated_regions_gbwt_updates, normalized_gbwt, gbwt_threads, false);
+    gbwt::GBWT normalized_desegregated_gbwt = vg::algorithms::apply_gbwt_changelog(parallel_regions_gbwt_graph, gbwt_normalize_updates, parallel_regions_gbwt, gbwt_threads, false);
 
     auto _desegregated_regions_gbwt_update_end = chrono::high_resolution_clock::now();    
     chrono::duration<double> _desegregated_regions_gbwt_update_elapsed = _desegregated_regions_gbwt_update_end - _desegregated_regions_gbwt_update_start;
