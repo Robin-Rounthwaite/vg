@@ -732,6 +732,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
         vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, 
         const bool stop_inclusive/*=false*/)
 {
+    // cerr << "inside extract_haplotypes." << endl;
     bool backwards = false;
 
     // if (_debug_print == true)
@@ -840,7 +841,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
     // }
     // //todo: end debug_print
     // cerr << "hap original text: " << *get<0>(haplotypes).begin() << endl;
-    // check to see if the leftmost or rightmost node is empty. If so, treat the blank
+    // check to see if the leftmost node is empty. If so, treat the blank
     // node as containing a character "A". (this is important for dealing with how
     // get_parallel_normalize_regions sometimes adds a blank node when isolating adjacent
     // snarls for parallelization).
@@ -870,23 +871,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
         //     cerr << hap << endl;
         // }
     }
-    // else if (_nodes_to_delete.find(region.first) != _nodes_to_delete.end())
-    // {
-    //     cerr << "earlier error of the two. " << endl;
-    //     cerr << "here is the node to delete: " << region.second << endl;
-    //     cerr << "here is the _nodes_to_delete.size(): " << _nodes_to_delete.size() << endl;
-    //     cerr << "here is the _nodes_to_delete: " <<endl;
-    //     for (auto node : _nodes_to_delete)
-    //     {
-    //         cerr << node << " ";
-    //     }
-    //     cerr << endl;
-    //     cerr << "ERROR: found a node_to_delete that isn't of length zero. This shouldn't happen." << endl;
-    //     exit(1);
-    // }
-    // cerr << region.first << " " << region.second << " in extract_haplotypes 4" << endl;
-
-    // check to see if the leftmost or rightmost node is empty. If so, treat the blank
+    // check to see if rightmost node is empty. If so, treat the blank
     // node as containing a character "A". (this is important for dealing with how
     // get_parallel_normalize_regions sometimes adds a blank node when isolating adjacent
     // snarls for parallelization).
@@ -994,12 +979,36 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
             // get the sequence of the source to sink path, and add it to the
             // paths to be aligned.
             string path_seq;
-            step_handle_t prev_step = _graph.get_previous_step(path.first);
+            // cerr << "here is 'path.first': " << _graph.get_id(_graph.get_handle_of_step(path.first)) << endl;
+            // cerr << "here is path name: " << _graph.get_path_name(_graph.get_path_handle_of_step(path.first)) << endl;
             step_handle_t cur_step = path.first;
-            while (_graph.get_id(_graph.get_handle_of_step(prev_step)) != region.second) { //that is, stop after we have ran the while loop on the subgraph sink 
+            step_handle_t prev_step = _graph.get_previous_step(cur_step);
+
+
+
+            // while (!_graph.has_previous_step(cur_step) || _graph.get_id(_graph.get_handle_of_step(prev_step)) != region.second) { //that is, stop after we have ran the while loop on the subgraph sink 
+            while (cur_step==_graph.path_begin(_graph.get_path_handle_of_step(cur_step)) || _graph.get_id(_graph.get_handle_of_step(prev_step)) != region.second) { //that is, stop after we have ran the while loop on the subgraph sink 
+                // cerr << "!_graph.has_previous_step(cur_step) " << !_graph.has_previous_step(cur_step) << endl;
+                // if (_graph.has_previous_step(cur_step))
+                // {
+                //     cerr << "!_graph.has_previous_step(cur_step) " << !_graph.has_previous_step(cur_step) << " _graph.get_id(_graph.get_handle_of_step(prev_step)) != region.second: " << (_graph.get_id(_graph.get_handle_of_step(prev_step)) != region.second) << " _graph.get_id(_graph.get_handle_of_step(prev_step)) " << _graph.get_id(_graph.get_handle_of_step(prev_step)) << " region.second " << region.second << endl; 
+                // }
+                // cerr << "here is cur_step: " << _graph.get_id(_graph.get_handle_of_step(cur_step)) << " " << _graph.get_sequence(_graph.get_handle_of_step(cur_step)) << endl;
                 path_seq += _graph.get_sequence(_graph.get_handle_of_step(cur_step));
                 prev_step = cur_step;
                 cur_step = _graph.get_next_step(cur_step);
+            }
+            if (_graph.get_sequence(_graph.get_handle(region.second)).size() == 0)
+            {
+                //If the rightmost node is empty, append an A to the end to ensure that the empty node is represented. This will be removed before realigned subgraph is inserted into the graph.
+                //todo: before writing this line, see if there's a better place to add it. Don't I add it to all haplotypes at the same time somewhere else (presumably accidentally before I get embedded paths?).
+                path_seq += "A";
+            }
+            if (_graph.get_sequence(_graph.get_handle(region.first)).size() == 0)
+            {
+                //If the rightmost node is empty, append an A to the end to ensure that the empty node is represented. This will be removed before realigned subgraph is inserted into the graph.
+                //todo: before writing this line, see if there's a better place to add it. Don't I add it to all haplotypes at the same time somewhere else (presumably accidentally before I get embedded paths?).
+                path_seq = "A" + path_seq;
             }
             if (backwards) //guaranteed false, here. (but not where code was copied from)
             {
@@ -1012,7 +1021,7 @@ void SnarlNormalizer::extract_haplotypes(const SubHandleGraph& snarl, const pair
         }
         else
         {
-            //this path goes halfway across the graph, and thus must be dropped.
+            //this path goes part-way across the graph, and thus must be dropped.
             //todo: actually implement this. Currently just _debug_code.
             // paths_to_delete.emplace(path);
             // string deleted_path = _graph.get_path_name(_graph.get_path_handle_of_step(path.first));

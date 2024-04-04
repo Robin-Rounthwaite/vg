@@ -415,6 +415,7 @@ int main_normalize(int argc, char **argv) {
       //todo: find way to load gbwtgraph's unique pointer without saving and then reloading file.
       gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_output_file);
       gbwt_graph->set_gbwt(*gbwt);
+      gbwt_graph_file = gbwt_graph_output_file;
     }
     else 
     {
@@ -539,6 +540,26 @@ int main_normalize(int argc, char **argv) {
         // //todo: end debug-code:
         parallel_regions_gbwt_updates = region_finder.get_parallel_normalize_regions(snarl_roots, *distance_index, parallel_normalize_regions, desegregation_candidates, segregated_node_to_parent);
         
+
+        // if (run_tests && graph->max_node_id() < 100) //essentially just for tiny tests
+        // {
+        //     //visualize every node after get_parallel_normalize_regions.
+        //     cerr << "here are the nodes after get_parallel_normalize_regions" << endl;
+        //     graph->for_each_handle([&](handle_t handle){
+        //         cerr << "node: " << graph->get_id(handle) << " " << graph->get_sequence(handle) << "\tneighbors left: " ;
+        //         graph->follow_edges(handle, true, [&](handle_t left){
+        //             cerr << graph->get_id(left) << " ";
+
+        //         });
+        //         cerr << "\tright: ";
+        //         graph->follow_edges(handle, false, [&](handle_t right){
+        //             cerr << graph->get_id(right) << " ";
+        //         });
+        //         cerr << endl;
+        //     });
+        // }
+
+
         cerr << "found " << parallel_normalize_regions.size() << " regions to normalize." << endl;
         if (run_tests)
         {
@@ -718,6 +739,7 @@ int main_normalize(int argc, char **argv) {
     if (!parallel_regions_gbwt_updates.size()==0)
     {
         gbwt.reset();
+        gbwt_graph.reset();
     }
 
     // =======running normalize=======
@@ -788,6 +810,14 @@ int main_normalize(int argc, char **argv) {
     cerr << "max_region_gap (-n): " << max_region_gap << endl;
     cerr << "threads (-t): " << threads << endl;
 
+    // if (run_tests && graph->max_node_id() < 100) //essentially just for tiny tests
+    // {
+    //     cerr << "see every node in graph after normalization but before segregation: " << endl;
+    //     graph->for_each_handle([&](handle_t handle){
+    //         cerr << "id: " << graph->get_id(handle) << " seq: " << graph->get_sequence(handle) << " length: " << graph->get_length(handle) << endl;
+    //     });
+    // }
+
     // cerr << "=======updating gbwt after normalization and before desegregating regions=======" << endl;
     // cerr << "updating gbwt after normalization" << endl;
     // auto _post_norm_gbwt_update_start = chrono::high_resolution_clock::now();
@@ -801,6 +831,27 @@ int main_normalize(int argc, char **argv) {
     // // make a new gbwt_graph for the normalized_gbwt.
     // gbwtgraph::GBWTGraph normalized_gbwt_graph = gbwtgraph::GBWTGraph(normalized_gbwt, *graph);
 
+    // if (run_tests && graph->max_node_id() < 100) //essentially just for tiny tests
+    // {
+    //     //visualize every update to the gbwt, and see if it properly accounts for what's going to happen with desegregation candidates.
+    //     for (vg::RebuildJob::mapping_type update : gbwt_normalize_updates)
+    //     {
+    //         cerr << "original sequence of nodes: ";
+    //         for (auto node : update.first)
+    //         {
+    //             cerr << gbwt::Node::id(node) << " ";
+    //         }
+    //         cerr << endl;
+    //         cerr << "new sequence of nodes: ";
+    //         for (auto node : update.second)
+    //         {
+    //             cerr << gbwt::Node::id(node) << " ";
+    //         }
+    //         cerr << endl;
+    //     }
+    // }
+    
+
     cerr << "=======desegregating normalization regions after parallelized normalization=======" << endl;
     cerr << "desegregating the normalize regions." << endl;
     vg::algorithms::NormalizeRegionFinder post_norm_region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
@@ -808,15 +859,49 @@ int main_normalize(int argc, char **argv) {
     // std::vector<vg::RebuildJob::mapping_type> desegregated_regions_gbwt_updates = post_norm_region_finder.desegregate_nodes(desegregation_candidates);
     post_norm_region_finder.desegregate_nodes(desegregation_candidates);
 
+    if (run_tests && graph->max_node_id() < 100) //essentially just for tiny tests
+    {
+        //check to see if every node in the graph can be accessed, and is not empty.
+        // cerr << "after desegregation: " << endl;
+        graph->for_each_handle([&](handle_t handle){
+            if (graph->get_length(handle) == 0)
+            {
+                cerr << "ERROR: a node is of length zero after normalization." << endl;
+                cerr << "the graph will be saved for debugging purposes, but is essentially invalid." << endl;
+            }
+            // cerr << " graph->get_id(handle): " << graph->get_id(handle) << " graph->get_sequence(handle): " << graph->get_sequence(handle) << " graph->get_length(handle): " << graph->get_length(handle) << endl;
+            // cerr << "left neighbors: " << endl << "\t";
+            // graph->follow_edges(handle, true, [&](handle_t left){
+            //     cerr << graph->get_id(left) << " ";
+
+            // });
+            // cerr << endl;
+        });
+    }
+
     cerr << "======preparing and saving output=======" << endl;
 
     cerr << "saving updated graph to file" << endl;
     //save normalized graph
     vg::io::save_handle_graph(graph.get(), std::cout);
 
+    //todo: make this code fit so I can update the original gbwt.
+    //todo: also reset any existing gbwts that aren't the original gbwt, since we don't need them anymore.
+    //re-load the original gbwt and gbwt graph for the apply_gbwt_changelog function
+    // gbwt
+    cerr << "loading original gbwt" << endl;
+    ifstream gbwt_stream_2;
+    gbwt_stream_2.open(gbwt_file);    
+    gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream_2);
+
+    // gbwt graph 
+    cerr << "loading original gbwt graph" << endl;
+    gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_file);
+    gbwt_graph->set_gbwt(*gbwt);
+
     cerr << "updating gbwt after de-isolation." << endl;
-    auto _desegregated_regions_gbwt_update_start = chrono::high_resolution_clock::now();    
-    gbwt::GBWT normalized_desegregated_gbwt = vg::algorithms::apply_gbwt_changelog(parallel_regions_gbwt_graph, gbwt_normalize_updates, parallel_regions_gbwt, gbwt_threads, false);
+    auto _desegregated_regions_gbwt_update_start = chrono::high_resolution_clock::now();
+    gbwt::GBWT normalized_desegregated_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, gbwt_normalize_updates, *gbwt, gbwt_threads, false);
 
     auto _desegregated_regions_gbwt_update_end = chrono::high_resolution_clock::now();    
     chrono::duration<double> _desegregated_regions_gbwt_update_elapsed = _desegregated_regions_gbwt_update_end - _desegregated_regions_gbwt_update_start;
@@ -824,6 +909,11 @@ int main_normalize(int argc, char **argv) {
 
     cerr << "saving updated gbwt" << endl;
     save_gbwt(normalized_desegregated_gbwt, output_gbwt_file, true);
+
+    cerr << "generating and saving the corresponding gbwt graph" << endl;
+    // make a new gbwt_graph for the normalized_gbwt.
+    gbwtgraph::GBWTGraph normalized_desegregated_gbwt_graph = gbwtgraph::GBWTGraph(normalized_desegregated_gbwt, *graph);
+    save_gbwtgraph(normalized_desegregated_gbwt_graph, output_gbwt_file + ".gg", true);
 
     // Record end time
     auto finish = std::chrono::high_resolution_clock::now();

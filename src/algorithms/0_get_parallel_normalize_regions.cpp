@@ -144,31 +144,31 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
                 return false;
             });
 
-            //todo: begin debug_code
-            std::cerr << "looking at original leftmost_handle: " << _graph.get_id(leftmost_handle) << endl; 
-            vector<step_handle_t> steps_0 = _graph.steps_of_handle(_graph.get_handle(_graph.get_id(leftmost_handle)));
-            for (step_handle_t step : steps_0)
-            {
-                std::cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " on " << _graph.get_id(_graph.get_handle_of_step(step)) << endl; 
-            }
-            //todo: end debug_code
+            // //todo: begin debug_code
+            // std::cerr << "looking at original leftmost_handle: " << _graph.get_id(leftmost_handle) << endl; 
+            // vector<step_handle_t> steps_0 = _graph.steps_of_handle(_graph.get_handle(_graph.get_id(leftmost_handle)));
+            // for (step_handle_t step : steps_0)
+            // {
+            //     std::cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " on " << _graph.get_id(_graph.get_handle_of_step(step)) << endl; 
+            // }
+            // //todo: end debug_code
 
             pair<handle_t, handle_t> new_leftmosts = _graph.divide_handle(leftmost_handle, _graph.get_sequence(leftmost_handle).size()/2);
-            //todo: begin debug_code
-            std::cerr << "looking at handle new_leftmosts.first: " << _graph.get_id(new_leftmosts.first) << endl; 
-            vector<step_handle_t> steps_1 = _graph.steps_of_handle(_graph.get_handle(_graph.get_id(new_leftmosts.first)));
-            for (step_handle_t step : steps_1)
-            {
-                std::cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " on " << _graph.get_id(_graph.get_handle_of_step(step)) << endl; 
-            }
-            std::cerr << "looking at handle new_leftmosts.second: " << _graph.get_id(new_leftmosts.second) << endl; 
-            vector<step_handle_t> steps_2 = _graph.steps_of_handle(_graph.get_handle(_graph.get_id(new_leftmosts.second)));
-            for (step_handle_t step : steps_2)
-            {
-                std::cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " on " << _graph.get_id(_graph.get_handle_of_step(step)) << endl; 
-            }
+            // //todo: begin debug_code
+            // std::cerr << "looking at handle new_leftmosts.first: " << _graph.get_id(new_leftmosts.first) << endl; 
+            // vector<step_handle_t> steps_1 = _graph.steps_of_handle(_graph.get_handle(_graph.get_id(new_leftmosts.first)));
+            // for (step_handle_t step : steps_1)
+            // {
+            //     std::cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " on " << _graph.get_id(_graph.get_handle_of_step(step)) << endl; 
+            // }
+            // std::cerr << "looking at handle new_leftmosts.second: " << _graph.get_id(new_leftmosts.second) << endl; 
+            // vector<step_handle_t> steps_2 = _graph.steps_of_handle(_graph.get_handle(_graph.get_id(new_leftmosts.second)));
+            // for (step_handle_t step : steps_2)
+            // {
+            //     std::cerr << _graph.get_path_name(_graph.get_path_handle_of_step(step)) << " on " << _graph.get_id(_graph.get_handle_of_step(step)) << endl; 
+            // }
 
-            //todo: end debug_code
+            // //todo: end debug_code
 
             
             desegregation_candidates.push_back(make_pair(make_pair(_graph.get_id(new_leftmosts.first), _graph.get_id(new_leftmosts.second)), original_leftmost));
