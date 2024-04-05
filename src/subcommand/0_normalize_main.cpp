@@ -150,6 +150,12 @@ void help_normalize(char **argv) {
             "regions gbwt, gg, and graph, contains all the program needs to continue a run "
             "of normalize after the first segregation of regions. (distance index "
             "may be passed to the program untouched.)." << endl
+        << "    -G, --original_gbwt       used only if -S is given. It is required with "
+        "-S. This allows normalize to make the final updated gbwt and gbwt-graph, which "
+        "requires the gbwt and gbwt graph used during segregation." << endl
+        << "    -R, --original_gbwt_graph       used only if -S is given. It is required "
+        "with -S. This allows normalize to make the final updated gbwt and gbwt-graph, "
+        "which requires the gbwt and gbwt graph used during segregation." << endl
         << "    -j, --skip_desegregate       Instead of desegregating the regions in "
         "the graph (requiring two full updates to the gbwt), simply save the normalized "
         "graph in the segregated_regions format." << endl
@@ -178,6 +184,8 @@ int main_normalize(int argc, char **argv) {
     int gbwt_threads = 12;
     string output_segregate_regions_only_file;
     string input_segregate_regions_only_file;
+    string original_gbwt_file;
+    string original_gbwt_graph_file;
     bool skip_desegregate = false;
     bool run_tests = false;
     bool debug_print = false;
@@ -208,6 +216,8 @@ int main_normalize(int argc, char **argv) {
             {"gbwt_threads", required_argument, 0, 'T'},
             {"output_segregate_regions_only_file", required_argument, 0, 's'},
             {"input_segregate_regions_only_file", required_argument, 0, 'S'},
+            {"original_gbwt_file", required_argument, 0, 'G'},
+            {"original_gbwt_graph_file", required_argument, 0, 'R'},
             {"skip_desegregate", no_argument, 0, 'j'},
             {"run_tests", no_argument, 0, 'u'},
             {"debug_print", no_argument, 0, 'b'},
@@ -215,7 +225,7 @@ int main_normalize(int argc, char **argv) {
             {"debug_export_gbwt_desegregate_data", required_argument, 0, 'E'},
             {0, 0, 0, 0}};
         int option_index = 0;
-        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:T:s:S:jubD:E:", long_options,
+        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:T:s:S:G:R:jubD:E:", long_options,
                         &option_index);
         // Detect the end of the options.
         if (c == -1)
@@ -265,6 +275,14 @@ int main_normalize(int argc, char **argv) {
 
         case 'S':
             input_segregate_regions_only_file = optarg;
+            break;
+
+        case 'G':
+            original_gbwt_file = optarg;
+            break;
+            
+        case 'R':
+            original_gbwt_graph_file = optarg;
             break;
 
         case 'j':
@@ -381,7 +399,7 @@ int main_normalize(int argc, char **argv) {
         // cerr << "handles checked: " << handle_checked << endl;
         //todo: uncomment old version of this debug region:
         ////////SNIPPET: this one exports all nodes in a graph, even if the nodes are non-consecutive (unlike in vg find). Important for script visualize-graphs/visualize-subgraph.sh
-        cerr << "in get_snarl_nodes." << endl;
+        // cerr << "in get_snarl_nodes." << endl;
         // vg::id_t leftmost_id = 996832;
         // vg::id_t rightmost_id = 997083;
         // debug_get_snarl_nodes.first = 996832;
@@ -614,6 +632,11 @@ int main_normalize(int argc, char **argv) {
     }
     else //not (input_segregate_regions_only_file.size() == 0)
     {
+        if (!skip_desegregate && (original_gbwt_file.size()==0 || original_gbwt_graph_file.size()==0))
+        {
+            cerr << "ERROR: if you're using the -S option to skip the first segregation step, but haven't also included the --original_gbwt_graph and --original_gbwt, then the option --skip-desegregation must also be toggled. Because desegregation requires the use of the gbwt + gg that were used in creating the skip-desegregation txt file." << endl;
+            exit(1);
+        }
         cerr << "getting input segregate regions file data." << endl;
         std::ifstream file( input_segregate_regions_only_file );
         string line_str;
@@ -888,16 +911,34 @@ int main_normalize(int argc, char **argv) {
     //todo: make this code fit so I can update the original gbwt.
     //todo: also reset any existing gbwts that aren't the original gbwt, since we don't need them anymore.
     //re-load the original gbwt and gbwt graph for the apply_gbwt_changelog function
-    // gbwt
-    cerr << "loading original gbwt" << endl;
-    ifstream gbwt_stream_2;
-    gbwt_stream_2.open(gbwt_file);    
-    gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream_2);
+    if (input_segregate_regions_only_file.size()!=0)
+    {
+        //then we must read from the files --original_gbwt and --original_gbwt_graph to do the desegregation.
+        // gbwt
+        cerr << "loading original gbwt" << endl;
+        ifstream gbwt_stream_2;
+        gbwt_stream_2.open(original_gbwt_file);    
+        gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream_2);
 
-    // gbwt graph 
-    cerr << "loading original gbwt graph" << endl;
-    gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_file);
-    gbwt_graph->set_gbwt(*gbwt);
+        // gbwt graph 
+        cerr << "loading original gbwt graph" << endl;
+        gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(original_gbwt_graph_file);
+        gbwt_graph->set_gbwt(*gbwt);
+        
+    }
+    else
+    {
+        // gbwt
+        cerr << "loading original gbwt" << endl;
+        ifstream gbwt_stream_2;
+        gbwt_stream_2.open(gbwt_file);    
+        gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream_2);
+
+        // gbwt graph 
+        cerr << "loading original gbwt graph" << endl;
+        gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_file);
+        gbwt_graph->set_gbwt(*gbwt);
+    }
 
     cerr << "updating gbwt after de-isolation." << endl;
     auto _desegregated_regions_gbwt_update_start = chrono::high_resolution_clock::now();
