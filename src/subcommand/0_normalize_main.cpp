@@ -915,13 +915,13 @@ int main_normalize(int argc, char **argv) {
     {
         //then we must read from the files --original_gbwt and --original_gbwt_graph to do the desegregation.
         // gbwt
-        cerr << "loading original gbwt" << endl;
+        cerr << "loading original gbwt (from -G)" << endl;
         ifstream gbwt_stream_2;
         gbwt_stream_2.open(original_gbwt_file);    
         gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream_2);
 
         // gbwt graph 
-        cerr << "loading original gbwt graph" << endl;
+        cerr << "loading original gbwt graph (from -R)" << endl;
         gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(original_gbwt_graph_file);
         gbwt_graph->set_gbwt(*gbwt);
         
@@ -929,13 +929,13 @@ int main_normalize(int argc, char **argv) {
     else
     {
         // gbwt
-        cerr << "loading original gbwt" << endl;
+        cerr << "reloading original gbwt" << endl;
         ifstream gbwt_stream_2;
         gbwt_stream_2.open(gbwt_file);    
         gbwt = vg::io::VPKG::load_one<gbwt::GBWT>(gbwt_stream_2);
 
         // gbwt graph 
-        cerr << "loading original gbwt graph" << endl;
+        cerr << "reloading original gbwt graph" << endl;
         gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_file);
         gbwt_graph->set_gbwt(*gbwt);
     }
