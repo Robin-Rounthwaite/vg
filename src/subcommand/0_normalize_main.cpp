@@ -654,7 +654,7 @@ int main_normalize(int argc, char **argv) {
             // cerr << "in gbwtgraph: " << gbwt_graph->has_node(region.first) << " " << gbwt_graph->has_node(region.second) << endl;
             // cerr << "in graph: " << graph->has_node(region.first) << " " << graph->has_node(region.second) << endl;
         }
-        while(getline(file, line_str, '\n'))
+        while(getline(file, line_str, '\n') && line_str!="-----") //fill desegregation_candidates.
         {
             stringstream line_ss(line_str);
             
@@ -668,6 +668,23 @@ int main_normalize(int argc, char **argv) {
 
             desegregation_candidates.push_back(candidate_with_original);
 
+        }
+        bool third_field = false;
+        while(getline(file, line_str, '\n')) //fill segregated_node_to_parent.
+        {
+            third_field = true;
+            stringstream line_ss(line_str);
+            
+            string region_first; string region_second;
+            getline(line_ss, region_first, ' ');
+            getline(line_ss, region_second, ' ');
+
+            segregated_node_to_parent[parse<int>(region_first)] = parse<int>(region_second);
+        }
+        if (!third_field)
+        {
+            cerr << "no third field available in segregated_regions file! This indicates you are using an out-of-date segregated-regions file. Please make a new one." << endl;
+            exit(1);
         }
         file.close();
     }
@@ -700,25 +717,41 @@ int main_normalize(int argc, char **argv) {
     {
         cerr << "saving the segregated-regions-only files and then exiting, because of option output_segregate_regions_only_file (-s)" << endl;
         cerr << "saving updated graph to file" << endl;
-        //save normalized graph
+        //save segregated graph
         vg::io::save_handle_graph(graph.get(), std::cout);
 
+        //save segregated gbwt
         cerr << "saving updated gbwt" << endl;
         save_gbwt(parallel_regions_gbwt, output_gbwt_file, true);
 
+        cerr << "generating and saving the corresponding gbwt graph" << endl;
+        // make a new gbwt_graph for the normalized_gbwt.
+        gbwtgraph::GBWTGraph parallel_regions_gbwt_graph = gbwtgraph::GBWTGraph(parallel_regions_gbwt, *graph);
+        save_gbwtgraph(parallel_regions_gbwt_graph, output_gbwt_file + ".gg", true);
+
         cerr << "saving extra segregate regions data to file " << output_segregate_regions_only_file << endl;
         std::ofstream output_file(output_segregate_regions_only_file);
+        //save normalize_regions
         for (auto const& region : parallel_normalize_regions)
         {
             // cerr << "saving the following to output: " << region.first << " " << region.second << endl;
             output_file << region.first << " " << region.second << endl;
         }
         output_file << "-----" << endl; //this marks the end of parallel_normalize_regions and the beginning of desegregation_candidates.
+        //save desegregation_candidates
         for (auto const& cand : desegregation_candidates)
         {
             // cerr << "saving the following to desegregation_candidates: " << endl;
             output_file << cand.first.first << " " << cand.first.second << " " << cand.second << endl;
         }
+        output_file << "-----" << endl; //this marks the end of desegregation_candidates and the beginning of segregated_node_to_parent.
+        //save unordered_map<vg::id_t, vg::id_t> segregated_node_to_parent.
+        for (auto const& it : segregated_node_to_parent)
+        {
+            output_file << it.first << " " << it.second << endl;
+        }
+
+        
         exit(0);
         
         // std::ostream_iterator<std::string> output_iterator(output_file, "\n");
