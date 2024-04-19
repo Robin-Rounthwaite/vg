@@ -68,7 +68,7 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
 /// @param split_normalize_regions 
 std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions)
 {
-    // fill_custom_split_normalize_regions(split_normalize_regions);
+    fill_custom_split_normalize_regions(split_normalize_regions);
     // vector<step_handle_t> steps = _graph.steps_of_handle(_graph.get_handle(3234226));
     // _crashing_step = steps.back();
 
@@ -2498,7 +2498,6 @@ handle_t SnarlNormalizer::overwrite_node_id(const id_t old_node_id, const id_t n
 void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, string>>& source_to_sink_gbwt_paths, const pair<handle_t, handle_t> left_and_right_id){
 
     //because the vg::Aligner object has undefined behavior when it is passed a subgraph with empty nodes, I make sure to fill any empty nodes I have before running the alignment. Then the empty nodes are removed after.  
-
     // cerr << "showing node 3822739 first: " <<  _graph.get_id(_graph.get_handle(3822739)) << " " << _graph.get_sequence(_graph.get_handle(3822739)) << endl;
 
     pair<handle_t, handle_t> new_left_right;
@@ -2576,8 +2575,32 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
         gbwt::vector_type after = apply_segregated_node_to_parent(alignment_full_path);
         // _gbwt_changelog.emplace_back(path.first, alignment_full_path);
         _gbwt_changelog.emplace_back(before, after);
+        cerr << "about to search before/after for 2701. _graph.has_node(2701) " << _graph.has_node(2701) << endl;
+        for (auto gbwt_node : before)
+        {
+            id_t node_id = gbwt::Node::id(gbwt_node);
+            if (node_id == 2701)
+            {
+                cerr << "2701 in before. in region " << _graph.get_id(left_and_right_id.first) << " " << _graph.get_id(left_and_right_id.second) << " Here is full before: " << endl;
+                for (auto gbwt_node_before : before)
+                {
+                    cerr << gbwt::Node::id(gbwt_node_before) << endl;
+                }
+            }
+        }
 
-
+        for (auto gbwt_node : after)
+        {
+            id_t node_id = gbwt::Node::id(gbwt_node);
+            if (node_id == 2701)
+            {
+                cerr << "2701 in after. in region " << _graph.get_id(left_and_right_id.first) << " " << _graph.get_id(left_and_right_id.second) << " Here is full after: " << endl;
+                for (auto gbwt_node_after : after)
+                {
+                    cerr << gbwt::Node::id(gbwt_node_after) << endl;
+                }
+            }
+        }
         
         // cerr << pb2json(alignment.path()) << endl << alignment.query_position() << endl << alignment.path().mapping().begin() << endl << endl;
         // alignment.path().mapping()

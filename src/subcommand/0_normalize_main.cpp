@@ -815,6 +815,7 @@ int main_normalize(int argc, char **argv) {
     //   *graph, *gbwt, *gbwt_graph, nodes_to_delete, max_handle_size, max_region_size, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
     // std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(snarl_roots);
     
+    cerr << "graph->has_node(2701) " << graph->has_node(2701) << endl;
     
 
     vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
@@ -907,6 +908,7 @@ int main_normalize(int argc, char **argv) {
     //     }
     // }
     
+    cerr << "graph->has_node(2701) " << graph->has_node(2701) << endl;
 
     cerr << "=======desegregating normalization regions after parallelized normalization=======" << endl;
     cerr << "desegregating the normalize regions." << endl;
@@ -934,6 +936,7 @@ int main_normalize(int argc, char **argv) {
             // cerr << endl;
         });
     }
+    cerr << "graph->has_node(2701) " << graph->has_node(2701) << endl;
 
     cerr << "======preparing and saving output=======" << endl;
 
@@ -972,7 +975,7 @@ int main_normalize(int argc, char **argv) {
         gbwt_graph = vg::io::VPKG::load_one<gbwtgraph::GBWTGraph>(gbwt_graph_file);
         gbwt_graph->set_gbwt(*gbwt);
     }
-
+    cerr << "graph->has_node(2701) " << graph->has_node(2701) << endl;
     cerr << "updating gbwt after de-isolation." << endl;
     auto _desegregated_regions_gbwt_update_start = chrono::high_resolution_clock::now();
     gbwt::GBWT normalized_desegregated_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, gbwt_normalize_updates, *gbwt, gbwt_threads, false);
