@@ -172,7 +172,6 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
 
             
             desegregation_candidates.push_back(make_pair(make_pair(_graph.get_id(new_leftmosts.first), _graph.get_id(new_leftmosts.second)), original_leftmost));
-
             if (_graph.get_id(new_leftmosts.first) != original_leftmost)
             {
                 segregated_node_to_parent[_graph.get_id(new_leftmosts.first)] = original_leftmost;
@@ -303,7 +302,7 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             //todo: end debug_code
 
             // gotta move the original node id to the rightmost of the divided handles, 
-            // rather than the leftmost:
+            // rather than the leftmost (which is default):
             handle_t dummy_handle = _graph.create_handle("A");
             id_t new_node_id = _graph.get_id(dummy_handle);
             _graph.destroy_handle(dummy_handle);
@@ -311,13 +310,13 @@ vector<pair<id_t, id_t>> NormalizeRegionFinder::split_sources_and_sinks(vector<p
             overwrite_node_id(_graph.get_id(new_rightmosts.first), new_node_id);
             overwrite_node_id(_graph.get_id(new_rightmosts.second), region.second);
             desegregation_candidates.push_back(make_pair(make_pair(new_node_id, region.second), original_rightmost));
-            if (_graph.get_id(new_rightmosts.first) != original_rightmost)
+            if (new_node_id != original_rightmost)
             {
-                segregated_node_to_parent[_graph.get_id(new_rightmosts.first)] = original_rightmost;
+                segregated_node_to_parent[new_node_id] = original_rightmost;
             }
-            if (_graph.get_id(new_rightmosts.second) != original_rightmost)
+            if (region.second != original_rightmost) //should always be false.
             {
-                segregated_node_to_parent[_graph.get_id(new_rightmosts.second)] = original_rightmost;
+                segregated_node_to_parent[region.second] = original_rightmost;
             }
 
             

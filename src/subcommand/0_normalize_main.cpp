@@ -816,12 +816,14 @@ int main_normalize(int argc, char **argv) {
     // std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(snarl_roots);
     
     cerr << "graph->has_node(2701) " << graph->has_node(2701) << endl;
-    
+    cerr << "graph->has_node(5677687) " << graph->has_node(5677687) << endl;
+    cerr << "segregated_node_to_parent[5677687] " << segregated_node_to_parent[5677687] << endl;
 
     vg::algorithms::SnarlNormalizer normalizer = vg::algorithms::SnarlNormalizer(
       *graph, parallel_regions_gbwt, parallel_regions_gbwt_graph, segregated_node_to_parent, max_handle_size, max_region_size, threads, max_strings_per_alignment, "GBWT", alignment_algorithm, disable_gbwt_update, debug_print);
 
     std::vector<vg::RebuildJob::mapping_type> gbwt_normalize_updates = normalizer.parallel_normalization(parallel_normalize_regions);
+    cerr << "graph->has_node(5677687) " << graph->has_node(5677687) << endl;
 
     if (debug_export_gbwt_desegregate_data.size()>0)
     {
@@ -915,7 +917,10 @@ int main_normalize(int argc, char **argv) {
     vg::algorithms::NormalizeRegionFinder post_norm_region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
     //merges nodes, updates entries in gbwt_normalize to match those merged nodes. (note: is there a way to make this O(n), rather than O(n^2)? Maybe a reverse index... seems possibly a distraction. Could be worth just running desegregate nodes after updating the gbwt, and update the gbwt a third time.)
     // std::vector<vg::RebuildJob::mapping_type> desegregated_regions_gbwt_updates = post_norm_region_finder.desegregate_nodes(desegregation_candidates);
+    cerr << "(before deseg) graph->has_node(5677687) " << graph->has_node(5677687) << endl;
+    
     post_norm_region_finder.desegregate_nodes(desegregation_candidates);
+    cerr << "(after deseg) graph->has_node(5677687) " << graph->has_node(5677687) << endl;
 
     if (run_tests && graph->max_node_id() < 100) //essentially just for tiny tests
     {
@@ -978,6 +983,73 @@ int main_normalize(int argc, char **argv) {
     cerr << "graph->has_node(2701) " << graph->has_node(2701) << endl;
     cerr << "updating gbwt after de-isolation." << endl;
     auto _desegregated_regions_gbwt_update_start = chrono::high_resolution_clock::now();
+
+    cerr << "does gbwt_normalize_updates have any use of '2701' in the 'after' phase? " << endl;
+    for (auto update : gbwt_normalize_updates)
+    {
+        for (auto gbwt_node : update.second)
+        {
+            if (gbwt::Node::id(gbwt_node) == 2701)
+            {
+                cerr << "2701 is present in the updates. Here is first and second: " << endl;
+                cerr << "update.first: " << endl;
+                for (auto gbwt_node_print : update.first)
+                {
+                    cerr << (gbwt::Node::id(gbwt_node_print)) << " ";
+                }
+                cerr << endl;
+                cerr << "update.second: " << endl;
+                for (auto gbwt_node_print : update.second)
+                {
+                    cerr << (gbwt::Node::id(gbwt_node_print)) << " ";
+                }
+                cerr << endl;
+
+            }
+        }
+    }
+
+    cerr << "here is the changelog: " << endl;
+    for (auto update : gbwt_normalize_updates)
+    {
+        cerr << "before: ";
+        for( auto item : update.first )
+        {
+            cerr << item << " ";
+        } 
+        cerr << "." << endl;
+        cerr << "after: ";
+        for( auto item : update.second )
+        {
+            cerr << item << " ";
+        } 
+        cerr << "." << endl;    
+    }
+
+    cerr << "----------------" << endl;
+    cerr << "here is the (decoded) changelog: " << endl;
+    for (auto update : gbwt_normalize_updates)
+    {
+        cerr << "before: ";
+        for( auto item : update.first )
+        {
+            cerr << gbwt::Node::id(item) << " ";
+        } 
+        cerr << "." << endl;
+        cerr << "after: ";
+        for( auto item : update.second )
+        {
+            cerr << gbwt::Node::id(item) << " ";
+        } 
+        cerr << "." << endl;  
+    }
+
+
+    cerr << "graph->has_node(5677687) " << graph->has_node(5677687) << endl;
+
+    cerr << "gbwt_graph->has_node(2701) " << gbwt_graph->has_node(2701) << endl;
+    vg::id_t my_id = 2701;
+    cerr << "segregated_node_to_parent(2701) " << segregated_node_to_parent[my_id] << endl;
     gbwt::GBWT normalized_desegregated_gbwt = vg::algorithms::apply_gbwt_changelog(*gbwt_graph, gbwt_normalize_updates, *gbwt, gbwt_threads, false);
 
     auto _desegregated_regions_gbwt_update_end = chrono::high_resolution_clock::now();    

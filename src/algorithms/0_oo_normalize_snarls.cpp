@@ -2575,32 +2575,32 @@ void SnarlNormalizer::log_gbwt_changes(const vector<pair<gbwt::vector_type, stri
         gbwt::vector_type after = apply_segregated_node_to_parent(alignment_full_path);
         // _gbwt_changelog.emplace_back(path.first, alignment_full_path);
         _gbwt_changelog.emplace_back(before, after);
-        cerr << "about to search before/after for 2701. _graph.has_node(2701) " << _graph.has_node(2701) << endl;
-        for (auto gbwt_node : before)
-        {
-            id_t node_id = gbwt::Node::id(gbwt_node);
-            if (node_id == 2701)
-            {
-                cerr << "2701 in before. in region " << _graph.get_id(left_and_right_id.first) << " " << _graph.get_id(left_and_right_id.second) << " Here is full before: " << endl;
-                for (auto gbwt_node_before : before)
-                {
-                    cerr << gbwt::Node::id(gbwt_node_before) << endl;
-                }
-            }
-        }
+        // cerr << "about to search before/after for 2701. _graph.has_node(2701) " << _graph.has_node(2701) << endl;
+        // for (auto gbwt_node : before)
+        // {
+        //     id_t node_id = gbwt::Node::id(gbwt_node);
+        //     if (node_id == 2701)
+        //     {
+        //         cerr << "2701 in before. in region " << _graph.get_id(left_and_right_id.first) << " " << _graph.get_id(left_and_right_id.second) << " Here is full before: " << endl;
+        //         for (auto gbwt_node_before : before)
+        //         {
+        //             cerr << gbwt::Node::id(gbwt_node_before) << endl;
+        //         }
+        //     }
+        // }
 
-        for (auto gbwt_node : after)
-        {
-            id_t node_id = gbwt::Node::id(gbwt_node);
-            if (node_id == 2701)
-            {
-                cerr << "2701 in after. in region " << _graph.get_id(left_and_right_id.first) << " " << _graph.get_id(left_and_right_id.second) << " Here is full after: " << endl;
-                for (auto gbwt_node_after : after)
-                {
-                    cerr << gbwt::Node::id(gbwt_node_after) << endl;
-                }
-            }
-        }
+        // for (auto gbwt_node : after)
+        // {
+        //     id_t node_id = gbwt::Node::id(gbwt_node);
+        //     if (node_id == 2701)
+        //     {
+        //         cerr << "2701 in after. in region " << _graph.get_id(left_and_right_id.first) << " " << _graph.get_id(left_and_right_id.second) << " Here is full after: " << endl;
+        //         for (auto gbwt_node_after : after)
+        //         {
+        //             cerr << gbwt::Node::id(gbwt_node_after) << endl;
+        //         }
+        //     }
+        // }
         
         // cerr << pb2json(alignment.path()) << endl << alignment.query_position() << endl << alignment.path().mapping().begin() << endl << endl;
         // alignment.path().mapping()
