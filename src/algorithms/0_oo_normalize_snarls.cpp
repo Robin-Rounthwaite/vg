@@ -68,7 +68,7 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
 /// @param split_normalize_regions 
 std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions)
 {
-    fill_custom_split_normalize_regions(split_normalize_regions);
+    // fill_custom_split_normalize_regions(split_normalize_regions);
     // vector<step_handle_t> steps = _graph.steps_of_handle(_graph.get_handle(3234226));
     // _crashing_step = steps.back();
 
