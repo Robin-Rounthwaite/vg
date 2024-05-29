@@ -68,6 +68,9 @@ SnarlNormalizer::SnarlNormalizer(MutablePathDeletableHandleGraph &graph,
 /// @param split_normalize_regions 
 std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalization(vector<pair<id_t, id_t>> split_normalize_regions)
 {
+    // _debug_print = true;
+    // cerr << split_normalize_regions.back().first << " " << split_normalize_regions.back().second << endl;
+    // cerr << _graph.has_node(split_normalize_regions.back().first) << " " << _graph.has_node(split_normalize_regions.back().second) << endl;
     // fill_custom_split_normalize_regions(split_normalize_regions);
     // vector<step_handle_t> steps = _graph.steps_of_handle(_graph.get_handle(3234226));
     // _crashing_step = steps.back();
@@ -136,6 +139,7 @@ std::vector<vg::RebuildJob::mapping_type> SnarlNormalizer::parallel_normalizatio
     #pragma omp parallel for
     for (auto region : split_normalize_regions)
     {
+        // cerr << "region: " << region.first << " " << region.second << endl;
         auto start_alignment = std::chrono::high_resolution_clock::now();
         #pragma omp critical(print_progress)
         {
@@ -550,6 +554,7 @@ bool SnarlNormalizer::test_snarl(const SubHandleGraph& snarl, const pair<id_t, i
         // cerr << "handle exists in second for each handle: " << snarl.get_id(handle) << endl;
         // cerr << "snarl.get_id(handle)" << " " << snarl.get_id(handle) << endl;
         const gbwt::SearchState handle_state = _gbwt_graph.get_state(_gbwt_graph.get_handle(snarl.get_id(handle)));
+        // cerr << "looking at handle " << snarl.get_id(handle) << "." << endl;
         // cerr << "_gbwt_graph.get_handle(snarl.get_id(handle))" << " " << _gbwt_graph.get_handle(snarl.get_id(handle)) << endl;
         // cerr << "_gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle)))" << " " << _gbwt_graph.get_bd_state(_gbwt_graph.get_handle(snarl.get_id(handle))) << endl;
         // cerr << "does the gbwt contain this node? " << _gbwt.contains(gbwt::Node::encode(snarl.get_id(handle), false)) << endl;
@@ -2094,6 +2099,7 @@ SubHandleGraph SnarlNormalizer::extract_subgraph(const HandleGraph &graph,
 
     // initialize with leftmost_handle (because we move only to the right of leftmost_handle):
     handle_t leftmost_handle = graph.get_handle(leftmost_id);
+    cerr << "adding handle " << graph.get_id(leftmost_handle) << endl;
     subgraph.add_handle(leftmost_handle);
     visited.insert(graph.get_id(leftmost_handle));
 

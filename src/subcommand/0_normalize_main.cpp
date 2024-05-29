@@ -141,9 +141,11 @@ void help_normalize(char **argv) {
         << "    -t, --threads      The number of threads used in the normalization process. Default:14."
         << "    -T, --gbwt_threads      The number of threads used in the gbwt update process. Default:14." //todo: maybe lower this if it turns out that the 14 threads is what's causing signal 9 crash in mustard.
         << endl
+        << "    -i, --input_normalize_regions_file      An input file that contains regions to be normalized. One region per line, each region will consist of two ints separated by a space. Note: region merging and segregation of regions won't be done. So make sure that none of the regions overlap one another. (i.e. share a source or sink)."
+        << endl
         << "    -s, --output_segregate_regions_only_file       specify the output file for the segregation of the graph into segregated "
-            "regions, and generates an updated gbwt. This allows for easy tests of "
-            "normalize on the segregated graph without having to update the gbwt. "
+            "regions, and generates an updated gbwt. This is essentially a save-state of the program halfway through running normalize, and allows for easy tests of "
+            "normalize on the segregated graph without having to update the gbwt. (the program must also output a new gbwt, gg, and graph to be used with this file.)"
             "(debugging tool)" << endl
         << "    -S, --input_segregate_regions_only_file       input from a previous run "
             "that had an output of segregate_regions_only. This. along with the segregated "
@@ -182,6 +184,7 @@ int main_normalize(int argc, char **argv) {
     int max_region_gap = 32; //todo: when abpoa added, possibly make default region gap larger.
     int threads = 14;
     int gbwt_threads = 12;
+    string input_normalize_regions_file;
     string output_segregate_regions_only_file;
     string input_segregate_regions_only_file;
     string original_gbwt_file;
@@ -214,6 +217,7 @@ int main_normalize(int argc, char **argv) {
             {"max_region_gap", required_argument, 0, 'n'},
             {"threads", required_argument, 0, 't'},
             {"gbwt_threads", required_argument, 0, 'T'},
+            {"input_normalize_regions_file", required_argument, 0, 'i'},
             {"output_segregate_regions_only_file", required_argument, 0, 's'},
             {"input_segregate_regions_only_file", required_argument, 0, 'S'},
             {"original_gbwt_file", required_argument, 0, 'G'},
@@ -225,7 +229,7 @@ int main_normalize(int argc, char **argv) {
             {"debug_export_gbwt_desegregate_data", required_argument, 0, 'E'},
             {0, 0, 0, 0}};
         int option_index = 0;
-        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:T:s:S:G:R:jubD:E:", long_options,
+        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:T:i:s:S:G:R:jubD:E:", long_options,
                         &option_index);
         // Detect the end of the options.
         if (c == -1)
@@ -267,6 +271,10 @@ int main_normalize(int argc, char **argv) {
 
         case 'T':
             gbwt_threads = parse<int>(optarg);
+            break;
+
+        case 'i':
+            input_normalize_regions_file = optarg;
             break;
 
         case 's':
@@ -472,7 +480,7 @@ int main_normalize(int argc, char **argv) {
 
     // used to update the gbwt after segregating regions so that normalize can use it.
     std::vector<vg::RebuildJob::mapping_type> parallel_regions_gbwt_updates;
-    if (input_segregate_regions_only_file.size() == 0) // We don't have an input file recording segregated nodes. So we're running segregate_nodes.
+    if (input_normalize_regions_file.size()==0 && input_segregate_regions_only_file.size() == 0) // We don't have an input file recording segregated nodes. So we're running segregate_nodes.
     {
         // v2 distance index
         cerr << "loading distance index" << endl;
@@ -529,6 +537,7 @@ int main_normalize(int argc, char **argv) {
         },
         [&](const bdsg::net_handle_t& chain) {return true;},
         [&] (const bdsg::net_handle_t& node) {return true;});
+        cerr << "snarl roots: " << snarl_roots.back().first << " " << snarl_roots.back().second << endl;
 
         cerr << "segregating regions for parallelization" << endl; //so that edits in two parallel jobs can't touch the same node.
         vg::algorithms::NormalizeRegionFinder region_finder = vg::algorithms::NormalizeRegionFinder(*graph, max_region_size, max_region_gap);
@@ -630,7 +639,13 @@ int main_normalize(int argc, char **argv) {
             }
         }
     }
-    else //not (input_segregate_regions_only_file.size() == 0)
+    else if (input_segregate_regions_only_file.size() != 0 && input_normalize_regions_file.size()!=0)
+    {
+        cerr << "ERROR: You don't want to include both --input_segregate_regions_only_file and --input_normalize_regions_file, as they are conflicting commands." << endl;
+        exit(1);
+        
+    }
+    else if (input_segregate_regions_only_file.size() != 0)
     {
         if (!skip_desegregate && (original_gbwt_file.size()==0 || original_gbwt_graph_file.size()==0))
         {
@@ -688,7 +703,23 @@ int main_normalize(int argc, char **argv) {
         }
         file.close();
     }
+    else if (input_normalize_regions_file.size()!=0)
+    {
+        cerr << "getting input_normalize_regions_file data." << endl;
+        std::ifstream file( input_normalize_regions_file );
+        string line_str;
+        while(getline(file, line_str, '\n'))
+        {
+            stringstream line_ss(line_str);
 
+            string region_first; string region_second;
+            getline(line_ss, region_first, ' ');
+            getline(line_ss, region_second, ' ');
+
+            pair<vg::id_t, vg::id_t> region = make_pair(parse<int>(region_first), parse<int>(region_second));
+            parallel_normalize_regions.push_back(region);
+        }
+    }
 
 
     cerr << "updating the gbwt and gbwt_graph with the isolated regions" << endl;
