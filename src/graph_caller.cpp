@@ -8,10 +8,14 @@ namespace vg {
 
 GraphCaller::GraphCaller(SnarlCaller& snarl_caller,
                          SnarlManager& snarl_manager) :
-    snarl_caller(snarl_caller), snarl_manager(snarl_manager) {
+    snarl_caller(snarl_caller), snarl_manager(snarl_manager), show_progress(false) {
 }
 
 GraphCaller::~GraphCaller() {
+}
+
+void GraphCaller::set_show_progress(bool show_progress) {
+    this->show_progress = show_progress;
 }
 
 void GraphCaller::call_top_level_snarls(const HandleGraph& graph, RecurseType recurse_type) {
@@ -19,6 +23,10 @@ void GraphCaller::call_top_level_snarls(const HandleGraph& graph, RecurseType re
     // Used to recurse on children of parents that can't be called
     size_t thread_count = get_thread_count();
     vector<vector<const Snarl*>> snarl_queue(thread_count);
+
+    std::atomic<std::int64_t> top_snarl_count(0);
+    std::atomic<std::int64_t> nested_snarl_count(0);
+    bool top_level = true;
 
     // Run the snarl caller on a snarl, and queue up the children if it fails
     auto process_snarl = [&](const Snarl* snarl) {
@@ -35,11 +43,30 @@ void GraphCaller::call_top_level_snarls(const HandleGraph& graph, RecurseType re
                 vector<const Snarl*>& thread_queue = snarl_queue[omp_get_thread_num()];
                 thread_queue.insert(thread_queue.end(), children.begin(), children.end());
             }
+            
+            if (show_progress) {
+                if (top_level) {
+                    ++top_snarl_count;
+                    if (top_snarl_count % 100000 == 0) {
+#pragma omp critical (cerr)
+                        cerr << "[vg call]: Processed " << top_snarl_count << " top-level snarls" << endl;
+                    }
+                } else {
+                    ++nested_snarl_count;
+                    if (nested_snarl_count % 100000 == 0) {
+#pragma omp critical (cerr)                    
+                        cerr << "[vg call]: Processed " << top_snarl_count << " nested snarls" << endl;
+                    }
+                }
+            }
         }
     };
 
     // Start with the top level snarls
     snarl_manager.for_each_top_level_snarl_parallel(process_snarl);
+    if (show_progress) cerr << "[vg call]: Finished processing " << top_snarl_count << " top-level snarls" << endl;
+
+    top_level = false;
 
     // Then recurse on any children the snarl caller failed to handle
     while (!std::all_of(snarl_queue.begin(), snarl_queue.end(),
@@ -56,6 +83,7 @@ void GraphCaller::call_top_level_snarls(const HandleGraph& graph, RecurseType re
             process_snarl(cur_queue[i]);
         }
     }
+    if (show_progress && nested_snarl_count > 0) cerr << "[vg call]: Finished processing " << nested_snarl_count << " nested snarls" << endl;
   
 }
 
@@ -336,6 +364,17 @@ void VCFOutputCaller::set_translation(const unordered_map<nid_t, pair<string, si
 
 void VCFOutputCaller::set_nested(bool nested) {
     include_nested = nested;
+}
+
+void VCFOutputCaller::add_allele_path_to_info(const HandleGraph* graph, vcflib::Variant& v, int allele, const Traversal& trav,
+                                              bool reversed, bool one_based) const {
+    SnarlTraversal proto_trav;
+    for (const handle_t& handle : trav) {
+        Visit* visit = proto_trav.add_visit();
+        visit->set_node_id(graph->get_id(handle));
+        visit->set_backward(graph->get_is_reverse(handle));
+    }
+    this->add_allele_path_to_info(v, allele, proto_trav, reversed, one_based);
 }
 
 void VCFOutputCaller::add_allele_path_to_info(vcflib::Variant& v, int allele, const SnarlTraversal& trav,
@@ -696,6 +735,18 @@ void VCFOutputCaller::flatten_common_allele_ends(vcflib::Variant& variant, bool 
             variant.alt[i - 1] = variant.alleles[i];
         }
     }
+}
+
+string VCFOutputCaller::print_snarl(const HandleGraph* graph, const handle_t& snarl_start,
+                                    const handle_t& snarl_end, bool in_brackets) const {
+    Snarl snarl;
+    Visit* start = snarl.mutable_start();
+    start->set_node_id(graph->get_id(snarl_start));
+    start->set_backward(graph->get_is_reverse(snarl_start));
+    Visit* end = snarl.mutable_end();
+    end->set_node_id(graph->get_id(snarl_end));
+    end->set_backward(graph->get_is_reverse(snarl_end));
+    return this->print_snarl(snarl, in_brackets);
 }
 
 string VCFOutputCaller::print_snarl(const Snarl& snarl, bool in_brackets) const {
@@ -1612,7 +1663,7 @@ FlowCaller::FlowCaller(const PathPositionHandleGraph& graph,
                        bool gaf_output,
                        size_t trav_padding,
                        bool genotype_snarls,
-                       const pair<int64_t, int64_t>& ref_allele_length_range) :
+                       const pair<size_t, size_t>& allele_length_range) :
     GraphCaller(snarl_caller, snarl_manager),
     VCFOutputCaller(sample_name),
     GAFOutputCaller(aln_emitter, sample_name, ref_paths, trav_padding),
@@ -1622,7 +1673,7 @@ FlowCaller::FlowCaller(const PathPositionHandleGraph& graph,
     traversals_only(traversals_only),
     gaf_output(gaf_output),
     genotype_snarls(genotype_snarls),
-    ref_allele_length_range(ref_allele_length_range)
+    allele_length_range(allele_length_range)
 {
     for (int i = 0; i < ref_paths.size(); ++i) {
         ref_offsets[ref_paths[i]] = i < ref_path_offsets.size() ? ref_path_offsets[i] : 0;
@@ -1751,17 +1802,6 @@ bool FlowCaller::call_snarl(const Snarl& managed_snarl) {
     }
     assert(ref_trav.visit(0) == snarl.start() && ref_trav.visit(ref_trav.visit_size() - 1) == snarl.end());
 
-    // optional reference length clamp can, ex, avoid trying to resolve a giant snarl
-    if (ref_trav.visit_size() > 1 && ref_allele_length_range.first > 0 || ref_allele_length_range.second < numeric_limits<int64_t>::max()) {
-        size_t ref_trav_len = 0;
-        for (size_t j = 1; j < ref_trav.visit_size() - 1; ++j) {
-            ref_trav_len += graph.get_length(graph.get_handle(ref_trav.visit(j).node_id()));
-        }
-        if (ref_trav_len < ref_allele_length_range.first || ref_trav_len > ref_allele_length_range.second) {
-            return false;
-        }        
-    }
-
     vector<SnarlTraversal> travs;
     FlowTraversalFinder* flow_trav_finder = dynamic_cast<FlowTraversalFinder*>(&traversal_finder);
     if (flow_trav_finder != nullptr) {
@@ -1776,6 +1816,24 @@ bool FlowCaller::call_snarl(const Snarl& managed_snarl) {
     if (travs.empty()) {
         cerr << "Warning [vg call]: Unable, due to bug or corrupt graph, to search for any traversals through snarl " << pb2json(managed_snarl) << endl;
         return false;
+    }
+
+    // optional traversal length clamp can, ex, avoid trying to resolve a giant snarl    
+    if (allele_length_range.first > 0 || allele_length_range.second < numeric_limits<size_t>::max()) {
+        size_t max_trav_len = 0;
+        for (const SnarlTraversal & trav : travs) {
+            size_t trav_len = 0;
+            for (size_t i = 1; i < trav.visit_size() - 1; ++i) {
+                trav_len += graph.get_length(graph.get_handle(trav.visit(i).node_id()));
+            }
+            max_trav_len = max(max_trav_len, trav_len);
+            if (max_trav_len > allele_length_range.second) {
+                return false;
+            }
+        }
+        if (max_trav_len < allele_length_range.first) {
+            return false;
+        }
     }
 
     // find the reference traversal in the list of results from the traversal finder
@@ -2267,7 +2325,7 @@ string NestedFlowCaller::flatten_alt_allele(const string& nested_allele, int all
                     // todo: passing in a single ploidy simplisitic, would need to derive from the calls when
                     // reucrising
                     // in practice, the results will nearly the same but still needs fixing
-                    // we try to get the the allele from the genotype if possible, but fallback on the fallback_allele
+                    // we try to get the allele from the genotype if possible, but fallback on the fallback_allele
                     int trav_allele = fallback_allele >= 0 ? fallback_allele : record.genotype_by_ploidy[ploidy-1].first[allele];
                     const SnarlTraversal& traversal = record.travs[trav_allele];
                     string nested_snarl_allele = trav_string(graph, traversal);
