@@ -51,6 +51,9 @@ void help_deconstruct(char** argv){
          << "    -K, --keep-conflicted    Retain conflicted genotypes in output." << endl
          << "    -S, --strict-conflicts   Drop genotypes when we have more than one haplotype for any given phase (set by default when using GBWT input)." << endl
          << "    -C, --contig-only-ref    Only use the CONTIG name (and not SAMPLE#CONTIG#HAPLOTYPE etc) for the reference if possible (ie there is only one reference sample)." << endl
+         << "    -L, --cluster F          Cluster traversals whose (handle) Jaccard coefficient is >= F together (default: 1.0) [experimental]" << endl
+         << "    -n, --nested             Write a nested VCF, including special tags. [experimental]" << endl
+         << "    -R, --star-allele        Use *-alleles to denote alleles that span but do not cross the site. Only works with -n" << endl
          << "    -t, --threads N          Use N threads" << endl
          << "    -v, --verbose            Print some status messages" << endl
          << endl;
@@ -77,6 +80,9 @@ int main_deconstruct(int argc, char** argv){
     int context_jaccard_window = 10000;
     bool untangle_traversals = false;
     bool contig_only_ref = false;
+    double cluster_threshold = 1.0;
+    bool nested = false;
+    bool star_allele = false;
     
     int c;
     optind = 2; // force optind past command positional argument
@@ -97,14 +103,17 @@ int main_deconstruct(int argc, char** argv){
                 {"all-snarls", no_argument, 0, 'a'},
                 {"keep-conflicted", no_argument, 0, 'K'},
                 {"strict-conflicts", no_argument, 0, 'S'},
-                {"contig-only-ref", no_argument, 0, 'C'},                
+                {"contig-only-ref", no_argument, 0, 'C'},
+                {"cluster", required_argument, 0, 'L'},
+                {"nested", no_argument, 0, 'n'},
+                {"start-allele", no_argument, 0, 'R'},
                 {"threads", required_argument, 0, 't'},
                 {"verbose", no_argument, 0, 'v'},
                 {0, 0, 0, 0}
             };
 
         int option_index = 0;
-        c = getopt_long (argc, argv, "hp:P:H:r:g:T:OeKSCd:c:uat:v",
+        c = getopt_long (argc, argv, "hp:P:H:r:g:T:OeKSCd:c:uaL:nRt:v",
                          long_options, &option_index);
 
         // Detect the end of the options.
@@ -158,7 +167,16 @@ int main_deconstruct(int argc, char** argv){
             break;
         case 'C':
             contig_only_ref = true;
-            break;            
+            break;
+        case 'L':
+            cluster_threshold = max(0.0, min(1.0, parse<double>(optarg)));
+            break;
+        case 'n':
+            nested = true;
+            break;
+        case 'R':
+            star_allele = true;
+            break;
         case 't':
             omp_set_num_threads(parse<int>(optarg));
             break;
@@ -176,8 +194,16 @@ int main_deconstruct(int argc, char** argv){
 
     }
 
+    if (nested == true && contig_only_ref == true) {
+        cerr << "Error [vg deconstruct]: -C cannot be used with -n" << endl;
+        return 1;
+    }
+    if (star_allele == true && nested == false) {
+        cerr << "Error [vg deconstruct]: -R can only be used with -n" << endl;
+        return 1;
+    }
+    
     // Read the graph
-
     unique_ptr<PathHandleGraph> path_handle_graph_up;
     unique_ptr<GBZGraph> gbz_graph;
     gbwt::GBWT* gbwt_index = nullptr;
@@ -254,13 +280,22 @@ int main_deconstruct(int argc, char** argv){
     }
     
     if (refpaths.empty() && refpath_prefixes.empty()) {
+        bool found_hap;
         // No paths specified: use them all
         graph->for_each_path_handle([&](path_handle_t path_handle) {
-                const string& name = graph->get_path_name(path_handle);
-                if (!Paths::is_alt(name) && PathMetadata::parse_sense(name) != PathSense::HAPLOTYPE) {
-                    refpaths.push_back(name);
-                }
-            });
+            const string& name = graph->get_path_name(path_handle);
+            if (!Paths::is_alt(name) && PathMetadata::parse_sense(name) != PathSense::HAPLOTYPE) {
+                refpaths.push_back(name);
+            } else {
+                found_hap = true;
+            }
+        });
+
+        if (!found_hap && gbwt_index == nullptr) {
+            cerr << "error [vg deconstruct]: All graph paths selected as references (leaving no alts). Please use -P/-p "
+                 << "to narrow down the reference to a subset of paths, or GBZ/GBWT input that contains haplotype paths" << endl;
+            return 1;
+        }        
     }
 
     // Read the translation
@@ -336,7 +371,7 @@ int main_deconstruct(int argc, char** argv){
         cerr << "Deconstructing top-level snarls" << endl;
     }
     dd.set_translation(translation.get());
-    dd.set_nested(all_snarls);
+    dd.set_nested(all_snarls || nested);
     dd.deconstruct(refpaths, graph, snarl_manager.get(),
                    all_snarls,
                    context_jaccard_window,
@@ -344,7 +379,10 @@ int main_deconstruct(int argc, char** argv){
                    keep_conflicted,
                    strict_conflicts,
                    !contig_only_ref,
-                   gbwt_index);
+                   cluster_threshold,
+                   gbwt_index,
+                   nested,
+                   star_allele);
     return 0;
 }
 
