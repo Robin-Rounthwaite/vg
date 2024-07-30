@@ -3027,6 +3027,10 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
 
     subgraph_in_distance_range(*distance_index, aligned_read.path(), &cached_graph, min_distance, max_distance, rescue_nodes, rescue_forward);
 
+    // ROBIN for node in rescue_nodes
+    // print nodes (maybe they're removed in "remove ids" code block below)
+    // other possibility: change via "min distance" part - so read is too close to the norm location. b/c stdev I gave girarfef is pretty low. experiment: increase stdev # and see ifmapping pops back up.
+
     if (rescue_nodes.size() == 0) {
         //If the rescue subgraph is empty
         return;
@@ -3046,6 +3050,7 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
     // Find all seeds in the subgraph and try to get a full-length extension.
     GaplessExtender::cluster_type seeds = this->seeds_in_subgraph(minimizers, rescue_nodes);
     if (seeds.size() > this->rescue_seed_limit) {
+        cerr << "*****abandoning rescue due to local seed finding failure.*****" << endl;
         return;
     }
     std::vector<GaplessExtension> extensions = this->extender->extend(seeds, rescued_alignment.sequence(), &cached_graph);
