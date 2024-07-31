@@ -3049,6 +3049,8 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
 
     // Find all seeds in the subgraph and try to get a full-length extension.
     GaplessExtender::cluster_type seeds = this->seeds_in_subgraph(minimizers, rescue_nodes);
+    cerr << "outside if statement:" << endl;
+    cerr << "seeds.size(): " << seeds.size() << " this->rescue_seed_limit: " << this->rescue_seed_limit << endl;
     if (seeds.size() > this->rescue_seed_limit) {
         cerr << "*****abandoning rescue due to local seed finding failure.*****" << endl;
         cerr << "seeds.size(): " << seeds.size() << " this->rescue_seed_limit: " << this->rescue_seed_limit << endl;
