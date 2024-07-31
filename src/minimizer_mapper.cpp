@@ -3051,6 +3051,7 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
     GaplessExtender::cluster_type seeds = this->seeds_in_subgraph(minimizers, rescue_nodes);
     if (seeds.size() > this->rescue_seed_limit) {
         cerr << "*****abandoning rescue due to local seed finding failure.*****" << endl;
+        cerr << "seeds.size(): " << seeds.size() << " this->rescue_seed_limit: " << this->rescue_seed_limit << endl;
         return;
     }
     std::vector<GaplessExtension> extensions = this->extender->extend(seeds, rescued_alignment.sequence(), &cached_graph);
