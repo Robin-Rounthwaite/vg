@@ -2,20 +2,22 @@
  * \file haplotype_indexer.cpp: implementations of haplotype indexing with the GBWT
  */
 
+#include "haplotype_indexer.hpp"
+
 #include <iostream>
-#include <map>
+#include <mutex>
 #include <vector>
 #include <string>
 
 #include <vg/io/stream.hpp>
+#include <gbwtgraph/algorithms.h>
 #include <gbwtgraph/path_cover.h>
 
 #include "gbwt_helper.hpp"
 
-#include "haplotype_indexer.hpp"
-
-#include "path.hpp"
 #include "alignment.hpp"
+#include "hash_map.hpp"
+#include "path.hpp"
 
 using namespace std;
 
@@ -394,7 +396,7 @@ std::unique_ptr<gbwt::DynamicGBWT> HaplotypeIndexer::build_gbwt(const std::vecto
         // And add every path that passes the filter (including haplotype paths) from the source graph.
         gbwtgraph::store_paths(builder, *graph, {PathSense::GENERIC, PathSense::REFERENCE, PathSense::HAPLOTYPE}, &path_filter);
 
-        // Finish the construction for this set of threads and put the index back.
+        // Finish the construction for this set of paths and put the index back.
         builder.finish();
         builder.swapIndex(*index);
     }
@@ -413,24 +415,167 @@ std::unique_ptr<gbwt::DynamicGBWT> HaplotypeIndexer::build_gbwt(const PathHandle
     return build_gbwt({}, "GBWT", &graph);
 }
 
-std::unique_ptr<gbwt::DynamicGBWT> HaplotypeIndexer::build_gbwt(const PathHandleGraph& graph,
-    const std::vector<std::string>& aln_filenames, const std::string& aln_format) const {
+//------------------------------------------------------------------------------
 
-    // GBWT metadata.
-    std::vector<std::string> sample_names, contig_names;
-    std::map<std::string, std::pair<size_t, size_t>> sample_info; // name -> (id, count)
-    contig_names.push_back("0"); // An artificial contig.
-    size_t haplotype_count = 0;
+// GAF / GAM to GBWT.
+
+// Returns (count, symbol) for present symbols.
+// Assumes that the input is non-empty and all vectors have the same length.
+std::vector<std::pair<size_t, size_t>> present_symbols(const std::vector<std::vector<size_t>>& counts_by_job) {
+    std::vector<std::pair<size_t, size_t>> result;
+    for (size_t symbol = 0; symbol < counts_by_job.front().size(); symbol++) {
+        size_t count = 0;
+        for (size_t j = 0; j < counts_by_job.size(); j++) {
+            count += counts_by_job[j][symbol];
+        }
+        if (count > 0) {
+            result.push_back(std::make_pair(count, symbol));
+        }
+    }
+    return result;
+}
+
+// Inputs: (count, symbol)
+// Outputs: (code length, symbol) sorted by code length
+std::vector<std::pair<size_t, size_t>> canonical_huffman(const std::vector<std::pair<size_t, size_t>>& symbols) {
+    if (symbols.empty()) {
+        return std::vector<std::pair<size_t, size_t>>();
+    }
+
+    // Internal nodes as pairs of children.
+    std::vector<std::pair<size_t, size_t>> nodes;
+    // (count, id), with id referring first to symbols and then to nodes.
+    std::vector<std::pair<size_t, size_t>> queue; queue.reserve(symbols.size());
+    for (size_t i = 0; i < symbols.size(); i++) {
+        queue.push_back(std::make_pair(symbols[i].first, i));
+    }
+    std::make_heap(queue.begin(), queue.end(), std::greater<std::pair<size_t, size_t>>());
+
+    // Build the Huffman tree.
+    while (queue.size() > 1) {
+        std::pop_heap(queue.begin(), queue.end(), std::greater<std::pair<size_t, size_t>>());
+        auto left = queue.back(); queue.pop_back();
+        std::pop_heap(queue.begin(), queue.end(), std::greater<std::pair<size_t, size_t>>());
+        auto right = queue.back(); queue.pop_back();
+        size_t count = left.first + right.first;
+        size_t id = symbols.size() + nodes.size();
+        nodes.push_back(std::make_pair(left.second, right.second));
+        queue.push_back(std::make_pair(count, id));
+        std::push_heap(queue.begin(), queue.end(), std::greater<std::pair<size_t, size_t>>());
+    }
+
+    // Determine the code lengths.
+    std::vector<std::pair<size_t, size_t>> result(symbols.size());
+    std::function<void(size_t, size_t)> dfs = [&](size_t node, size_t depth) {
+        if (node < symbols.size()) {
+            result[node] = std::make_pair(depth, symbols[node].second);
+        } else {
+            dfs(nodes[node - symbols.size()].first, depth + 1);
+            dfs(nodes[node - symbols.size()].second, depth + 1);
+        }
+    };
+    dfs(queue.front().second, 0);
+
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+std::string longest_common_prefix(const std::vector<std::vector<std::string>>& read_names) {
+    bool has_prefix = false;
+    std::string prefix;
+    for (auto& names : read_names) {
+        for (auto& name : names) {
+            if (!has_prefix) {
+                prefix = name;
+                has_prefix = true;
+            } else {
+                size_t i = 0;
+                while (i < prefix.length() && i < name.length() && prefix[i] == name[i]) {
+                    i++;
+                }
+                prefix.resize(i);
+            }
+        }
+    }
+    return prefix;
+}
+
+// This consumes the read names.
+void create_alignment_metadata(
+    std::vector<std::vector<std::string>>& read_names,
+    const std::string& prefix,
+    gbwt::Metadata& metadata) {
+
+    // We can use 32-bit values, as GBWT metadata uses them as well.
+    string_hash_map<std::string, std::pair<std::uint32_t, std::uint32_t>> read_info; // name -> (sample id, fragment count)
+    for (auto& names : read_names) {
+        for (const std::string& name : names) {
+            std::string sample_name = name.substr(prefix.length());
+            std::uint32_t sample_id = 0, fragment_count = 0;
+            auto iter = read_info.find(sample_name);
+            if (iter == read_info.end()) {
+                sample_id = read_info.size();
+                read_info[sample_name] = std::make_pair(sample_id, fragment_count);
+            } else {
+                sample_id = iter->second.first;
+                fragment_count = iter->second.second;
+                iter->second.second++;
+            }
+            metadata.addPath(sample_id, 0, 0, fragment_count);
+        }
+        names = std::vector<std::string>();
+    }
+    std::vector<std::string> sample_names(read_info.size());
+    for (auto& p : read_info) {
+        sample_names[p.second.first] = p.first;
+    }
+    read_info = string_hash_map<std::string, std::pair<std::uint32_t, std::uint32_t>>();
+
+    metadata.setSamples(sample_names);
+    metadata.setContigs({ "unknown" });
+    metadata.setHaplotypes(sample_names.size());
+}
+
+std::unique_ptr<gbwt::GBWT> HaplotypeIndexer::build_gbwt(const HandleGraph& graph,
+    const std::vector<std::string>& aln_filenames, const std::string& aln_format, size_t parallel_jobs) const {
+
+    // Handle multithreading and parallel jobs.
+    parallel_jobs = std::max<size_t>(1, parallel_jobs);
+    int old_threads = omp_get_max_threads();
+    omp_set_num_threads(parallel_jobs);
+
+    // Partition the graph into construction jobs.
+    if (this->show_progress) {
+        #pragma omp critical
+        {
+            std::cerr << "Partitioning the graph into GBWT construction jobs" << std::endl;
+        }
+    }
+    size_t target_size = graph.get_node_count() / parallel_jobs;
+    gbwtgraph::ConstructionJobs jobs = gbwtgraph::gbwt_construction_jobs(graph, target_size);
+    if (this->show_progress) {
+        #pragma omp critical
+        {
+            std::cerr << "Created " << jobs.size() << " parallel construction jobs" << std::endl;
+        }
+    }
 
     // GBWT construction.
-    gbwt::GBWTBuilder builder(gbwt_node_width(graph), this->gbwt_buffer_size * gbwt::MILLION, this->id_interval);
-    builder.index.addMetadata();
+    std::vector<std::mutex> builder_mutexes(jobs.size());
+    std::vector<std::unique_ptr<gbwt::GBWTBuilder>> builders(jobs.size());
+    std::vector<std::vector<size_t>> quality_values(jobs.size(), std::vector<size_t>(256, 0));
+    // This is a bit inefficient, as read names are often longer than the SSO threshold for GCC (but not for Clang).
+    // TODO: Maybe use concatenated 0-terminated names?
+    std::vector<std::vector<std::string>> read_names(jobs.size());
+    for (size_t i = 0; i < jobs.size(); i++) {
+        builders[i].reset(new gbwt::GBWTBuilder(gbwt_node_width(graph), this->gbwt_buffer_size * gbwt::MILLION, this->id_interval));
+    }
 
     // Actual work.
     if (this->show_progress) {
         #pragma omp critical
         {
-            std::cerr << "Converting " << aln_format << " to threads" << std::endl;
+            std::cerr << "Converting " << aln_format << " to GBWT paths" << std::endl;
         }
     }
     std::function<void(Alignment&)> lambda = [&](Alignment& aln) {
@@ -438,37 +583,94 @@ std::unique_ptr<gbwt::DynamicGBWT> HaplotypeIndexer::build_gbwt(const PathHandle
         for (auto& m : aln.path().mapping()) {
             buffer.push_back(mapping_to_gbwt(m));
         }
-        builder.insert(buffer, true); // Insert in both orientations.
-        size_t sample_id = 0, sample_count = 0;
-        auto iter = sample_info.find(aln.name());
-        if (iter == sample_info.end()) {
-            sample_id = sample_names.size();
-            sample_names.push_back(aln.name());
-            sample_info[aln.name()] = std::pair<size_t, size_t>(sample_id, sample_count);
-            haplotype_count++;
-        } else {
-            sample_id = iter->second.first;
-            sample_count = iter->second.second;
-            iter->second.second++;
+        size_t job_id = 0;
+        if (buffer.size() > 0) {
+            job_id = jobs.job(gbwt::Node::id(buffer.front()));
+            if (job_id >= jobs.size()) {
+                job_id = 0;
+            }
         }
-        builder.index.metadata.addPath(sample_id, 0, 0, sample_count);
+        for (auto c : aln.quality()) {
+            unsigned char value = io::quality_short_to_char(c);
+            quality_values[job_id][value]++;
+        }
+        {
+            // Insert the path into the appropriate builder and record the read name.
+            std::lock_guard<std::mutex> lock(builder_mutexes[job_id]);
+            builders[job_id]->insert(buffer, true);
+            read_names[job_id].push_back(aln.name());
+        }
     };
     for (auto& file_name : aln_filenames) {
         if (aln_format == "GAM") {
             get_input_file(file_name, [&](istream& in) {
-                vg::io::for_each(in, lambda);
+                vg::io::for_each_parallel(in, lambda);
             });
         } else {
             assert(aln_format == "GAF");
-            vg::io::gaf_unpaired_for_each(graph, file_name, lambda);
+            vg::io::gaf_unpaired_for_each_parallel(graph, file_name, lambda);
         }
     }
-        
-    // Finish the construction and extract the index.
-    finish_gbwt_constuction(builder, sample_names, contig_names, haplotype_count, this->show_progress);
-    std::unique_ptr<gbwt::DynamicGBWT> built(new gbwt::DynamicGBWT());
-    builder.swapIndex(*built);
-    return built;
+
+    // Finish the construction and convert to compressed GBWT.
+    std::vector<gbwt::GBWT> partial_indexes(jobs.size());
+    #pragma omp parallel for schedule(dynamic, 1)
+    for (size_t i = 0; i < jobs.size(); i++) {
+        builders[i]->finish();
+        partial_indexes[i] = gbwt::GBWT(builders[i]->index);
+        builders[i].reset();
+    }
+
+    // Merge the partial indexes.
+    if (this->show_progress) {
+        #pragma omp critical
+        {
+            std::cerr << "Merging the partial GBWTs" << std::endl;
+        }
+    }
+    std::unique_ptr<gbwt::GBWT> result(new gbwt::GBWT(partial_indexes));
+    partial_indexes.clear();
+
+    // Determine the quality score alphabet and canonical Huffman code lengths.
+    // The items are first (count, character value) and then (code length, character value).
+    std::vector<std::pair<size_t, size_t>> present = present_symbols(quality_values);
+    present = canonical_huffman(present);
+    std::string alphabet, code_lengths;
+    for (auto symbol : present) {
+        alphabet.push_back(symbol.second);
+        if (code_lengths.length() > 0) {
+            code_lengths.push_back(',');
+        }
+        code_lengths.append(std::to_string(symbol.first));
+    }
+    result->tags.set("quality_values", alphabet);
+    result->tags.set("quality_lengths", code_lengths);
+
+    // Create the metadata.
+    if (this->show_progress) {
+        #pragma omp critical
+        {
+            std::cerr << "Creating metadata" << std::endl;
+        }
+    }
+    result->addMetadata();
+    std::string prefix = longest_common_prefix(read_names);
+    result->tags.set("sample_prefix", prefix);
+    create_alignment_metadata(read_names, prefix, result->metadata);
+    if (this->show_progress) {
+        #pragma omp critical
+        {
+            std::cerr << "GBWT: ";
+            gbwt::operator<<(std::cerr, result->metadata);
+            std::cerr << std::endl;
+        }
+    }
+
+    // Restore the number of threads.
+    omp_set_num_threads(old_threads);
+    return result;
 }
+
+//------------------------------------------------------------------------------
 
 }

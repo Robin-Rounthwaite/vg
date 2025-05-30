@@ -1,4 +1,4 @@
-    #ifndef VG_PATH_HPP_INCLUDED
+#ifndef VG_PATH_HPP_INCLUDED
 #define VG_PATH_HPP_INCLUDED
 
 #include <iostream>
@@ -14,6 +14,7 @@
 #include "utility.hpp"
 #include "types.hpp"
 #include "position.hpp"
+#include "region.hpp"
 #include "nodetraversal.hpp"
 
 //#define debug
@@ -289,8 +290,15 @@ void reverse_complement_path_in_place(Path* path,
                                       const function<int64_t(id_t)>& node_length);
 /// Simplify the path for addition as new material in the graph. Remove any
 /// mappings that are merely single deletions, merge adjacent edits of the same
-/// type, strip leading and trailing deletion edits on mappings, and make sure no
-/// mappings have missing positions.
+/// type, strip leading and trailing deletion edits on mappings (adjusting
+/// positions), and make sure no mappings have missing positions.
+///
+/// Note that this removes deletions at the start and end of Mappings, so code
+/// that handles simplified Alignments needs to handle offsets on internal
+/// Mappings.
+///
+/// If trim_internal_deletions is false, refrains from creating internal skips
+/// of deleted sequence. 
 Path simplify(const Path& p, bool trim_internal_deletions = true);
 /// Merge adjacent edits of the same type, strip leading and trailing deletion
 /// edits (while updating positions if necessary), and makes sure position is
@@ -320,7 +328,10 @@ pair<mapping_t, mapping_t> cut_mapping(const mapping_t& m, const Position& pos);
 // divide mapping at reference-relative offset (as measure in from_length)
 pair<Mapping, Mapping> cut_mapping_offset(const Mapping& m, size_t offset);
 pair<mapping_t, mapping_t> cut_mapping_offset(const mapping_t& m, size_t offset);
-// divide mapping at target-relative offset (as measured in to_length)
+/// Divide mapping at target-relative offset (as measured in to_length).
+///
+/// Deletions at the cut point (which are 0 target-relative bases long) always
+/// end up in the first piece.
 pair<Mapping, Mapping> cut_mapping(const Mapping& m, size_t offset);
 pair<mapping_t, mapping_t> cut_mapping(const mapping_t& m, size_t offset);
 // divide path at reference-relative position
@@ -335,7 +346,7 @@ bool adjacent_mappings(const Mapping& m1, const Mapping& m2);
 // Return true if a mapping is a perfect match (i.e. contains no non-match edits)
 bool mapping_is_match(const Mapping& m);
 double divergence(const Mapping& m);
-// Return the identity for the path: perfect matches over total length.
+// Return the identity for the path: perfect matches over total length, ignoring soft clips.
 // For zero-length paths, returns 0.
 double identity(const Path& path);
 // compare the agreement between two alignments
@@ -373,18 +384,46 @@ Path path_from_path_handle(const PathHandleGraph& graph, path_handle_t path_hand
 // Wrap a Path in an Alignment
 Alignment alignment_from_path(const HandleGraph& graph, const Path& path);
 
+////
+// Functions for working with path subranges.
+// TODO: Move to libhandlegraph
+////
+
+/// Find the subpath containing the given region (possibly a full base path)
+/// and return true, or return false if no such subpath can be found.
+///
+/// If one or both region coordinates are -1, and a full path is found, fills
+/// them in from that path.
+bool find_containing_subpath(const PathPositionHandleGraph& graph, Region& region, path_handle_t& path);
+
+/// Run the given iteratee for each path that is either the path with the given
+/// name (if present), or a subrange of a path with the given name as the base
+/// name (otherwise).
+///
+/// If a path and subpaths both exist, only look at the full path.
+///
+/// If the name describes a subpath, look only at that subpath.
+///
+/// Iteratee returns false to stop.
+///
+/// Returns true if we reached the end, and false if asked to stop.
+bool for_each_subpath_of(const PathPositionHandleGraph& graph, const string& path_name, const std::function<bool(const path_handle_t& path)>& iteratee);
+
+/// Returns the base path name for this path (i.e. the path's name without any subrange).
+std::string get_path_base_name(const PathPositionHandleGraph& graph, const path_handle_t& path);
+
 
 /*
  * STL implementations of the protobuf object for use in in-memory operations
  */
 class edit_t {
 public:
-    edit_t() = default;
-    edit_t(const edit_t&) = default;
-    edit_t(edit_t&&) = default;
+    edit_t() noexcept : _from_length(0), _to_length(0), _sequence() {}
+    edit_t(const edit_t& other) = default;
+    edit_t(edit_t&& other) = default;
     ~edit_t() = default;
-    edit_t& operator=(const edit_t&) = default;
-    edit_t& operator=(edit_t&&) = default;
+    edit_t& operator=(const edit_t& other) = default;
+    edit_t& operator=(edit_t&& other) = default;
     inline int32_t from_length() const;
     inline void set_from_length(int32_t l);
     inline int32_t to_length() const;
@@ -404,11 +443,11 @@ private:
 class path_mapping_t {
 public:
     path_mapping_t() = default;
-    path_mapping_t(const path_mapping_t&) = default;
-    path_mapping_t(path_mapping_t&&) = default;
+    path_mapping_t(const path_mapping_t& other) = default;
+    path_mapping_t(path_mapping_t&& other) = default;
     ~path_mapping_t() = default;
-    path_mapping_t& operator=(const path_mapping_t&) = default;
-    path_mapping_t& operator=(path_mapping_t&&) = default;
+    path_mapping_t& operator=(const path_mapping_t& other) = default;
+    path_mapping_t& operator=(path_mapping_t&& other) = default;
     inline const position_t& position() const;
     inline position_t* mutable_position();
     inline const vector<edit_t>& edit() const;
@@ -427,11 +466,11 @@ private:
 class path_t {
 public:
     path_t() = default;
-    path_t(const path_t&) = default;
-    path_t(path_t&&) = default;
+    path_t(const path_t& other) = default;
+    path_t(path_t&& other) = default;
     ~path_t() = default;
-    path_t& operator=(const path_t&) = default;
-    path_t& operator=(path_t&&) = default;
+    path_t& operator=(const path_t& other) = default;
+    path_t& operator=(path_t&& other) = default;
     inline const vector<path_mapping_t>& mapping() const;
     inline const path_mapping_t& mapping(size_t i) const;
     inline vector<path_mapping_t>* mutable_mapping();
@@ -483,6 +522,8 @@ int corresponding_from_length(const path_t& path, int to_length, bool from_end);
 string debug_string(const path_t& path);
 string debug_string(const path_mapping_t& mapping);
 string debug_string(const edit_t& edit);
+
+string debug_cigar_string(const path_t& path);
 
 /*
  * Implementations of inline methods

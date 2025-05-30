@@ -78,6 +78,7 @@ void help_map(char** argv) {
          << "    -G, --gam-input FILE          realign GAM input" << endl
          << "    -f, --fastq FILE              input fastq or (2-line format) fasta, possibly compressed, two are allowed, one for each mate" << endl
          << "    -F, --fasta FILE              align the sequences in a FASTA file that may have multiple lines per reference sequence" << endl
+         << "    --comments-as-tags            intepret comments in name lines as SAM-style tags and annotate alignments with them" << endl
          << "    -i, --interleaved             fastq or GAM is interleaved paired-ended" << endl
          << "    -N, --sample NAME             for --reads input, add this sample" << endl
          << "    -R, --read-group NAME         for --reads input, add this read group" << endl
@@ -86,6 +87,7 @@ void help_map(char** argv) {
          << "    -%, --gaf                     output alignments in GAF format" << endl
          << "    --surject-to TYPE             surject the output into the graph's paths, writing TYPE := bam |sam | cram" << endl
          << "    --ref-paths FILE              ordered list of paths in the graph, one per line or HTSlib .dict, for HTSLib @SQ headers" << endl
+         << "    --ref-name NAME               name of reference assembly in the graph for HTSlib output" << endl
          << "    --buffer-size INT             buffer this many alignments together before outputting in GAM [512]" << endl
          << "    -X, --compare                 realign GAM input (-G), writing alignment with \"correct\" field set to overlap with input" << endl
          << "    -v, --refpos-table            for efficient testing output a table of name, chr, pos, mq, score" << endl
@@ -111,6 +113,8 @@ int main_map(int argc, char** argv) {
     #define OPT_RECOMBINATION_PENALTY 1001
     #define OPT_EXCLUDE_UNALIGNED 1002
     #define OPT_REF_PATHS 1003
+    #define OPT_REF_NAME 1004
+    #define OPT_COMMENTS_AS_TAGS 1005
     string matrix_file_name;
     string seq;
     string qual;
@@ -128,6 +132,7 @@ int main_map(int argc, char** argv) {
     int thread_count = 1;
     string output_format = "GAM";
     string ref_paths_name;
+    std::unordered_set<std::string> reference_assembly_names;
     bool exclude_unaligned = false;
     bool debug = false;
     float min_score = 0;
@@ -189,6 +194,7 @@ int main_map(int argc, char** argv) {
     bool xdrop_alignment = false;
     uint32_t max_gap_length = 40;
     bool log_time = false;
+    bool comments_as_tags = false;
 
     int c;
     optind = 2; // force optind past command positional argument
@@ -260,6 +266,7 @@ int main_map(int argc, char** argv) {
                 {"refpos-table", no_argument, 0, 'v'},
                 {"surject-to", required_argument, 0, '5'},
                 {"ref-paths", required_argument, 0, OPT_REF_PATHS},
+                {"ref-name", required_argument, 0, OPT_REF_NAME},
                 {"no-patch-aln", no_argument, 0, '8'},
                 {"drop-full-l-bonus", no_argument, 0, '2'},
                 {"unpaired-cost", required_argument, 0, 'S'},
@@ -267,6 +274,7 @@ int main_map(int argc, char** argv) {
                 {"xdrop-alignment", no_argument, 0, 2},
                 {"gaf", no_argument, 0, '%'},
                 {"log-time", no_argument, 0, '^'},
+                {"comments-as-tags", no_argument, 0, OPT_COMMENTS_AS_TAGS},
                 {0, 0, 0, 0}
             };
 
@@ -534,6 +542,10 @@ int main_map(int argc, char** argv) {
             ref_paths_name = optarg;
             break;
 
+        case OPT_REF_NAME:
+            reference_assembly_names.insert(optarg);
+            break;
+
         case '8':
             patch_alignments = false;
             break;
@@ -589,6 +601,10 @@ int main_map(int argc, char** argv) {
         case '^':
             log_time = true;
             break;
+            
+        case OPT_COMMENTS_AS_TAGS:
+            comments_as_tags = true;
+            break;
 
         case 'h':
         case '?':
@@ -610,6 +626,10 @@ int main_map(int argc, char** argv) {
     if (!ref_paths_name.empty() && !hts_output) {
         cerr << "warning:[vg map] Reference path file (--ref-paths) is only used when output format (--surject-to) is SAM, BAM, or CRAM." << endl;
         ref_paths_name = "";
+    }
+    if (!reference_assembly_names.empty() && !hts_output) {
+        cerr << "warning:[vg map] Reference assembly names (--ref-name) are only used when output format (--surject-to) is SAM, BAM, or CRAM." << endl;
+        reference_assembly_names.clear();
     }
 
     if (seq.empty() && read_file.empty() && hts_file.empty() && fastq1.empty() && gam_input.empty() && fasta_file.empty()) {
@@ -746,9 +766,9 @@ int main_map(int argc, char** argv) {
     vector<Alignment> empty_alns;
    
     // Look up all the paths we might need to surject to.
-    vector<tuple<path_handle_t, size_t, size_t>> paths;
+    SequenceDictionary paths;
     if (hts_output) {
-        paths = get_sequence_dictionary(ref_paths_name, {}, *xgidx);
+        paths = get_sequence_dictionary(ref_paths_name, {}, reference_assembly_names, *xgidx);
     }
     
     // Set up output to an emitter that will handle serialization and surjection
@@ -970,6 +990,8 @@ int main_map(int argc, char** argv) {
                 return;
             }
 
+            check_quality_length(alignment);
+
             int tid = omp_get_thread_num();
             vector<Alignment> alignments = mapper[tid]->align_multi(alignment,
                                                                     kmer_size,
@@ -1008,6 +1030,8 @@ int main_map(int argc, char** argv) {
             };
             
             function<void(Alignment&,Alignment&)> lambda = [&](Alignment& aln1, Alignment& aln2) {
+                check_quality_length(aln1);
+                check_quality_length(aln2);
                 auto our_mapper = mapper[omp_get_thread_num()];
                 bool queued_resolve_later = false;
                 auto alnp = our_mapper->align_paired_multi(aln1,
@@ -1038,7 +1062,7 @@ int main_map(int argc, char** argv) {
 
                 reads_mapped_by_thread[omp_get_thread_num()] += 2;
             };
-            fastq_paired_interleaved_for_each_parallel(fastq1, lambda);
+            fastq_paired_interleaved_for_each_parallel(fastq1, lambda, comments_as_tags);
 #pragma omp parallel
             { // clean up buffered alignments that weren't perfect
                 auto our_mapper = mapper[omp_get_thread_num()];
@@ -1059,6 +1083,7 @@ int main_map(int argc, char** argv) {
         } else if (fastq2.empty()) {
             // single
             function<void(Alignment&)> lambda = [&](Alignment& alignment) {
+                        check_quality_length(alignment);
                         int tid = omp_get_thread_num();
                         vector<Alignment> alignments = mapper[tid]->align_multi(alignment,
                                                                                 kmer_size,
@@ -1071,7 +1096,7 @@ int main_map(int argc, char** argv) {
                         output_alignments(alignments, empty_alns);
                         reads_mapped_by_thread[tid] += 1;
                     };
-            fastq_unpaired_for_each_parallel(fastq1, lambda);
+            fastq_unpaired_for_each_parallel(fastq1, lambda, comments_as_tags);
         } else {
             // paired two-file
             auto output_func = [&](Alignment& aln1,
@@ -1084,6 +1109,8 @@ int main_map(int argc, char** argv) {
                 }
             };
             function<void(Alignment&,Alignment&)> lambda = [&](Alignment& aln1, Alignment& aln2) {
+                check_quality_length(aln1);
+                check_quality_length(aln2);
                 auto our_mapper = mapper[omp_get_thread_num()];
                 bool queued_resolve_later = false;
                 auto alnp = our_mapper->align_paired_multi(aln1,
@@ -1114,7 +1141,7 @@ int main_map(int argc, char** argv) {
 
                 reads_mapped_by_thread[omp_get_thread_num()] += 2;
             };
-            fastq_paired_two_files_for_each_parallel(fastq1, fastq2, lambda);
+            fastq_paired_two_files_for_each_parallel(fastq1, fastq2, lambda, comments_as_tags);
 #pragma omp parallel
             {
                 auto our_mapper = mapper[omp_get_thread_num()];
@@ -1157,6 +1184,8 @@ int main_map(int argc, char** argv) {
                 }
             };
             function<void(Alignment&,Alignment&)> lambda = [&](Alignment& aln1, Alignment& aln2) {
+                check_quality_length(aln1);
+                check_quality_length(aln2);
                 auto our_mapper = mapper[omp_get_thread_num()];
                 bool queued_resolve_later = false;
                 auto alnp = our_mapper->align_paired_multi(aln1,
@@ -1186,7 +1215,7 @@ int main_map(int argc, char** argv) {
                 }
                 reads_mapped_by_thread[omp_get_thread_num()] += 2;
             };
-            vg::io::for_each_interleaved_pair_parallel(gam_in, lambda);
+            vg::io::for_each_interleaved_pair_parallel(gam_in, lambda, comments_as_tags);
 #pragma omp parallel
             {
                 auto our_mapper = mapper[omp_get_thread_num()];
@@ -1206,6 +1235,7 @@ int main_map(int argc, char** argv) {
         } else {
             // Processing single-end GAM input
             function<void(Alignment&)> lambda = [&](Alignment& alignment) {
+                check_quality_length(alignment);
                 int tid = omp_get_thread_num();
                 vector<Alignment> alignments = mapper[tid]->align_multi(alignment,
                                                                         kmer_size,
@@ -1222,7 +1252,7 @@ int main_map(int argc, char** argv) {
                 output_alignments(alignments, empty_alns);
                 reads_mapped_by_thread[tid] += 1;
             };
-            vg::io::for_each_parallel(gam_in, lambda);
+            vg::io::for_each_parallel(gam_in, lambda, comments_as_tags);
         }
         gam_in.close();
     }

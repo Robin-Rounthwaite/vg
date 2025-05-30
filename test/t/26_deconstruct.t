@@ -90,7 +90,9 @@ printf "P\ty\t1+,3+,5+,6+,8+,9+,11+,12+,9+,10+,12+,14+,15+\t8M,1M,1M,3M,1M,19M,1
 vg view -Fv cyclic_tiny.gfa > cyclic_tiny.vg
 vg index cyclic_tiny.vg -x cyclic_tiny.xg
 vg find -x cyclic_tiny.xg  -n 10 -n 11 -n 12 -n 13 -n 14 -n 15 -c 1 > cycle.vg
-vg index cycle.vg -x cycle.xg
+# TODO: Make deconstruct see through subpaths to the base path
+vg view cycle.vg | sed 's/\([xy]\)\[[-0-9]*\]/\1/g' >cycle-asfullpaths.gfa
+vg index cycle-asfullpaths.gfa -x cycle.xg
 vg deconstruct cycle.xg -p y -e -t 1 > cycle_decon.vcf
 is $(grep -v "#" cycle_decon.vcf | wc -l) 1 "cyclic reference deconstruction has correct number of variants"
 grep -v "#" cycle_decon.vcf | grep 20 | awk '{print $1 "\t" $2 "\t" $4 "\t" $5 "\t" $10}' > cycle_decon.tsv
@@ -121,7 +123,8 @@ is "$?" 0 "deconstructing vg graph gives same output as xg graph"
 rm -f tiny_names.gfa tiny_names.vg tiny_names.xg tiny_names_decon.vcf tiny_names_decon_vg.vcf
 
 vg construct -r small/x.fa -v small/x.vcf.gz -a > x.vg
-vg index -x x.xg -G x.gbwt -v small/x.vcf.gz x.vg
+vg index -x x.xg x.vg
+vg gbwt -v small/x.vcf.gz -o x.gbwt -x x.vg
 vg deconstruct x.xg -g x.gbwt | bgzip > x.decon.vcf.gz
 tabix -f -p vcf  x.decon.vcf.gz
 cat small/x.fa |  bcftools consensus small/x.vcf.gz -s 1 -H 1 > small.s1.h1.fa
@@ -213,7 +216,7 @@ is $(grep -v ^# nested_snp_in_nested_ins.vcf | grep LV=2 | awk '{print $8}') "AC
 rm -f nested_snp_in_nested_ins.snarls nested_snp_in_nested_ins.vcf
 
 vg deconstruct nesting/nested_snp_in_ins_cycle.gfa -P x -n > nested_snp_in_ins_cycle.vcf
-printf "A#1#y0\t6\t>2>5\tA\tT\tAC=2;AF=0.5;AN=4;AT=>2>4>5,>2>3>5;NS=2;PA=1;PL=7;PR=1;RC=x;RD=1;RL=7;RS=1;LV=1;PS=>1>6\t0|1\t0|1\n" >  nested_snp_in_ins_cycle_truth.tsv
+printf "A#1#y0\t3\t>2>5\tA\tT\tAC=2;AF=0.5;AN=4;AT=>2>4>5,>2>3>5;NS=2;PA=1;PL=7;PR=1;RC=x;RD=1;RL=7;RS=1;LV=1;PS=>1>6\t0|1\t0|1\n" >  nested_snp_in_ins_cycle_truth.tsv
 printf "x\t1\t>1>6\tC\tCAAGAAG,CATG,CAAG\tAC=1,2,1;AF=0.25,0.5,0.25;AN=4;AT=>1>6,>1>2>4>5>2>4>5>6,>1>2>3>5>6,>1>2>4>5>6;NS=2;PA=0;PL=1;PR=1;RC=x;RD=1;RL=1;RS=1;LV=0\t1|2\t3|2\n" >> nested_snp_in_ins_cycle_truth.tsv
 grep -v ^#  nested_snp_in_ins_cycle.vcf | awk '{print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $8 "\t" $10 "\t" $11}' > nested_snp_in_ins_cycle.tsv
 diff nested_snp_in_ins_cycle.tsv nested_snp_in_ins_cycle_truth.tsv

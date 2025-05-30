@@ -21,6 +21,7 @@ using namespace std;
 using namespace vg;
 using namespace vg::subcommand;
 
+string GZ_SUFFIX = ".gz";
 
 void help_rna(char** argv) {
     cerr << "\nusage: " << argv[0] << " rna [options] graph.[vg|pg|hg|gbz] > splicing_graph.[vg|pg|hg]" << endl
@@ -54,6 +55,7 @@ void help_rna(char** argv) {
          << "\nOutput options:" << endl
 
          << "    -b, --write-gbwt FILE      write pantranscriptome transcript paths as GBWT index file" << endl
+         << "    -v, --write-hap-gbwt FILE  write input haplotypes as a GBWT with node IDs matching the output graph" << endl
          << "    -f, --write-fasta FILE     write pantranscriptome transcript sequences as fasta file" << endl
          << "    -i, --write-info FILE      write pantranscriptome transcript info table as tsv file" << endl
          << "    -q, --out-exclude-ref      exclude reference transcripts from pantranscriptome output" << endl
@@ -88,6 +90,7 @@ int32_t main_rna(int32_t argc, char** argv) {
     bool gbwt_add_bidirectional = false;
     string fasta_out_filename = "";
     string info_out_filename = "";
+    string hap_gbwt_out_filename = "";
     int32_t num_threads = 1;
     bool show_progress = false;
 
@@ -110,8 +113,9 @@ int32_t main_rna(int32_t argc, char** argv) {
                 {"remove-non-gene",  no_argument, 0, 'd'},
                 {"do-not-sort",  no_argument, 0, 'o'},
                 {"add-ref-paths",  no_argument, 0, 'r'},
-                {"add-hap-paths",  no_argument, 0, 'a'},      
+                {"add-hap-paths",  no_argument, 0, 'a'},
                 {"write-gbwt",  required_argument, 0, 'b'},
+                {"write-hap-gbwt",  required_argument, 0, 'v'},
                 {"write-fasta",  required_argument, 0, 'f'},
                 {"write-info",  required_argument, 0, 'i'},
                 {"out-ref-paths",  no_argument, 0, 'u'},
@@ -124,7 +128,7 @@ int32_t main_rna(int32_t argc, char** argv) {
             };
 
         int32_t option_index = 0;
-        c = getopt_long(argc, argv, "n:m:y:s:l:zjec:k:dorab:f:i:uqgt:ph?", long_options, &option_index);
+        c = getopt_long(argc, argv, "n:m:y:s:l:zjec:k:dorab:v:f:i:uqgt:ph?", long_options, &option_index);
 
         /* Detect the end of the options. */
         if (c == -1)
@@ -188,9 +192,13 @@ int32_t main_rna(int32_t argc, char** argv) {
         case 'a':
             add_projected_transcript_paths = true;
             break;
-
+                
         case 'b':
             gbwt_out_filename = optarg;
+            break;
+            
+        case 'v':
+            hap_gbwt_out_filename = optarg;
             break;
 
         case 'f':
@@ -241,6 +249,21 @@ int32_t main_rna(int32_t argc, char** argv) {
 
         cerr << "[vg rna] ERROR: No transcripts or introns were given. Use --transcripts FILE and/or --introns FILE." << endl;
         return 1;       
+    }
+
+    for (const auto& filenames : {std::cref(transcript_filenames), std::cref(intron_filenames)}) {
+        // For each collection of filenames (see https://stackoverflow.com/a/64794991/)
+
+        for (auto filename : filenames.get()) {
+
+            // taken from https://stackoverflow.com/a/20446239/
+            if (filename.size() >= GZ_SUFFIX.size() &&
+                filename.compare(filename.size() - GZ_SUFFIX.size(), GZ_SUFFIX.size(), GZ_SUFFIX) == 0) {
+
+                cerr << "[vg rna] ERROR: Annotation file " << filename << " appears to be gzipped. Decompress it before use." << endl;    
+                return 1;
+            }
+        }
     }
 
     if (!haplotypes_filename.empty() && gbz_format) {
@@ -486,6 +509,19 @@ int32_t main_rna(int32_t argc, char** argv) {
         gbwt_builder.finish();
         save_gbwt(gbwt_builder.index, gbwt_out_filename);
     }
+    
+    // Write a haplotype GBWT with node IDs updated to match the spliced graph.
+    if (!hap_gbwt_out_filename.empty()) {
+        if (!haplotype_index.get()) {
+            cerr << "[vg rna] Warning: not saving updated haplotypes to " << hap_gbwt_out_filename << " because haplotypes were not provided as input" << endl;
+        }
+        else {
+            ofstream hap_gbwt_ostream;
+            hap_gbwt_ostream.open(hap_gbwt_out_filename);
+            
+            haplotype_index->serialize(hap_gbwt_ostream);
+        }
+    }
 
     // Write transcript sequences in transcriptome as fasta file.
     if (!fasta_out_filename.empty()) {
@@ -496,7 +532,7 @@ int32_t main_rna(int32_t argc, char** argv) {
         transcriptome.write_transcript_sequences(&fasta_ostream, exclude_reference_transcripts);
      
         fasta_ostream.close();
-    }    
+    }
 
     // Write transcript info in transcriptome as tsv file.
     if (!info_out_filename.empty()) {

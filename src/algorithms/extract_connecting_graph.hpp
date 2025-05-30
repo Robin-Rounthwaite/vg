@@ -24,6 +24,18 @@ namespace algorithms {
     /// the maximum length exists, 'into' will be left empty. An error is thrown if 'into' is not empty when
     /// passed to function.
     ///
+    /// If pos_1 and pos_2 face each other on the same node, the intervening
+    /// portion of the node is produced in into. If they are on the same node
+    /// but do not face each other, portions of the original node will exist as
+    /// distinct nodes in into, and the one correspondign to pos_1 will have
+    /// the lower node ID.
+    ///
+    /// Node local forward orientations are not changed.
+    ///
+    /// Unless strict_max_len is set, the graph may contain additional nodes
+    /// not actually on a connecting path under the given length, some of which
+    /// may be tips.
+    ///
     /// Args:
     ///  source                     graph to extract subgraph from
     ///  into                       graph to extract into
@@ -33,7 +45,9 @@ namespace algorithms {
     ///  strict_max_len             only extract nodes and edges if they fall on some walk between pos_1 and pos_2
     ///                             that is under the maximum length (implies only_walks = true)
     ///
-    /// Returns: a map from node ids in the extracted graph to the node ids in the original graph
+    /// Returns: a map from node ids in the extracted graph to the node ids in
+    /// the original graph. The map and the graph will have the same number of
+    /// entries.
     unordered_map<id_t, id_t> extract_connecting_graph(const HandleGraph* source,
                                                        DeletableHandleGraph* into,
                                                        int64_t max_len,

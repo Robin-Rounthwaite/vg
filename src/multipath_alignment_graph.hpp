@@ -85,19 +85,19 @@ namespace vg {
         
         /// Construct a graph of the reachability between aligned chunks in a linearized
         /// path graph. Produces a graph with reachability edges.
-        MultipathAlignmentGraph(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
+        MultipathAlignmentGraph(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, path_t>>& path_chunks,
                                 const Alignment& alignment, const function<pair<id_t, bool>(id_t)>& project,
                                 const unordered_multimap<id_t, pair<id_t, bool>>& injection_trans, bool realign_Ns = true,
                                 bool preserve_tail_anchors = false, vector<size_t>* path_node_provenance = nullptr);
        
         /// Same as the previous constructor, but construct injection_trans implicitly and temporarily
-        MultipathAlignmentGraph(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
+        MultipathAlignmentGraph(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, path_t>>& path_chunks,
                                 const Alignment& alignment, const unordered_map<id_t, pair<id_t, bool>>& projection_trans, bool realign_Ns = true,
                                 bool preserve_tail_anchors = false, vector<size_t>* path_node_provenance = nullptr);
         
         /// Same as the previous constructor, but construct injection_trans implicitly and temporarily
         /// and using a lambda for a projector
-        MultipathAlignmentGraph(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
+        MultipathAlignmentGraph(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, path_t>>& path_chunks,
                                 const Alignment& alignment, const function<pair<id_t, bool>(id_t)>& project, bool realign_Ns = true,
                                 bool preserve_tail_anchors = false, vector<size_t>* path_node_provenance = nullptr);
         
@@ -190,14 +190,20 @@ namespace vg {
         /// MultipathAlignmentGraph was constructed! TODO: Shouldn't the class
         /// hold a reference to the Alignment then?
         ///
+        /// If dp_aligner is different from scoring_aligner, it is used for
+        /// dynamic programming alignment operations, and the results are
+        /// rescored with scoring_aligner. Neither may be null.
+        ///
         /// Note that the output alignment may NOT be in topologically-sorted
         /// order, even if this MultipathAlignmentGraph is. You MUST sort it
         /// with topologically_order_subpaths() before trying to run DP on it.
-        void align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* aligner, bool score_anchors_as_matches,
-                   size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier, bool simplify_topologies,
-                   size_t unmergeable_len, size_t band_padding, multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls = nullptr,
+        void align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* scoring_aligner, const GSSWAligner* dp_aligner,
+                   bool score_anchors_as_matches, size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier,
+                   size_t max_tail_length, bool simplify_topologies, size_t unmergeable_len, size_t band_padding,
+                   multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls = nullptr,
                    SnarlDistanceIndex* dist_index = nullptr, const function<pair<id_t, bool>(id_t)>* project = nullptr,
-                   bool allow_negative_scores = false, unordered_map<handle_t, bool>* left_align_strand = nullptr);
+                   bool allow_negative_scores = false, bool align_in_reverse = false,
+                   uint64_t max_band_cells = std::numeric_limits<uint64_t>::max());
         
         /// Do intervening and tail alignments between the anchoring paths and
         /// store the result in a multipath_alignment_t. Reachability edges must
@@ -208,15 +214,21 @@ namespace vg {
         /// constructed! TODO: Shouldn't the class hold a reference to the
         /// Alignment then?
         ///
+        /// If dp_aligner is different from scoring_aligner, it is used for
+        /// dynamic programming alignment operations, and the results are
+        /// rescored with scoring_aligner. Neither may be null.
+        ///
         /// Note that the output alignment may NOT be in topologically-sorted
         /// order, even if this MultipathAlignmentGraph is. You MUST sort it
         /// with topologically_order_subpaths() before trying to run DP on it.
-        void align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* aligner, bool score_anchors_as_matches,
-                   size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier, bool simplify_topologies,
-                   size_t unmergeable_len, function<size_t(const Alignment&,const HandleGraph&)> band_padding_function,
-                   multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls = nullptr, SnarlDistanceIndex* dist_index = nullptr,
-                   const function<pair<id_t, bool>(id_t)>* project = nullptr, bool allow_negative_scores = false,
-                   unordered_map<handle_t, bool>* left_align_strand = nullptr);
+        void align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* scoring_aligner, const GSSWAligner* dp_aligner,
+                   bool score_anchors_as_matches, size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier,
+                   size_t max_tail_length, bool simplify_topologies, size_t unmergeable_len,
+                   const function<size_t(const Alignment&,const HandleGraph&)>& band_padding_function,
+                   multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls = nullptr,
+                   SnarlDistanceIndex* dist_index = nullptr, const function<pair<id_t, bool>(id_t)>* project = nullptr,
+                   bool allow_negative_scores = false, bool align_in_reverse = false,
+                   uint64_t max_band_cells = std::numeric_limits<uint64_t>::max());
         
         /// Converts a MultipathAlignmentGraph to a GraphViz Dot representation, output to the given ostream.
         /// If given the Alignment query we are working on, can produce information about subpath iterators.
@@ -261,7 +273,7 @@ namespace vg {
                                              int64_t* removed_end_from_length = nullptr);
         
         /// Add the path chunks as nodes to the connectivity graph
-        void create_path_chunk_nodes(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
+        void create_path_chunk_nodes(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, path_t>>& path_chunks,
                                      const Alignment& alignment, const function<pair<id_t, bool>(id_t)>& project,
                                      const unordered_multimap<id_t, pair<id_t, bool>>& injection_trans,
                                      vector<size_t>* path_node_provenance = nullptr);
@@ -312,12 +324,21 @@ namespace vg {
         /// Alignments of the tail off of that subpath. Also computes the
         /// source subpaths and adds their numbers to the given set if not
         /// null.
+        ///
+        /// If dp_aligner is different from scoring_aligner, it is used for
+        /// dynamic programming alignment operations (where its scores do not
+        /// risk overflow), and the results are rescored with scoring_aligner.
+        /// Neither may be null.
+        ///
+        /// If a tail is longer than max_tail_length, produces an alignment
+        /// softclipping it.
+        ///
         /// If dynamic alignment count is also selected, can indicate a minimum number
         /// of paths that must be in the extending graph in order to do an alignment
         unordered_map<bool, unordered_map<size_t, vector<Alignment>>>
-        align_tails(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* aligner,
-                    size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier,
-                    size_t min_paths, unordered_set<size_t>* sources = nullptr);
+        align_tails(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* scoring_aligner, const GSSWAligner* dp_aligner,
+                    size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier, size_t min_paths,
+                    size_t max_tail_length, unordered_set<size_t>* sources = nullptr);
         
         /// Removes alignments that follow the same path through the graph, retaining only the
         /// highest scoring ones. If deduplicating leftward, then also removes paths that take a
@@ -331,6 +352,8 @@ namespace vg {
         static pair<path_t, int32_t> zip_alignments(vector<pair<path_t, int32_t>>& alt_alns, bool from_left,
                                                     const Alignment& alignment, const HandleGraph& align_graph,
                                                     string::const_iterator begin, const GSSWAligner* aligner);
+        
+        void reverse_alignment(Alignment& aln) const;
         
         /// Identifies regions that are shared across all of the alternative alignments, and then
         /// splits those regions out into separate alignments, dividing the set of alternative

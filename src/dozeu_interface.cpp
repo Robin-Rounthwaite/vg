@@ -261,7 +261,9 @@ size_t DozeuInterface::do_poa(const OrderedGraph& graph, const dz_query_s* packe
         vector<const dz_forefront_s*> incoming_forefronts;
         graph.for_each_neighbor(i, !right_to_left, [&](size_t j) {
             const dz_forefront_s* inc_ff = forefronts[j];
-            if (inc_ff) {
+            if (inc_ff && inc_ff->fr.epos > inc_ff->fr.spos) {
+                // The incoming node has a forefront made from it and the range
+                // that should continue forward is not empty.
                 incoming_forefronts.push_back(inc_ff);
             }
         });
@@ -416,7 +418,9 @@ void DozeuInterface::calculate_and_save_alignment(Alignment &alignment, const Or
     // aln->query_length can be shorter than alignment.sequence().size() if we
     // didn't traceback from the very last base of the query, or if we didn't
     // pack the whole query because of an offset.
-
+    
+    // Add a mapping to node at index _id.
+    // Also consults (and clears) ref_offset
 	#define _push_mapping(_id) ({ \
 		handle_t n = graph.order[(_id)]; \
 		Mapping *mapping = path->add_mapping(); \

@@ -12,6 +12,8 @@
 #include "../algorithms/alignment_path_offsets.hpp"
 #include <bdsg/overlays/overlay_helper.hpp>
 
+#include "progress_bar.hpp"
+
 #include <unistd.h>
 #include <getopt.h>
 
@@ -25,15 +27,17 @@ void help_annotate(char** argv) {
          << "    -b, --bed-name FILE    a BED file to convert to GAM. May repeat." << endl
          << "    -f, --gff-name FILE    a GFF3 file to convert to GAM. May repeat." << endl
          << "    -g, --ggff             output at GGFF subgraph annotation file instead of GAM (requires -s)" << endl
+         << "    -F, --gaf-output       output in GAF format rather than GAM" << endl
          << "    -s, --snarls FILE      file containing snarls to expand GFF intervals into" << endl
          << "alignment annotation options:" << endl
          << "    -a, --gam FILE         file of Alignments to annotate (required)" << endl
          << "    -x, --xg-name FILE     xg index of the graph against which the Alignments are aligned (required)" << endl
          << "    -p, --positions        annotate alignments with reference positions" << endl
          << "    -m, --multi-position   annotate alignments with multiple reference positions" << endl
-         << "    -l, --search-limit N   when annotating with positions, search this far for paths (default: read length)" << endl
+         << "    -l, --search-limit N   when annotating with positions, search this far for paths, or -1 to not search (default: 0 (auto from read length))" << endl
          << "    -b, --bed-name FILE    annotate alignments with overlapping region names from this BED. May repeat." << endl
          << "    -n, --novelty          output TSV table with header describing how much of each Alignment is novel" << endl
+         << "    -P, --progress         show progress" << endl
          << "    -t, --threads          use the specified number of threads" << endl;
 }
 
@@ -94,10 +98,12 @@ int main_annotate(int argc, char** argv) {
     string gam_name;
     bool add_positions = false;
     bool add_multiple_positions = false;
-    size_t search_limit = 0;
+    int64_t search_limit = 0;
     bool novelty = false;
     bool output_ggff = false;
+    bool output_gaf = false;
     string snarls_name;
+    bool show_progress = false;
 
     int c;
     optind = 2; // force optind past command positional argument
@@ -112,15 +118,17 @@ int main_annotate(int argc, char** argv) {
             {"bed-name", required_argument, 0, 'b'},
             {"gff-name", required_argument, 0, 'f'},
             {"ggff", no_argument, 0, 'g'},
+            {"gaf-output", no_argument, 0, 'F'},
             {"snarls", required_argument, 0, 's'},
             {"novelty", no_argument, 0, 'n'},
+            {"progress", no_argument, 0, 'P'},
             {"threads", required_argument, 0, 't'},
             {"help", required_argument, 0, 'h'},
             {0, 0, 0, 0}
         };
 
         int option_index = 0;
-        c = getopt_long (argc, argv, "hx:a:pml:b:f:gs:nt:h",
+        c = getopt_long (argc, argv, "hx:a:pml:b:f:gFs:nt:Ph",
                 long_options, &option_index);
 
         // Detect the end of the options.
@@ -149,6 +157,10 @@ int main_annotate(int argc, char** argv) {
             output_ggff = true;
             break;
                 
+        case 'F':
+            output_gaf = true;
+            break;
+                
         case 's':
             snarls_name = optarg;
             break;
@@ -163,7 +175,7 @@ int main_annotate(int argc, char** argv) {
             break;
             
         case 'l':
-            search_limit = parse<size_t>(optarg);
+            search_limit = parse<int64_t>(optarg);
             break;
             
         case 'n':
@@ -172,6 +184,10 @@ int main_annotate(int argc, char** argv) {
             
         case 't':
             omp_set_num_threads(parse<size_t>(optarg));
+            break;
+
+        case 'P':
+            show_progress = true;
             break;
 
         case 'h':
@@ -191,7 +207,13 @@ int main_annotate(int argc, char** argv) {
 
     if (!xg_name.empty()) {
         // Read in the XG index
+        if (show_progress) {
+            std::cerr << "Load graph" << std::endl;
+        }
         path_handle_graph = vg::io::VPKG::load_one<PathHandleGraph>(xg_name);
+        if (show_progress) {
+            std::cerr << "Apply overlay" << std::endl;
+        }
         xg_index = overlay_helper.apply(path_handle_graph.get());
     } else {
         cerr << "error [vg annotate]: no xg index provided" << endl;
@@ -201,13 +223,12 @@ int main_annotate(int argc, char** argv) {
     
     unique_ptr<SnarlManager> snarl_manager = nullptr;
     if (!snarls_name.empty()) {
-        ifstream snarl_stream;
-        snarl_stream.open(snarls_name);
-        if (!snarl_stream) {
-            cerr << "error:[vg mpmap] Cannot open Snarls file " << snarls_name << endl;
-            exit(1);
+        if (show_progress) {
+            std::cerr << "Load snarls" << std::endl;
         }
-        snarl_manager = vg::io::VPKG::load_one<SnarlManager>(snarl_stream);
+        get_input_file(snarls_name, [&](istream& snarl_stream) {
+            snarl_manager = vg::io::VPKG::load_one<SnarlManager>(snarl_stream);
+        });
     }
     
     Mapper mapper(xg_index, nullptr, nullptr);
@@ -256,7 +277,9 @@ int main_annotate(int argc, char** argv) {
                 << novel_bp << endl;
             };
             get_input_file(gam_name, [&](istream& in) {
-                vg::io::for_each(in, lambda);
+                vg::Progressive::with_progress(show_progress, "Read reads", [&](const std::function<void(size_t, size_t)>& progress) {
+                    vg::io::for_each(in, lambda, progress);
+                });
             });
         } else {
             // We are annotating the actual reads
@@ -293,10 +316,7 @@ int main_annotate(int argc, char** argv) {
                 
                 get_input_file(bed_name, [&](istream& bed_stream) {
                     // Load all the BED regions as Alignments embedded in the graph.
-                    vector<Alignment> bed_regions;
-                    parse_bed_regions(bed_stream, xg_index, &bed_regions);
-                    
-                    for (auto& region : bed_regions) {
+                    parse_bed_regions(bed_stream, xg_index, [&](Alignment& region) {
                         // For each region in the BED
                         
                         // Get the cannonical copy of its name (which may be "")
@@ -309,58 +329,60 @@ int main_annotate(int argc, char** argv) {
                             features_on_node[mapping.position().node_id()].emplace_back(mapping_to_range(xg_index, mapping),
                                 interned_name);
                         }
-                    }
+                    });
                 });
             }
             
             get_input_file(gam_name, [&](istream& in) {
-                vg::io::for_each_parallel<Alignment>(in, [&](Alignment& aln) {
-                    // For each read
-                    
-                    if (add_positions) {
-                        // Annotate it with its initial position on each path it touches
-                        aln.clear_refpos();
-                        if (add_multiple_positions) {
-                            // One position per node
-                            vg::algorithms::annotate_with_node_path_positions(*mapper.xindex, aln, search_limit);
-                        } else {
-                            // One position per alignment
-                            vg::algorithms::annotate_with_initial_path_positions(*mapper.xindex, aln, search_limit);
-                        }
-                    }
-                    
-                    if (!features_on_node.empty()) {
-                        // We want to annotate with BED feature overlaps as well.
-                        unordered_set<const string*> touched_features;
+                vg::Progressive::with_progress(show_progress, "Read reads", [&](const std::function<void(size_t, size_t)>& progress) {
+                    vg::io::for_each_parallel<Alignment>(in, [&](Alignment& aln) {
+                        // For each read
                         
-                        for (auto& mapping : aln.path().mapping()) {
-                            // For each mapping
-                            
-                            auto node_id = mapping.position().node_id();
-                            auto features = features_on_node.find(node_id);
-                            if (features != features_on_node.end()) {
-                                // Some things occur on this node. Find the overlaps with the part of the node touched by this read.
-                                auto overlapping = find_overlapping(features->second, mapping_to_range(xg_index, mapping));
-                                // Save them all to the set (to remove duplicates)
-                                copy(overlapping.begin(), overlapping.end(), inserter(touched_features, touched_features.begin()));
+                        if (add_positions) {
+                            // Annotate it with its initial position on each path it touches
+                            aln.clear_refpos();
+                            if (add_multiple_positions) {
+                                // One position per node
+                                vg::algorithms::annotate_with_node_path_positions(*mapper.xindex, aln, search_limit);
+                            } else {
+                                // One position per alignment
+                                vg::algorithms::annotate_with_initial_path_positions(*mapper.xindex, aln, search_limit);
                             }
                         }
                         
-                        // Convert the string pointers to actual string copies, for annotation API.
-                        // Make sure to use an ordered set here to sort, to make output deterministic.
-                        set<string> feature_names;
-                        for (const string* name : touched_features) {
-                            feature_names.insert(*name);
+                        if (!features_on_node.empty()) {
+                            // We want to annotate with BED feature overlaps as well.
+                            unordered_set<const string*> touched_features;
+                            
+                            for (auto& mapping : aln.path().mapping()) {
+                                // For each mapping
+                                
+                                auto node_id = mapping.position().node_id();
+                                auto features = features_on_node.find(node_id);
+                                if (features != features_on_node.end()) {
+                                    // Some things occur on this node. Find the overlaps with the part of the node touched by this read.
+                                    auto overlapping = find_overlapping(features->second, mapping_to_range(xg_index, mapping));
+                                    // Save them all to the set (to remove duplicates)
+                                    copy(overlapping.begin(), overlapping.end(), inserter(touched_features, touched_features.begin()));
+                                }
+                            }
+                            
+                            // Convert the string pointers to actual string copies, for annotation API.
+                            // Make sure to use an ordered set here to sort, to make output deterministic.
+                            set<string> feature_names;
+                            for (const string* name : touched_features) {
+                                feature_names.insert(*name);
+                            }
+                            
+                            // Annotate the read with the feature name strings.
+                            set_annotation(aln, "features", feature_names);
                         }
                         
-                        // Annotate the read with the feature name strings.
-                        set_annotation(aln, "features", feature_names);
-                    }
-                    
-                    // Output the alignment
-                    auto& buffer = buffers.at(omp_get_thread_num());
-                    buffer.emplace_back(std::move(aln));
-                    vg::io::write_buffered(cout, buffer, 1000);
+                        // Output the alignment
+                        auto& buffer = buffers.at(omp_get_thread_num());
+                        buffer.emplace_back(std::move(aln));
+                        vg::io::write_buffered(cout, buffer, 1000);
+                    }, 256, progress);
                 });
             });
         
@@ -461,23 +483,41 @@ int main_annotate(int argc, char** argv) {
             }
         }
         else {
+            // We are converting annotations to GAM/GAF.
+            
+            // Open up a GAM/GAF output stream.
+            // TODO: Make the read parallel so we can actually use all the threads we are configuring for here.
+            unique_ptr<vg::io::AlignmentEmitter> alignment_emitter = vg::io::get_non_hts_alignment_emitter("-", output_gaf ? "GAF" : "GAM", {}, vg::get_thread_count(),
+                                                                                                           xg_index);
+            // There's some benefit to batching oursleves since the un-batched
+            // emit will make single-item batches to delegate to the batched
+            // version.
+            std::vector<Alignment> buffer;
+            auto emit_alignment = [&](Alignment& aln) {
+                buffer.emplace_back(std::move(aln));
+                // if we have enough, write them
+                if (buffer.size() > 1000) { 
+                    alignment_emitter->emit_singles(std::move(buffer));
+                    // clear the buffer
+                    buffer.clear();
+                }
+            };
+
             for (auto& bed_name : bed_names) {
-                // Convert each BED file to GAM
+                // Convert each BED file
                 get_input_file(bed_name, [&](istream& bed_stream) {
-                    vector<Alignment> buffer;
-                    parse_bed_regions(bed_stream, xg_index, &buffer);
-                    vg::io::write_buffered(cout, buffer, 0); // flush
+                    parse_bed_regions(bed_stream, xg_index, emit_alignment);
                 });
-                
-                // TODO: We'll get an EOF marker per input file.
             }
             
             for (auto& gff_name : gff_names) {
                 get_input_file(gff_name, [&](istream& gff_stream) {
-                    vector<Alignment> buffer;
-                    parse_gff_regions(gff_stream, xg_index, &buffer);
-                    vg::io::write_buffered(cout, buffer, 0); // flush
+                    parse_gff_regions(gff_stream, xg_index, emit_alignment);
                 });
+            }
+
+            if (!buffer.empty()) {
+                alignment_emitter->emit_singles(std::move(buffer));
             }
         }
     }

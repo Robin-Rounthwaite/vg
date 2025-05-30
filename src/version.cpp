@@ -6,6 +6,8 @@
 // Do the same for the build environment info
 #include "vg_environment_version.hpp"
 
+#include <htslib/hts.h>
+
 #include <iostream>
 #include <sstream>
 
@@ -32,6 +34,11 @@
     #define VG_STANDARD_LIBRARY_VERSION "unknown standard library"
 #endif
 
+// And the version of htslib
+#ifndef VG_HTSLIB_VERSION
+    #define VG_HTSLIB_VERSION STR(HTS_VERSION)
+#endif
+
 namespace vg {
 
 using namespace std;
@@ -40,6 +47,8 @@ using namespace std;
 const string Version::VERSION = VG_GIT_VERSION;
 const string Version::COMPILER = VG_COMPILER_VERSION;
 const string Version::STANDARD_LIBRARY = VG_STANDARD_LIBRARY_VERSION;
+const string Version::HTSLIB_HEADERS = VG_HTSLIB_VERSION;
+const string Version::HTSLIB_LIBRARY(hts_version());
 const string Version::OS = VG_OS;
 const string Version::BUILD_USER = VG_BUILD_USER;
 const string Version::BUILD_HOST = VG_BUILD_HOST;
@@ -101,7 +110,22 @@ const unordered_map<string, string> Version::codenames = {
     {"v1.55.0", "Bernolda"},
     {"v1.56.0", "Collalto"},
     {"v1.57.0", "Franchini"},
-    {"v1.58.0", "Cartari"}
+    {"v1.58.0", "Cartari"},
+    {"v1.59.0", "Casatico"},
+    {"v1.60.0", "Annicco"},
+    {"v1.61.0", "Plodio"},
+    {"v1.62.0", "Ranzano"},
+    {"v1.63.0", "Boccaleone"},
+    {"v1.63.1", "Boccaleone"},
+    {"v1.64.0", "Vibbiana"},
+    {"v1.64.1", "Vibbiana"},
+    {"v1.65.0", "Carfon"},
+    {"v1.65.1", "Carfon"},
+    {"v1.66.0", "Navetta"},
+    {"v1.67.0", "Vetria"},
+    {"v1.68.0", "Rimbocchi"},
+    {"v1.69.0", "Bologna"},
+    {"v1.70.0", "Zebedassi"}
     // Add more codenames here
 };
 
@@ -153,6 +177,7 @@ string Version::get_long() {
     s << "vg version " << get_short() << endl;
     s << "Compiled with " << COMPILER << " on " << OS << endl;
     s << "Linked against " << STANDARD_LIBRARY << endl;
+    s << "Using HTSlib headers " << HTSLIB_HEADERS << ", library " << HTSLIB_LIBRARY << endl;
     s << "Built by " << BUILD_USER << "@" << BUILD_HOST;
     return s.str();
 }

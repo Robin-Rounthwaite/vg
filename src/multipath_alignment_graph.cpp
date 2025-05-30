@@ -4,11 +4,16 @@
 
 #include "multipath_alignment_graph.hpp"
 #include "sequence_complexity.hpp"
+#include "reverse_graph.hpp"
+#include "banded_global_aligner.hpp"
+#include "explainer.hpp"
+#include "crash.hpp"
 
 #include "structures/rank_pairing_heap.hpp"
 
 #include "algorithms/extract_connecting_graph.hpp"
 #include "algorithms/extract_extending_graph.hpp"
+#include "algorithms/pad_band.hpp"
 
 //#define debug_multipath_alignment
 //#define debug_decompose_algorithm
@@ -58,7 +63,7 @@ namespace vg {
     }
     
     MultipathAlignmentGraph::MultipathAlignmentGraph(const HandleGraph& graph,
-                                                     const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
+                                                     const vector<pair<pair<string::const_iterator, string::const_iterator>, path_t>>& path_chunks,
                                                      const Alignment& alignment, const function<pair<id_t, bool>(id_t)>& project,
                                                      const unordered_multimap<id_t, pair<id_t, bool>>& injection_trans, bool realign_Ns,
                                                      bool preserve_tail_anchors, vector<size_t>* path_node_provenance) {
@@ -75,7 +80,7 @@ namespace vg {
     }
     
     MultipathAlignmentGraph::MultipathAlignmentGraph(const HandleGraph& graph,
-                                                     const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
+                                                     const vector<pair<pair<string::const_iterator, string::const_iterator>, path_t>>& path_chunks,
                                                      const Alignment& alignment, const function<pair<id_t, bool>(id_t)>& project, bool realign_Ns,
                                                      bool preserve_tail_anchors, vector<size_t>* path_node_provenance) :
                                                      MultipathAlignmentGraph(graph, path_chunks, alignment, project,
@@ -86,7 +91,7 @@ namespace vg {
     }
 
     MultipathAlignmentGraph::MultipathAlignmentGraph(const HandleGraph& graph,
-                                                     const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
+                                                     const vector<pair<pair<string::const_iterator, string::const_iterator>, path_t>>& path_chunks,
                                                      const Alignment& alignment, const unordered_map<id_t, pair<id_t, bool>>& projection_trans, bool realign_Ns,
                                                      bool preserve_tail_anchors, vector<size_t>* path_node_provenance) :
                                                      MultipathAlignmentGraph(graph, path_chunks, alignment, create_projector(projection_trans),
@@ -172,8 +177,9 @@ namespace vg {
         }
         
         // shim the aligned path into the path chunks constructor to make a node for it
-        vector<pair<pair<string::const_iterator, string::const_iterator>, Path>> path_holder;
-        path_holder.emplace_back(make_pair(alignment.sequence().begin(), alignment.sequence().end()), alignment.path());
+        vector<pair<pair<string::const_iterator, string::const_iterator>, path_t>> path_holder;
+        path_holder.emplace_back(make_pair(alignment.sequence().begin(), alignment.sequence().end()), path_t());
+        from_proto_path(alignment.path(), path_holder.front().second);
         create_path_chunk_nodes(graph, path_holder, alignment, project, injection_trans);
         
         // cut the snarls out of the aligned path so we can realign through them
@@ -205,7 +211,7 @@ namespace vg {
         // Nothing to do
     }
     
-    void MultipathAlignmentGraph::create_path_chunk_nodes(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, Path>>& path_chunks,
+    void MultipathAlignmentGraph::create_path_chunk_nodes(const HandleGraph& graph, const vector<pair<pair<string::const_iterator, string::const_iterator>, path_t>>& path_chunks,
                                                           const Alignment& alignment, const function<pair<id_t, bool>(id_t)>& project,
                                                           const unordered_multimap<id_t, pair<id_t, bool>>& injection_trans,
                                                           vector<size_t>* path_node_provenance) {
@@ -213,10 +219,10 @@ namespace vg {
         for (const auto& path_chunk : path_chunks) {
             
 #ifdef debug_multipath_alignment
-            cerr << "performing DFS to walk out path " << pb2json(path_chunk.second) << endl;
+            cerr << "performing DFS to walk out path " << debug_string(path_chunk.second) << endl;
 #endif
             
-            const Path& path = path_chunk.second;
+            const auto& path = path_chunk.second;
             
             auto range = injection_trans.equal_range(path.mapping(0).position().node_id());
             for (auto iter = range.first; iter != range.second; iter++) {
@@ -248,14 +254,14 @@ namespace vg {
 #endif
                     pair<id_t, bool> projected_trav = project(graph.get_id(trav));
                     
-                    const Position& pos = path.mapping(stack.size() - 1).position();
+                    const auto& pos = path.mapping(stack.size() - 1).position();
                     if (projected_trav.first == pos.node_id() &&
                         projected_trav.second == (projected_trav.second != graph.get_is_reverse(trav))) {
                         
                         // position matched the path
                         
 #ifdef debug_multipath_alignment
-                        cerr << "chunk position " << pb2json(pos) << " matches traversal " << projected_trav.first << (projected_trav.second ? "-" : "+") << ", walked " << stack.size() << " of " << path.mapping_size() << " mappings" << endl;
+                        cerr << "chunk position " << debug_string(pos) << " matches traversal " << projected_trav.first << (projected_trav.second ? "-" : "+") << ", walked " << stack.size() << " of " << path.mapping_size() << " mappings" << endl;
 #endif
                         
                         if (stack.size() == path.mapping_size()) {
@@ -291,8 +297,8 @@ namespace vg {
                 
                 // move over the path
                 for (size_t i = 0; i < path.mapping_size(); i++) {
-                    const Mapping& mapping = path.mapping(i);
-                    const Position& position = mapping.position();
+                    const auto& mapping = path.mapping(i);
+                    const auto& position = mapping.position();
                     
                     auto& stack_record = stack[i];
                     handle_t& trav = stack_record.second[stack_record.first - 1];
@@ -307,7 +313,7 @@ namespace vg {
                     new_position->set_offset(position.offset());
                     
                     for (int64_t j = 0; j < mapping.edit_size(); j++) {
-                        from_proto_edit(mapping.edit(j), *new_mapping->add_edit());
+                        *new_mapping->add_edit() = mapping.edit(j);
                     }
                 }
                 
@@ -2287,8 +2293,8 @@ namespace vg {
     
         // Align the tails, not collecting a set of source subpaths.
         // TODO: factor of 1/2 is arbitray, but i do think it should be fewer than the max
-        auto tail_alignments = align_tails(alignment, align_graph, aligner, max<size_t>(1, max_alt_alns / 2),
-                                           dynamic_alt_alns, max_gap, pessimistic_tail_gap_multiplier, max_alt_alns, nullptr);
+        auto tail_alignments = align_tails(alignment, align_graph, aligner, aligner, max<size_t>(1, max_alt_alns / 2),
+                                           dynamic_alt_alns, max_gap, pessimistic_tail_gap_multiplier, max_alt_alns, std::numeric_limits<size_t>::max(), nullptr);
         
         
         for (bool handling_right_tail : {false, true}) {
@@ -4222,34 +4228,34 @@ namespace vg {
 #endif
     }
     
-void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* aligner,
-                                    bool score_anchors_as_matches, size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap,
-                                    double pessimistic_tail_gap_multiplier, bool simplify_topologies, size_t unmergeable_len,
-                                    size_t band_padding, multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls,
+void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* scoring_aligner,
+                                    const GSSWAligner* dp_aligner, bool score_anchors_as_matches, size_t max_alt_alns,
+                                    bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier,
+                                    size_t max_tail_length, bool simplify_topologies, size_t unmergeable_len, size_t band_padding,
+                                    multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls,
                                     SnarlDistanceIndex* dist_index, const function<pair<id_t, bool>(id_t)>* project,
-                                    bool allow_negative_scores, unordered_map<handle_t, bool>* left_align_strand) {
+                                    bool allow_negative_scores, bool align_in_reverse, uint64_t max_band_cells) {
         
-        // don't dynamically choose band padding, shim constant value into a function type
-        function<size_t(const Alignment&,const HandleGraph&)> constant_padding = [&](const Alignment& seq, const HandleGraph& graph) {
-            return band_padding;
-        };
         align(alignment,
               align_graph,
-              aligner,
+              scoring_aligner,
+              dp_aligner,
               score_anchors_as_matches,
               max_alt_alns,
               dynamic_alt_alns,
               max_gap,
               pessimistic_tail_gap_multiplier,
+              max_tail_length,
               simplify_topologies,
               unmergeable_len,
-              constant_padding,
+              algorithms::pad_band_constant(band_padding),
               multipath_aln_out,
               cutting_snarls,
               dist_index,
               project,
               allow_negative_scores,
-              left_align_strand);
+              align_in_reverse,
+              max_band_cells);
     }
 
     void MultipathAlignmentGraph::deduplicate_alt_alns(vector<pair<path_t, int32_t>>& alt_alns,
@@ -5179,13 +5185,14 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
         return return_val;
     }
     
-    void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* aligner,
-                                        bool score_anchors_as_matches, size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap,
-                                        double pessimistic_tail_gap_multiplier, bool simplify_topologies, size_t unmergeable_len,
-                                        function<size_t(const Alignment&,const HandleGraph&)> band_padding_function,
+    void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* scoring_aligner,
+                                        const GSSWAligner* dp_aligner, bool score_anchors_as_matches, size_t max_alt_alns,
+                                        bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier,
+                                        size_t max_tail_length, bool simplify_topologies, size_t unmergeable_len,
+                                        const function<size_t(const Alignment&,const HandleGraph&)>& band_padding_function,
                                         multipath_alignment_t& multipath_aln_out, SnarlManager* cutting_snarls,
                                         SnarlDistanceIndex* dist_index, const function<pair<id_t, bool>(id_t)>* project,
-                                        bool allow_negative_scores, unordered_map<handle_t, bool>* left_align_strand) {
+                                        bool allow_negative_scores, bool align_in_reverse, uint64_t max_band_cells) {
         
         // TODO: magic number
         // how many tails we need to have before we try the more complicated but
@@ -5193,8 +5200,11 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
         size_t tail_decompose_threshold = 4;
         
         // Can only align if edges are present.
-        assert(has_reachability_edges);
+        crash_unless(has_reachability_edges);
         
+        crash_unless(scoring_aligner != nullptr);
+        crash_unless(dp_aligner != nullptr);
+
         // transfer over data from alignment
         transfer_read_metadata(alignment, multipath_aln_out);
         
@@ -5209,12 +5219,12 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                 PathNode& path_node = path_nodes.at(j);
                 subpath_t* subpath = multipath_aln_out.add_subpath();
                 *subpath->mutable_path() = path_node.path;
-                int32_t match_score = aligner->score_exact_match(path_node.begin, path_node.end,
-                                                                 alignment.quality().begin() + (path_node.begin - alignment.sequence().begin()));
+                int32_t match_score = scoring_aligner->score_exact_match(path_node.begin, path_node.end,
+                                                                         alignment.quality().begin() + (path_node.begin - alignment.sequence().begin()));
                 
                 subpath->set_score(match_score
-                                   + (path_node.begin == alignment.sequence().begin() ? aligner->score_full_length_bonus(true, alignment) : 0)
-                                   + (path_node.end == alignment.sequence().end() ? aligner->score_full_length_bonus(false, alignment) : 0));
+                                   + (path_node.begin == alignment.sequence().begin() ? scoring_aligner->score_full_length_bonus(true, alignment) : 0)
+                                   + (path_node.end == alignment.sequence().end() ? scoring_aligner->score_full_length_bonus(false, alignment) : 0));
             }
         }
         else {
@@ -5222,7 +5232,7 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                 PathNode& path_node = path_nodes.at(j);
                 subpath_t* subpath = multipath_aln_out.add_subpath();
                 *subpath->mutable_path() = path_node.path;
-                subpath->set_score(aligner->score_partial_alignment(alignment, align_graph, path_node.path, path_node.begin));
+                subpath->set_score(scoring_aligner->score_partial_alignment(alignment, align_graph, path_node.path, path_node.begin));
             }
         }
         
@@ -5270,7 +5280,7 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                                        final_mapping_position.offset() + mapping_from_length(final_mapping));
             
             // the longest gap that could be detected at this position in the read
-            size_t src_max_gap = aligner->longest_detectable_gap(alignment, src_path_node.end);
+            size_t src_max_gap = dp_aligner->longest_detectable_gap(alignment, src_path_node.end);
             
             // This holds edges that we remove, because we couldn't actually get an alignment across them with a positive score.
             unordered_set<pair<size_t, size_t>> edges_for_removal;
@@ -5289,10 +5299,13 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                 // otherwise set it to the maximum gap length possible while retaining a positive score 
                 size_t max_dist = allow_negative_scores ?
                     edge.second :
-                    intervening_length + min(min(src_max_gap, aligner->longest_detectable_gap(alignment, dest_path_node.begin)), max_gap);
+                    intervening_length + min(min(src_max_gap, dp_aligner->longest_detectable_gap(alignment, dest_path_node.begin)), max_gap);
                 
+                size_t min_gap = (edge.second > intervening_length) ? edge.second - intervening_length : intervening_length - edge.second;
+
 #ifdef debug_multipath_alignment
-                cerr << "read dist: " << intervening_length << ", graph dist " << edge.second << " source max gap: " << src_max_gap << ", dest max gap " << aligner->longest_detectable_gap(alignment, dest_path_node.begin) << ", max allowed gap " << max_gap << endl;
+                cerr << "read dist: " << intervening_length << ", graph dist " << edge.second << " source max gap: " << src_max_gap << ", dest max gap " << dp_aligner->longest_detectable_gap(alignment, dest_path_node.begin) << ", max allowed gap " << max_gap << endl;
+                cerr << "min gap: " << min_gap << endl;
 #endif
                 
                 // extract the graph between the matches
@@ -5338,22 +5351,68 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                         intervening_sequence.clear_path();
                         
 #ifdef debug_multipath_alignment
-                        cerr << "making " << num_alns_iter << " alignments of sequence " << intervening_sequence.sequence() << " to connecting graph" << endl;
-                        connecting_graph.for_each_handle([&](const handle_t& handle) {
-                            cerr << connecting_graph.get_id(handle) << " " << connecting_graph.get_sequence(handle) << endl;
-                            connecting_graph.follow_edges(handle, true, [&](const handle_t& prev) {
-                                cerr << "\t" << connecting_graph.get_id(prev) << " <-" << endl;
+                        cerr << "making " << num_alns_iter << " alignments of sequence ";
+                        if (intervening_sequence.sequence().size() < 150) {
+                            cerr << intervening_sequence.sequence();
+                        } else {
+                            cerr << "(length " << intervening_sequence.sequence().size() << " bp at " << (src_path_node.end - alignment.sequence().begin()) << ")";
+                        }
+                        cerr << " to connecting graph" << endl;
+                        size_t connecting_nodes = connecting_graph.get_node_count();
+                        if (connecting_nodes < 100) {
+                            connecting_graph.for_each_handle([&](const handle_t& handle) {
+                                cerr << connecting_graph.get_id(handle) << " " << connecting_graph.get_sequence(handle) << endl;
+                                connecting_graph.follow_edges(handle, true, [&](const handle_t& prev) {
+                                    cerr << "\t" << connecting_graph.get_id(prev) << " <-" << endl;
+                                });
+                                connecting_graph.follow_edges(handle, false, [&](const handle_t& next) {
+                                    cerr << "\t-> " << connecting_graph.get_id(next) << endl;
+                                });
                             });
-                            connecting_graph.follow_edges(handle, false, [&](const handle_t& next) {
-                                cerr << "\t-> " << connecting_graph.get_id(next) << endl;
-                            });
-                        });
+                        } else {
+                            cerr << "(" << connecting_nodes << " nodes from " << connecting_graph.min_node_id() << " to " << connecting_graph.max_node_id() << ")" << endl;
+                        }
 #endif
                         
+                        // possibly the reverse the sequence
+                        HandleGraph* aln_connecting_graph = &connecting_graph;
+                        ReverseGraph reverse_graph(&connecting_graph, false);
+                        if (align_in_reverse) {
+                            reverse_alignment(intervening_sequence);
+                            aln_connecting_graph = &reverse_graph;
+                        }
+
+#ifdef debug_multipath_alignment
+                        // Dump the graph if we're explaining
+                        SubgraphExplainer exp(true);
+                        exp.subgraph(*aln_connecting_graph);
+#endif
+
                         vector<Alignment> alt_alignments;
-                        aligner->align_global_banded_multi(intervening_sequence, alt_alignments, connecting_graph, num_alns_iter,
-                                                           band_padding_function(intervening_sequence, connecting_graph), true,
-                                                           left_align_strand);
+                        try {
+                            dp_aligner->align_global_banded_multi(intervening_sequence, alt_alignments, *aln_connecting_graph, num_alns_iter,
+                                                                  band_padding_function(intervening_sequence, *aln_connecting_graph), true, max_band_cells);
+                            if (dp_aligner != scoring_aligner) {
+                                for (auto& aln : alt_alignments) {
+                                    aln.set_score(scoring_aligner->score_contiguous_alignment(aln, false, false));
+                                }
+                            }
+                        } catch(BandMatricesTooBigException& e) {
+                            // the MEMs weren't connectable with a positive score after all, mark the edge for removal
+#ifdef debug_multipath_alignment
+                            cerr << "Remove edge " << j << " -> " << edge.first << " because it used too many BGA cells" << endl;
+#endif            
+                            edges_for_removal.insert(edge);
+                            deduplicated.clear();
+                            break;
+                        }
+
+
+                        if (align_in_reverse) {
+                            for (auto& aln : alt_alignments) {
+                                reverse_alignment(aln);
+                            }
+                        }
                         
                         // remove alignments with the same path
                         deduplicated = convert_and_deduplicate(alt_alignments, false, false);
@@ -5369,6 +5428,10 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                     }
                 }
                 
+#ifdef debug_multipath_alignment
+                std::cerr << "After deduplication, have " << deduplicated.size() << " connecting alignments" << endl;
+#endif
+
                 bool added_direct_connection = false;
                 for (auto& connecting_alignment : deduplicated) {
 #ifdef debug_multipath_alignment
@@ -5446,8 +5509,9 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
         unordered_set<size_t> sources;
         
         // Actually align the tails
-        auto tail_alignments = align_tails(alignment, align_graph, aligner, max_alt_alns, dynamic_alt_alns,
-                                           max_gap, pessimistic_tail_gap_multiplier, 0, &sources);
+        auto tail_alignments = align_tails(alignment, align_graph, scoring_aligner, dp_aligner,
+                                           max_alt_alns, dynamic_alt_alns, max_gap, pessimistic_tail_gap_multiplier,
+                                           0, max_tail_length, &sources);
                 
         // TODO: merge and simplify the tail alignments? rescoring would be kind of a pain...
         
@@ -5474,9 +5538,9 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
             else if (deduplicated.size() < tail_decompose_threshold) {
                 // do the simpler zip algorithm
                 auto right_zip_aln = zip_alignments(deduplicated, false, alignment, align_graph,
-                                                    path_node.end, aligner);
+                                                    path_node.end, scoring_aligner);
                 auto left_zip_aln = zip_alignments(deduplicated, true, alignment, align_graph,
-                                                   path_node.end, aligner);
+                                                   path_node.end, scoring_aligner);
                 shared_tail_alns.emplace_back(move(left_zip_aln));
                 shared_tail_alns.emplace_back(move(right_zip_aln));
                 unshared_tail_alns.emplace_back(move(deduplicated));
@@ -5484,7 +5548,7 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
             else {
                 // do the more complicated decompose algorithm
                 tie(shared_tail_alns, unshared_tail_alns) = decompose_alignments(deduplicated, alignment, align_graph,
-                                                                                 path_node.end, aligner);
+                                                                                 path_node.end, scoring_aligner);
                 
                 if (shared_tail_alns.empty()) {
                     // nothing decomposed, no universally shared elements, just add placeholders
@@ -5511,7 +5575,7 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
             // add subpaths for the tail alignments
             add_decomposed_tail_alignments(alignment, align_graph, multipath_aln_out, prohibited_merges,
                                            shared_tail_alns, unshared_tail_alns, j, false, unmergeable_len,
-                                           aligner, cutting_snarls, dist_index, project);
+                                           scoring_aligner, cutting_snarls, dist_index, project);
         }
                 
         // Now handle the left tails.
@@ -5538,9 +5602,9 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                 else if (deduplicated.size() < tail_decompose_threshold) {
                     // do the simpler zip algorithm
                     auto right_zip_aln = zip_alignments(deduplicated, false, alignment, align_graph,
-                                                        alignment.sequence().begin(), aligner);
+                                                        alignment.sequence().begin(), scoring_aligner);
                     auto left_zip_aln = zip_alignments(deduplicated, true, alignment, align_graph,
-                                                       alignment.sequence().begin(), aligner);
+                                                       alignment.sequence().begin(), scoring_aligner);
                     shared_tail_alns.emplace_back(move(left_zip_aln));
                     shared_tail_alns.emplace_back(move(right_zip_aln));
                     unshared_tail_alns.emplace_back(move(deduplicated));
@@ -5548,7 +5612,7 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                 else {
                     // do the more complicated decompose algorithm
                     tie(shared_tail_alns, unshared_tail_alns) = decompose_alignments(deduplicated, alignment, align_graph,
-                                                                                     alignment.sequence().begin(), aligner);
+                                                                                     alignment.sequence().begin(), scoring_aligner);
                     if (shared_tail_alns.empty()) {
                         // nothing decomposed, no universally shared elements, just add placeholders
                         shared_tail_alns.resize(2);
@@ -5574,7 +5638,7 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                 // add subpaths for the tail alignments
                 add_decomposed_tail_alignments(alignment, align_graph, multipath_aln_out, prohibited_merges,
                                                shared_tail_alns, unshared_tail_alns, j, true, unmergeable_len,
-                                               aligner, cutting_snarls, dist_index, project);
+                                               scoring_aligner, cutting_snarls, dist_index, project);
                 
             }
             else {
@@ -5989,9 +6053,10 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
     }
     
     unordered_map<bool, unordered_map<size_t, vector<Alignment>>>
-    MultipathAlignmentGraph::align_tails(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* aligner,
-                                         size_t max_alt_alns, bool dynamic_alt_alns, size_t max_gap, double pessimistic_tail_gap_multiplier,
-                                         size_t min_paths, unordered_set<size_t>* sources) {
+    MultipathAlignmentGraph::align_tails(const Alignment& alignment, const HandleGraph& align_graph, const GSSWAligner* scoring_aligner,
+                                         const GSSWAligner* dp_aligner, size_t max_alt_alns, bool dynamic_alt_alns,
+                                         size_t max_gap, double pessimistic_tail_gap_multiplier, size_t min_paths, size_t max_tail_length,
+                                         unordered_set<size_t>* sources) {
         
 #ifdef debug_multipath_alignment
         cerr << "doing tail alignments to:" << endl;
@@ -6050,14 +6115,19 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
 #endif
                 
                 // figure out how long we need to try to align out to
-                int64_t tail_length = alignment.sequence().end() - path_node.end;
-                int64_t gap =  min(aligner->longest_detectable_gap(alignment, path_node.end), max_gap);
-                if (pessimistic_tail_gap_multiplier) {
-                    gap = min(gap, pessimistic_tail_gap(tail_length, pessimistic_tail_gap_multiplier));
+                size_t tail_length = alignment.sequence().end() - path_node.end;
+                size_t aligning_tail_length = min(tail_length, max_tail_length);
+#ifdef debug_multipath_alignment
+                if (aligning_tail_length != tail_length) {
+                    cerr << "trimming tail from length " << tail_length << " to " << aligning_tail_length << endl;
                 }
-                int64_t target_length = tail_length + gap;
-                
-                
+#endif
+                int64_t gap =  min(max_gap, dp_aligner->longest_detectable_gap(alignment.sequence().size() - tail_length + aligning_tail_length,
+                                                                                                    path_node.end - alignment.sequence().begin()));
+                if (pessimistic_tail_gap_multiplier) {
+                    gap = min(gap, pessimistic_tail_gap(aligning_tail_length, pessimistic_tail_gap_multiplier));
+                }
+                int64_t target_length = aligning_tail_length + gap;
                 
                 pos_t end_pos = final_position(path_node.path);
                 
@@ -6080,79 +6150,141 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                 else {
                     num_alt_alns = max_alt_alns;
                 }
+
+                if (num_alt_alns == 0) {
+                    // Don't do any alignments
+                    continue;
+                }
+
+                // Otherwise we need an alignment to fill.
+                // get the sequence remaining in the right tail
+                Alignment right_tail_sequence;
+                right_tail_sequence.set_sequence(alignment.sequence().substr(path_node.end - alignment.sequence().begin(),
+                                                                             aligning_tail_length));
+                if (!alignment.quality().empty()) {
+                    right_tail_sequence.set_quality(alignment.quality().substr(path_node.end - alignment.sequence().begin(),
+                                                                               aligning_tail_length));
+                }
+
+                // And the place to put it
+                auto& alt_alignments = right_alignments[j];
                 
-                if (num_alt_alns > 0) {
-                    
-                    // get the sequence remaining in the right tail
-                    Alignment right_tail_sequence;
-                    right_tail_sequence.set_sequence(alignment.sequence().substr(path_node.end - alignment.sequence().begin(),
-                                                                                 alignment.sequence().end() - path_node.end));
-                    if (!alignment.quality().empty()) {
-                        right_tail_sequence.set_quality(alignment.quality().substr(path_node.end - alignment.sequence().begin(),
-                                                                                   alignment.sequence().end() - path_node.end));
-                    }
-                    
 #ifdef debug_multipath_alignment
-                    cerr << "making " << num_alt_alns << " alignments of sequence: " << right_tail_sequence.sequence() << endl << "to right tail graph" << endl;
-                    tail_graph.for_each_handle([&](const handle_t& handle) {
-                        cerr << tail_graph.get_id(handle) << " " << tail_graph.get_sequence(handle) << endl;
-                        tail_graph.follow_edges(handle, true, [&](const handle_t& prev) {
-                            cerr << "\t" << tail_graph.get_id(prev) << " <-" << endl;
-                        });
-                        tail_graph.follow_edges(handle, false, [&](const handle_t& next) {
-                            cerr << "\t-> " << tail_graph.get_id(next) << endl;
-                        });
+                cerr << "making " << num_alt_alns << " alignments of sequence: " << right_tail_sequence.sequence() << endl << "to right tail graph extracted from " << end_pos << endl;
+                tail_graph.for_each_handle([&](const handle_t& handle) {
+                    cerr << tail_graph.get_id(handle) << " " << tail_graph.get_sequence(handle) << endl;
+                    tail_graph.follow_edges(handle, true, [&](const handle_t& prev) {
+                        cerr << "\t" << tail_graph.get_id(prev) << " <-" << endl;
                     });
+                    tail_graph.follow_edges(handle, false, [&](const handle_t& next) {
+                        cerr << "\t-> " << tail_graph.get_id(next) << endl;
+                    });
+                });
+#endif
+                
+                // Dozeu and GSSW are both 16-bit. So we can't let our tail
+                // scores get too high. The dp aligner probably has higher
+                // scores, so we should use it only if the scores fit and
+                // use the scoring aligner directly otherwise.
+
+                // TODO: This assumes the match score is the *highest*
+                // match score in the quality-adjusted matrix, while the
+                // aligner usually loads the first.
+                int64_t tail_max_score = ((int64_t) dp_aligner->match) * right_tail_sequence.sequence().size() + ((int64_t) dp_aligner->full_length_bonus);
+                auto tail_aligner = tail_max_score < std::numeric_limits<int16_t>::max() ? dp_aligner : scoring_aligner;
+#ifdef debug_multipath_alignment
+                cerr << "align right with aligner " << tail_aligner << " because aligner " << dp_aligner << " gives max score " << tail_max_score << endl;
+#endif
+
+                // TODO: What if the scoring_aligner also has scores that are too large?
+
+                // align against the graph
+                
+                if (num_alt_alns == 1) {
+#ifdef debug_multipath_alignment
+                    cerr << "align right with dozeu with gap " << gap << " for length " << right_tail_sequence.sequence().size() << endl;
+#endif
+                    // we can speed things up by using the dozeu pinned alignment
+                    alt_alignments.emplace_back(move(right_tail_sequence));
+                    tail_aligner->align_pinned(alt_alignments.back(), tail_graph, true, true, gap);
+                    if (tail_aligner != scoring_aligner) {
+                        alt_alignments.back().set_score(scoring_aligner->score_contiguous_alignment(alt_alignments.back(), false, true));
+                    }
+                }
+                else {
+                    
+#ifdef debug_multipath_alignment
+                    cerr << "align right with gssw" << endl;
 #endif
                     
-                    // align against the graph
-                    auto& alt_alignments = right_alignments[j];
-                    if (num_alt_alns == 1) {
+                    // TODO: it would be cleaner to handle these in one multiplier, but i already tuned
+                    // this for the tails and i don't feel like doing that again...
+                    double tail_multiplier = low_complexity_multiplier(right_tail_sequence.sequence().begin(),
+                                                                       right_tail_sequence.sequence().end());
+                    double anchor_multiplier = low_complexity_multiplier(max(path_node.end - anchor_low_cmplx_len,
+                                                                             alignment.sequence().begin()),
+                                                                         path_node.end);
+                    double multiplier = max(tail_multiplier, anchor_multiplier);
+                    if (multiplier != 1.0) {
+                        num_alt_alns = round(multiplier * num_alt_alns);
 #ifdef debug_multipath_alignment
-                        cerr << "align right with dozeu with gap " << gap << endl;
+                        cerr << "increase num alns for low complexity sequence to " << num_alt_alns << endl;
 #endif
-                        // we can speed things up by using the dozeu pinned alignment
-                        alt_alignments.emplace_back(move(right_tail_sequence));
-                        aligner->align_pinned(alt_alignments.back(), tail_graph, true, true, gap);
                     }
-                    else {
-                        
-#ifdef debug_multipath_alignment
-                        cerr << "align right with gssw" << endl;
-#endif
-                        
-                        // TODO: it would be cleaner to handle these in one multiplier, but i already tuned
-                        // this for the tails and i don't feel like doing that again...
-                        double tail_multiplier = low_complexity_multiplier(right_tail_sequence.sequence().begin(),
-                                                                           right_tail_sequence.sequence().end());
-                        double anchor_multiplier = low_complexity_multiplier(max(path_node.end - anchor_low_cmplx_len,
-                                                                                 alignment.sequence().begin()),
-                                                                             path_node.end);
-                        double multiplier = max(tail_multiplier, anchor_multiplier);
-                        if (multiplier != 1.0) {
-                            num_alt_alns = round(multiplier * num_alt_alns);
-#ifdef debug_multipath_alignment
-                            cerr << "increase num alns for low complexity sequence to " << num_alt_alns << endl;
-#endif
+                    tail_aligner->align_pinned_multi(right_tail_sequence, alt_alignments, tail_graph, true, num_alt_alns);
+                    if (tail_aligner != scoring_aligner) {
+                        for (auto& aln : alt_alignments) {
+                            aln.set_score(scoring_aligner->score_contiguous_alignment(aln, false, true));
                         }
-                        aligner->align_pinned_multi(right_tail_sequence, alt_alignments, tail_graph, true, num_alt_alns);
                     }
-                    
-                    // Translate back into non-extracted graph.
-                    // Make sure to account for having removed the left end of the cut node relative to end_pos
-                    for (auto& aln : alt_alignments) {
-                        // We always remove end_pos's offset, since we
-                        // search forward from it to extract the subgraph,
-                        // but that may be from the left or right end of
-                        // its node depending on orientation.
-                        translate_node_ids(*aln.mutable_path(), tail_trans, id(end_pos), offset(end_pos), is_rev(end_pos));
-                    }
+                }
+                
+                // Translate back into non-extracted graph.
+                // Make sure to account for having removed the left end of the cut node relative to end_pos
+                for (auto& aln : alt_alignments) {
+                    // We always remove end_pos's offset, since we
+                    // search forward from it to extract the subgraph,
+                    // but that may be from the left or right end of
+                    // its node depending on orientation.
+                    translate_node_ids(*aln.mutable_path(), tail_trans, id(end_pos), offset(end_pos), is_rev(end_pos));
+                }
 #ifdef debug_multipath_alignment
-                    cerr << "made " << alt_alignments.size() << " tail alignments" << endl;
-                    for (size_t i = 0; i < alt_alignments.size(); ++i) {
-                        cerr << i << ": " << pb2json(alt_alignments[i]) << endl;
-                    }
+                cerr << "made " << alt_alignments.size() << " tail alignments" << endl;
+                for (size_t i = 0; i < alt_alignments.size(); ++i) {
+                    cerr << i << ": " << pb2json(alt_alignments[i]) << endl;
+                }
 #endif
+
+                if (aligning_tail_length < tail_length) {
+                    // Tail is too long. Just make a softclip directly in the base graph ID space.
+                    // TODO: What if we just don't produce this? Do we get softclips for free?
+                    
+                    size_t cut_point = (path_node.end - alignment.sequence().begin()) + aligning_tail_length;
+                    size_t tail_remaining = tail_length - aligning_tail_length;
+#ifdef debug_multipath_alignment
+                    cerr << "softclip long right" << endl;
+#endif
+                    
+                    for (auto& alt_aln : alt_alignments) {
+                        alt_aln.mutable_sequence()->append(alignment.sequence(), cut_point, tail_remaining);
+                        if (!alt_aln.quality().empty()) {
+                            alt_aln.mutable_quality()->append(alignment.quality(), cut_point, tail_remaining);
+                        }
+                        
+                        Mapping* mapping = alt_aln.mutable_path()->mutable_mapping(alt_aln.path().mapping_size() - 1);
+                        Edit* final_edit = mapping->mutable_edit(mapping->edit_size() - 1);
+                        if (final_edit->from_length() == 0 && !final_edit->sequence().empty()) {
+                            // extend the softclip
+                            final_edit->set_sequence(final_edit->sequence() + alignment.sequence().substr(cut_point, tail_remaining));
+                            final_edit->set_to_length(final_edit->sequence().size());
+                        }
+                        else {
+                            final_edit = mapping->add_edit();
+                            final_edit->set_from_length(0);
+                            final_edit->set_to_length(tail_remaining);
+                            final_edit->set_sequence(alignment.sequence().substr(cut_point, tail_remaining));
+                        }
+                    }
                 }
             }
         }
@@ -6175,15 +6307,22 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                 if (path_node.begin != alignment.sequence().begin()) {
                     
                     // figure out how far we need to try to align out to
-                    int64_t tail_length = path_node.begin - alignment.sequence().begin();
-                    int64_t gap =  min(aligner->longest_detectable_gap(alignment, path_node.begin), max_gap);
+                    size_t tail_length = path_node.begin - alignment.sequence().begin();
+                    size_t aligning_tail_length = min(tail_length, max_tail_length);
+#ifdef debug_multipath_alignment
+                    if (aligning_tail_length != tail_length) {
+                        cerr << "trimming tail from length " << tail_length << " to " << aligning_tail_length << endl;
+                    }
+#endif
+
+                    int64_t gap =  min(max_gap, dp_aligner->longest_detectable_gap(alignment.sequence().size() - tail_length + aligning_tail_length,
+                                                                                                        aligning_tail_length));
                     if (pessimistic_tail_gap_multiplier) {
                         gap = min(gap, pessimistic_tail_gap(tail_length, pessimistic_tail_gap_multiplier));
                     }
                     int64_t target_length = tail_length + gap;
                     
                     pos_t begin_pos = initial_position(path_node.path);
-                    
                     
                     bdsg::HashGraph tail_graph;
                     unordered_map<id_t, id_t> tail_trans = algorithms::extract_extending_graph(&align_graph,
@@ -6204,74 +6343,131 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
                     else {
                         num_alt_alns = max_alt_alns;
                     }
-                            
-                    if (num_alt_alns > 0) {
-                        
-                        Alignment left_tail_sequence;
-                        left_tail_sequence.set_sequence(alignment.sequence().substr(0, path_node.begin - alignment.sequence().begin()));
-                        if (!alignment.quality().empty()) {
-                            left_tail_sequence.set_quality(alignment.quality().substr(0, path_node.begin - alignment.sequence().begin()));
-                        }
+
+                    if (num_alt_alns == 0) {
+                        // Don't do any alignments
+                        continue;
+                    }
+                    
+                    // Otherwise we need an alignment to fill.
+                    // get the sequence remaining in the left tail
+                    Alignment left_tail_sequence;
+                    left_tail_sequence.set_sequence(alignment.sequence().substr(tail_length - aligning_tail_length,
+                                                                                aligning_tail_length));
+                    if (!alignment.quality().empty()) {
+                        left_tail_sequence.set_quality(alignment.quality().substr(tail_length - aligning_tail_length,
+                                                                                  aligning_tail_length));
+                    }
+
+                    // And the place to put it
+                    auto& alt_alignments = left_alignments[j];
                         
 #ifdef debug_multipath_alignment
-                        cerr << "making " << num_alt_alns << " alignments of sequence: " << left_tail_sequence.sequence() << endl << "to left tail graph" << endl;
-                        tail_graph.for_each_handle([&](const handle_t& handle) {
-                            cerr << tail_graph.get_id(handle) << " " << tail_graph.get_sequence(handle) << endl;
-                            tail_graph.follow_edges(handle, false, [&](const handle_t& next) {
-                                cerr << "\t-> " << tail_graph.get_id(next) << endl;
-                            });
-                            tail_graph.follow_edges(handle, true, [&](const handle_t& prev) {
-                                cerr << "\t" << tail_graph.get_id(prev) << " <-" << endl;
-                            });
+                    cerr << "making " << num_alt_alns << " alignments of sequence: " << left_tail_sequence.sequence() << endl << "to left tail graph extracted from " << begin_pos << endl;
+                    tail_graph.for_each_handle([&](const handle_t& handle) {
+                        cerr << tail_graph.get_id(handle) << " " << tail_graph.get_sequence(handle) << endl;
+                        tail_graph.follow_edges(handle, false, [&](const handle_t& next) {
+                            cerr << "\t-> " << tail_graph.get_id(next) << endl;
                         });
+                        tail_graph.follow_edges(handle, true, [&](const handle_t& prev) {
+                            cerr << "\t" << tail_graph.get_id(prev) << " <-" << endl;
+                        });
+                    });
 #endif
                         
-                        // align against the graph
-                        auto& alt_alignments = left_alignments[j];
-                        if (num_alt_alns == 1) {
+                    int64_t tail_max_score = ((int64_t) dp_aligner->match) * left_tail_sequence.sequence().size() + ((int64_t) dp_aligner->full_length_bonus);
+                    auto tail_aligner = tail_max_score < std::numeric_limits<int16_t>::max() ? dp_aligner : scoring_aligner;
 #ifdef debug_multipath_alignment
-                            cerr << "align left with dozeu using gap " << gap << endl;
+                    cerr << "align left with aligner " << tail_aligner << " because aligner " << dp_aligner << " gives max score " << tail_max_score << endl;
 #endif
-                            // we can speed things up by using the dozeu pinned alignment
-                            alt_alignments.emplace_back(move(left_tail_sequence));
-                            aligner->align_pinned(alt_alignments.back(), tail_graph, false, true, gap);
+
+                    // align against the graph
+                    
+                    if (num_alt_alns == 1) {
+#ifdef debug_multipath_alignment
+                        cerr << "align left with dozeu with gap " << gap << " for length " << left_tail_sequence.sequence().size() << endl;
+#endif
+                        // we can speed things up by using the dozeu pinned alignment
+                        alt_alignments.emplace_back(move(left_tail_sequence));
+                        tail_aligner->align_pinned(alt_alignments.back(), tail_graph, false, true, gap);
+                        if (tail_aligner != scoring_aligner) {
+                            alt_alignments.back().set_score(scoring_aligner->score_contiguous_alignment(alt_alignments.back(), true, false));
                         }
-                        else {
+                    }
+                    else {
 #ifdef debug_multipath_alignment
-                            cerr << "align left with gssw" << endl;
+                        cerr << "align left with gssw" << endl;
 #endif
-                            double anchor_multiplier = low_complexity_multiplier(path_node.begin,
-                                                                                 min(path_node.begin + anchor_low_cmplx_len,
-                                                                                     alignment.sequence().end()));
-                            double tail_multiplier = low_complexity_multiplier(left_tail_sequence.sequence().begin(),
-                                                                               left_tail_sequence.sequence().end());
-                            double multiplier = max(tail_multiplier, anchor_multiplier);
-                            if (multiplier != 1.0) {
-                                num_alt_alns = round(multiplier * num_alt_alns);
+                        double anchor_multiplier = low_complexity_multiplier(path_node.begin,
+                                                                             min(path_node.begin + anchor_low_cmplx_len,
+                                                                                 alignment.sequence().end()));
+                        double tail_multiplier = low_complexity_multiplier(left_tail_sequence.sequence().begin(),
+                                                                           left_tail_sequence.sequence().end());
+                        double multiplier = max(tail_multiplier, anchor_multiplier);
+                        if (multiplier != 1.0) {
+                            num_alt_alns = round(multiplier * num_alt_alns);
 #ifdef debug_multipath_alignment
-                                cerr << "increase num alns for low complexity sequence to " << num_alt_alns << endl;
+                            cerr << "increase num alns for low complexity sequence to " << num_alt_alns << endl;
 #endif
+                        }
+                        
+                        tail_aligner->align_pinned_multi(left_tail_sequence, alt_alignments, tail_graph, false, num_alt_alns);
+                        if (tail_aligner != scoring_aligner) {
+                            for (auto& aln : alt_alignments) {
+                                aln.set_score(scoring_aligner->score_contiguous_alignment(aln, true, false));
+                            }
+                        }
+                    }
+                    
+                    // Translate back into non-extracted graph.
+                    // Make sure to account for having removed the right end of the cut node relative to begin_pos
+                    for (auto& aln : alt_alignments) {
+                        // begin_pos's offset is how much we keep, so we removed the node's length minus that.
+                        // And by default it comes off the right side of the node.
+                        translate_node_ids(*aln.mutable_path(), tail_trans,
+                                           id(begin_pos),
+                                           align_graph.get_length(align_graph.get_handle(id(begin_pos))) - offset(begin_pos),
+                                           !is_rev(begin_pos));
+                    }
+#ifdef debug_multipath_alignment
+                    cerr << "made " << alt_alignments.size() << " tail alignments" << endl;
+                    for (size_t i = 0; i < alt_alignments.size(); ++i) {
+                        cerr << i << ": " << pb2json(alt_alignments[i]) << endl;
+                    }
+#endif
+                    if (aligning_tail_length < tail_length) {
+                        // Tail is too long. Just make a softclip directly in the base graph ID space.
+                        // TODO: What if we just don't produce this? Do we get softclips for free?
+#ifdef debug_multipath_alignment
+                        cerr << "softclip long left" << endl;
+#endif
+                        size_t tail_remaining = tail_length - aligning_tail_length;
+                        for (auto& alt_aln : alt_alignments) {
+                            
+                            alt_aln.mutable_sequence()->append(alignment.sequence(), 0, tail_remaining);
+                            if (!alt_aln.quality().empty()) {
+                                alt_aln.mutable_quality()->append(alignment.quality(), 0, tail_remaining);
                             }
                             
-                            aligner->align_pinned_multi(left_tail_sequence, alt_alignments, tail_graph, false, num_alt_alns);
+                            Mapping* mapping = alt_aln.mutable_path()->mutable_mapping(0);
+                            Edit* first_edit = mapping->mutable_edit(0);
+                            if (first_edit->from_length() == 0 && !first_edit->sequence().empty()) {
+                                // it softclipped anyway, extend the softclip
+                                first_edit->set_sequence(alignment.sequence().substr(0, tail_remaining) + first_edit->sequence());
+                                first_edit->set_to_length(first_edit->sequence().size());
+                            }
+                            else {
+                                mapping->add_edit();
+                                // protobuf makes you manually insert at the beginning of an array
+                                for (size_t i = mapping->edit_size() - 1; i > 0; --i) {
+                                    mapping->mutable_edit()->SwapElements(i, i - 1);
+                                }
+                                first_edit = mapping->mutable_edit(0);
+                                first_edit->set_from_length(0);
+                                first_edit->set_to_length(tail_remaining);
+                                first_edit->set_sequence(alignment.sequence().substr(0, tail_remaining));
+                            }
                         }
-                        
-                        // Translate back into non-extracted graph.
-                        // Make sure to account for having removed the right end of the cut node relative to begin_pos
-                        for (auto& aln : alt_alignments) {
-                            // begin_pos's offset is how much we keep, so we removed the node's length minus that.
-                            // And by default it comes off the right side of the node.
-                            translate_node_ids(*aln.mutable_path(), tail_trans, 
-                                id(begin_pos),
-                                align_graph.get_length(align_graph.get_handle(id(begin_pos))) - offset(begin_pos),
-                                !is_rev(begin_pos));
-                        }
-#ifdef debug_multipath_alignment
-                        cerr << "made " << alt_alignments.size() << " tail alignments" << endl;
-                        for (size_t i = 0; i < alt_alignments.size(); ++i) {
-                            cerr << i << ": " << pb2json(alt_alignments[i]) << endl;
-                        }
-#endif
                     }
                 }
             }
@@ -6517,6 +6713,31 @@ void MultipathAlignmentGraph::align(const Alignment& alignment, const HandleGrap
         
         return to_return;
         
+    }
+
+    void MultipathAlignmentGraph::reverse_alignment(Alignment& aln) const {
+        
+        std::reverse(aln.mutable_sequence()->begin(), aln.mutable_sequence()->end());
+        if (!aln.quality().empty()) {
+            std::reverse(aln.mutable_quality()->begin(), aln.mutable_quality()->end());
+        }
+        
+        if (aln.path().mapping_size() != 0) {
+            auto path = aln.mutable_path();
+            for (size_t i = 0, j = path->mapping_size() - 1; i < j; ++i, --j) {
+                path->mutable_mapping()->SwapElements(i, j);
+            }
+            for (size_t k = 0; k < path->mapping_size(); ++k) {
+                auto mapping = path->mutable_mapping(k);
+                for (size_t i = 0, j = mapping->edit_size() - 1; i < j; ++i, --j) {
+                    mapping->mutable_edit()->SwapElements(i, j);
+                }
+                for (size_t i = 0; i < mapping->edit_size(); ++i) {
+                    auto edit = mapping->mutable_edit(i);
+                    std::reverse(edit->mutable_sequence()->begin(), edit->mutable_sequence()->end());
+                }
+            }
+        }
     }
 }
 

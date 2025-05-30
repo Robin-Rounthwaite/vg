@@ -3,7 +3,9 @@
 #include <omp.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <ctime>
 
+#include <atomic>
 #include <string>
 #include <vector>
 #include <set>
@@ -28,7 +30,7 @@
 
 using namespace std;
 using namespace vg;
-using namespace vg::subcommand;
+using namespace vg::subcommand; 
 
 void help_surject(char** argv) {
     cerr << "usage: " << argv[0] << " surject [options] <aln.gam> >[proj.cram]" << endl
@@ -39,6 +41,7 @@ void help_surject(char** argv) {
          << "  -t, --threads N          number of threads to use" << endl
          << "  -p, --into-path NAME     surject into this path or its subpaths (many allowed, default: reference, then non-alt generic)" << endl
          << "  -F, --into-paths FILE    surject into path names listed in HTSlib sequence dictionary or path list FILE" << endl
+         << "  -n, --into-ref NAME      surject into this reference assembly" << endl 
          << "  -i, --interleaved        GAM is interleaved paired-ended, so when outputting HTS formats, pair reads" << endl
          << "  -M, --multimap           include secondary alignments to all overlapping paths instead of just primary" << endl
          << "  -G, --gaf-input          input file is GAF instead of GAM" << endl
@@ -47,17 +50,22 @@ void help_surject(char** argv) {
          << "  -b, --bam-output         write BAM to stdout" << endl
          << "  -s, --sam-output         write SAM to stdout" << endl
          << "  -l, --subpath-local      let the multipath mapping surjection produce local (rather than global) alignments" << endl
+         << "  -T, --max-tail-len N     only align up to N bases of read tails (default: 10000)" << endl
+         << "  -g, --max-graph-scale X  make reads unmapped if alignment target subgraph size exceeds read length by a factor of X (default: " << Surjector::DEFAULT_SUBGRAPH_LIMIT << " or " << Surjector::SPLICED_DEFAULT_SUBGRAPH_LIMIT << " with -S)" << endl
          << "  -P, --prune-low-cplx     prune short and low complexity anchors during realignment" << endl
-         << "  -a, --max-anchors N      use no more than N anchors per target path (default: 200)" << endl
+         << "  -I, --max-slide N        look for offset duplicates of anchors up to N bp away when pruning (default: " << Surjector::DEFAULT_MAX_SLIDE << ")" << endl
+         << "  -a, --max-anchors N      use no more than N anchors per target path (default: unlimited)" << endl
          << "  -S, --spliced            interpret long deletions against paths as spliced alignments" << endl
          << "  -A, --qual-adj           adjust scoring for base qualities, if they are available" << endl
+         << "  -E, --extra-gap-cost N   for dynamic programming, add this to the gap open cost of the 10x-scaled scoring parameters" << endl 
          << "  -N, --sample NAME        set this sample name for all reads" << endl
          << "  -R, --read-group NAME    set this read group for all reads" << endl
          << "  -f, --max-frag-len N     reads with fragment lengths greater than N will not be marked properly paired in SAM/BAM/CRAM" << endl
          << "  -L, --list-all-paths     annotate SAM records with a list of all attempted re-alignments to paths in SS tag" << endl
          << "  -C, --compression N      level for compression [0-9]" << endl
          << "  -V, --no-validate        skip checking whether alignments plausibly are against the provided graph" << endl
-         << "  -w, --watchdog-timeout N warn when reads take more than the given number of seconds to surject" << endl;
+         << "  -w, --watchdog-timeout N warn when reads take more than the given number of seconds to surject" << endl
+         << "  -r, --progress           show progress" << endl;
 }
 
 /// If the given alignment doesn't make sense against the given graph (i.e.
@@ -75,6 +83,30 @@ static void ensure_alignment_is_for_graph(const Alignment& aln, const HandleGrap
     }
 }
 
+/// If the given multipath alignment doesn't make sense against the given graph (i.e.
+/// doesn't agree with the nodes in the graph), print a message and stop the
+/// program. Is thread-safe.
+static void ensure_alignment_is_for_graph(const MultipathAlignment& aln, const HandleGraph& graph) {
+    // For multipath alignments we just check node existence.
+    for (auto& subpath : aln.subpath()) {
+        for (auto& mapping : subpath.path().mapping()) {
+            nid_t node_id = mapping.position().node_id();
+            if (!graph.has_node(node_id)) {
+                // Something is wrong with this alignment.
+                #pragma omp critical (cerr)
+                {
+                    std::cerr << "error:[vg surject] MultipathAlignment " << aln.name() << " cannot be interpreted against this graph: node " << node_id << " does not exist!" << std::endl;
+                    std::cerr << "Make sure that you are using the same graph that the reads were mapped to!" << std::endl;
+                }
+                exit(1);
+            }
+            // TODO: Check edge existence. It's possible to have an alignment
+            // have all the nodes but still not really belong to the graph,
+            // possibly leading to failures later.
+        }
+    }
+}
+
 int main_surject(int argc, char** argv) {
     
     if (argc == 2) {
@@ -84,6 +116,7 @@ int main_surject(int argc, char** argv) {
     
     string xg_name;
     vector<string> path_names;
+    std::unordered_set<std::string> reference_assembly_names;
     string path_file;
     string output_format = "GAM";
     string input_format = "GAM";
@@ -96,12 +129,18 @@ int main_surject(int argc, char** argv) {
     int min_splice_length = 20;
     size_t watchdog_timeout = 10;
     bool subpath_global = true; // force full length alignments in mpmap resolution
+    size_t max_tail_len = 10000;
+    // This needs to be nullable so that we can use the default for spliced if doing spliced mode.
+    std::unique_ptr<double> max_graph_scale;
     bool qual_adj = false;
+    int8_t extra_gap_cost = 0;
     bool prune_anchors = false;
-    size_t max_anchors = 200;
+    int64_t max_slide = Surjector::DEFAULT_MAX_SLIDE;
+    size_t max_anchors = std::numeric_limits<size_t>::max(); // As close to unlimited as makes no difference
     bool annotate_with_all_path_scores = false;
     bool multimap = false;
     bool validate = true;
+    bool show_progress = false;
 
     int c;
     optind = 2; // force optind past command positional argument
@@ -114,7 +153,11 @@ int main_surject(int argc, char** argv) {
             {"into-path", required_argument, 0, 'p'},
             {"into-paths", required_argument, 0, 'F'},
             {"ref-paths", required_argument, 0, 'F'}, // Now an alias for --into-paths
-            {"subpath-local", required_argument, 0, 'l'},
+            {"into-ref", required_argument, 0, 'n'},
+            {"ref-sample", required_argument, 0, 'n'}, // Provide an alias to match Giraffe
+            {"subpath-local", no_argument, 0, 'l'},
+            {"max-tail-len", required_argument, 0, 'T'},
+            {"max-graph-scale", required_argument, 0, 'g'},
             {"interleaved", no_argument, 0, 'i'},
             {"multimap", no_argument, 0, 'M'},
             {"gaf-input", no_argument, 0, 'G'},
@@ -124,8 +167,10 @@ int main_surject(int argc, char** argv) {
             {"sam-output", no_argument, 0, 's'},
             {"spliced", no_argument, 0, 'S'},
             {"prune-low-cplx", no_argument, 0, 'P'},
+            {"max-slide", required_argument, 0, 'I'},
             {"max-anchors", required_argument, 0, 'a'},
             {"qual-adj", no_argument, 0, 'A'},
+            {"extra-gap-cost", required_argument, 0, 'E'},
             {"sample", required_argument, 0, 'N'},
             {"read-group", required_argument, 0, 'R'},
             {"max-frag-len", required_argument, 0, 'f'},
@@ -133,11 +178,12 @@ int main_surject(int argc, char** argv) {
             {"compress", required_argument, 0, 'C'},
             {"no-validate", required_argument, 0, 'V'},
             {"watchdog-timeout", required_argument, 0, 'w'},
+            {"progress", no_argument, 0, 'r'},
             {0, 0, 0, 0}
         };
 
         int option_index = 0;
-        c = getopt_long (argc, argv, "hx:p:F:liGmcbsN:R:f:C:t:SPa:ALMVw:",
+        c = getopt_long (argc, argv, "hx:p:F:n:lT:g:iGmcbsN:R:f:C:t:SPI:a:AE:LMVw:r",
                 long_options, &option_index);
 
         // Detect the end of the options.
@@ -158,9 +204,21 @@ int main_surject(int argc, char** argv) {
         case 'F':
             path_file = optarg;
             break;
+
+        case 'n':
+            reference_assembly_names.insert(optarg);
+            break;
         
         case 'l':
             subpath_global = false;
+            break;
+
+        case 'T':
+            max_tail_len = parse<size_t>(optarg);
+            break;
+
+        case 'g':
+            max_graph_scale.reset(new double(parse<double>(optarg)));
             break;
 
         case 'i':
@@ -199,6 +257,10 @@ int main_surject(int argc, char** argv) {
         case 'P':
             prune_anchors = true;
             break;
+
+        case 'I':
+            max_slide = parse<int64_t>(optarg);
+            break;
             
         case 'a':
             max_anchors = parse<size_t>(optarg);
@@ -206,6 +268,10 @@ int main_surject(int argc, char** argv) {
             
         case 'A':
             qual_adj = true;
+            break;
+
+        case 'E':
+            extra_gap_cost = parse<int8_t>(optarg);
             break;
 
         case 'N':
@@ -231,6 +297,10 @@ int main_surject(int argc, char** argv) {
         case 'w':
             watchdog_timeout = parse<size_t>(optarg);
             break;
+
+        case 'r':
+            show_progress = true;
+            break;
             
         case 't':
             omp_set_num_threads(parse<int>(optarg));
@@ -251,6 +321,14 @@ int main_surject(int argc, char** argv) {
         }
     }
 
+    string file_name = get_input_file_name(optind, argc, argv);
+
+    if (have_input_file(optind, argc, argv)) {
+        // We only take one input file.
+        cerr << "error[vg surject] Extra argument provided: " << get_input_file_name(optind, argc, argv, false) << endl;
+        exit(1);
+    }
+
     // Create a preprocessor to apply read group and sample name overrides in place
     auto set_metadata = [&](Alignment& update) {
         if (!sample_name.empty()) {
@@ -261,15 +339,19 @@ int main_surject(int argc, char** argv) {
         }
     };
 
-    string file_name = get_input_file_name(optind, argc, argv);
-    
     PathPositionHandleGraph* xgidx = nullptr;
     unique_ptr<PathHandleGraph> path_handle_graph;
     // If we add an overlay for path position queries, use one optimized for
     // use with reference paths.
     bdsg::ReferencePathOverlayHelper overlay_helper;
     if (!xg_name.empty()) {
+        if (show_progress) {
+            cerr << "Loading graph..." << endl;
+        }
         path_handle_graph = vg::io::VPKG::load_one<PathHandleGraph>(xg_name);
+        if (show_progress) {
+            cerr << "Applying overlay..." << endl;
+        }
         xgidx = overlay_helper.apply(path_handle_graph.get());
     } else {
         // We need an XG index for the rest of the algorithm
@@ -277,9 +359,13 @@ int main_surject(int argc, char** argv) {
         exit(1);
     }
     
+    if (show_progress) {
+        cerr << "Finding paths..." << endl;
+    }
+
     // Get the paths to surject into and their length information, either from
     // the given file, or from the provided list, or from sniffing the graph.
-    vector<tuple<path_handle_t, size_t, size_t>> sequence_dictionary = get_sequence_dictionary(path_file, path_names, *xgidx);
+    SequenceDictionary sequence_dictionary = get_sequence_dictionary(path_file, path_names, reference_assembly_names, *xgidx);
     // Clear out path_names so we don't accidentally use it
     path_names.clear();
 
@@ -287,29 +373,55 @@ int main_surject(int argc, char** argv) {
     unordered_set<path_handle_t> paths;
     paths.reserve(sequence_dictionary.size());
     for (auto& entry : sequence_dictionary) {
-        paths.insert(get<0>(entry));
+        paths.insert(entry.path_handle);
     }
-    
+
+    if (show_progress) {
+        cerr << "Building Surjector for " << paths.size() << " paths..." << endl;
+    }
+
     // Make a single thread-safe Surjector.
     Surjector surjector(xgidx);
     surjector.adjust_alignments_for_base_quality = qual_adj;
+    if (extra_gap_cost != surjector.dp_gap_open_extra_cost) {
+        surjector.dp_gap_open_extra_cost = extra_gap_cost;
+        // Rebuild the scoring machinery for the parameter change
+        surjector.set_alignment_scores(default_score_matrix,
+                                       default_gap_open, default_gap_extension,
+                                       default_full_length_bonus); 
+    }
     surjector.prune_suspicious_anchors = prune_anchors;
+    surjector.max_slide = max_slide;
     surjector.max_anchors = max_anchors;
     if (spliced) {
         surjector.min_splice_length = min_splice_length;
         // we have to bump this up to be sure to align most splice junctions
-        surjector.max_subgraph_bases = 16 * 1024 * 1024;
+        surjector.max_subgraph_bases_per_read_base = Surjector::SPLICED_DEFAULT_SUBGRAPH_LIMIT;
     }
     else {
         surjector.min_splice_length = numeric_limits<int64_t>::max();
     }
+    surjector.max_tail_length = max_tail_len;
     surjector.annotate_with_all_path_scores = annotate_with_all_path_scores;
-    
+    if (max_graph_scale) {
+        // We have an override
+        surjector.max_subgraph_bases_per_read_base = *max_graph_scale;
+    }
+    surjector.choose_band_padding = algorithms::pad_band_min_random_walk(1.0, 2000, 16);
+
     // Count our threads
     int thread_count = vg::get_thread_count();
     
     // Prepare the watchdog
     unique_ptr<Watchdog> watchdog(new Watchdog(thread_count, chrono::seconds(watchdog_timeout)));
+
+    std::atomic<size_t> total_reads_surjected(0);
+
+    if (show_progress) {
+        cerr << "Surjecting on " << thread_count << " threads..." << endl;
+    }
+
+    clock_t cpu_time_before = clock();
     
     if (input_format == "GAM" || input_format == "GAF") {
         
@@ -411,18 +523,18 @@ int main_surject(int argc, char** argv) {
                             auto it = strand_idx2.find(make_pair(pos.name(), !pos.is_reverse()));
                             if (it != strand_idx2.end()) {
                                 // the alignments are paired on this strand
-                                alignment_emitter->emit_pair(move(surjected1[i]), move(surjected2[it->second]), max_frag_len);
+                                alignment_emitter->emit_pair(std::move(surjected1[i]), std::move(surjected2[it->second]), max_frag_len);
                             }
                             else {
                                 // this strand's surjection is unpaired
-                                alignment_emitter->emit_single(move(surjected1[i]));
+                                alignment_emitter->emit_single(std::move(surjected1[i]));
                             }
                         }
                         for (size_t i = 0; i < surjected2.size(); ++i) {
                             const auto& pos = surjected2[i].refpos(0);
                             if (!strand_idx1.count(make_pair(pos.name(), !pos.is_reverse()))) {
                                 // this strand's surjection is unpaired
-                                alignment_emitter->emit_single(move(surjected2[i]));
+                                alignment_emitter->emit_single(std::move(surjected2[i]));
                             }
                         }
                     }
@@ -432,6 +544,7 @@ int main_surject(int argc, char** argv) {
                                                      surjector.surject(src2, paths, subpath_global, spliced),
                                                      max_frag_len);
                     }
+                    total_reads_surjected += 2;
                     if (watchdog) {
                         watchdog->check_out(thread_num);
                     }
@@ -476,6 +589,7 @@ int main_surject(int argc, char** argv) {
                     else {
                         alignment_emitter->emit_single(surjector.surject(src, paths, subpath_global, spliced));
                     }
+                    total_reads_surjected++;
                     if (watchdog) {
                         watchdog->check_out(thread_num);
                     }
@@ -498,8 +612,7 @@ int main_surject(int argc, char** argv) {
         }
     } else if (input_format == "GAMP") {
         // Working on multipath alignments. We need to set the emitter up ourselves.
-        auto path_order_and_length = extract_path_metadata(sequence_dictionary, *xgidx).first;
-        MultipathAlignmentEmitter mp_alignment_emitter("-", thread_count, output_format, xgidx, &path_order_and_length);
+        MultipathAlignmentEmitter mp_alignment_emitter("-", thread_count, output_format, xgidx, &sequence_dictionary);
         mp_alignment_emitter.set_read_group(read_group);
         mp_alignment_emitter.set_sample_name(sample_name);
         mp_alignment_emitter.set_min_splice_length(spliced ? min_splice_length : numeric_limits<int64_t>::max());
@@ -539,6 +652,11 @@ int main_surject(int argc, char** argv) {
                             
                             exit(1);
                         }
+
+                        if (validate) {
+                            ensure_alignment_is_for_graph(src1, *xgidx);
+                            ensure_alignment_is_for_graph(src2, *xgidx);
+                        }
                         
                         // convert out of protobuf
                         multipath_alignment_t mp_src1, mp_src2;
@@ -575,7 +693,7 @@ int main_surject(int argc, char** argv) {
                                 if (it != strand_idx2.end()) {
                                     // the alignments are paired on this strand
                                     size_t j = it->second;
-                                    surjected.emplace_back(move(surjected1[i]), move(surjected2[j]));
+                                    surjected.emplace_back(std::move(surjected1[i]), std::move(surjected2[j]));
                                     
                                     // reorder the positions to deal with the mismatch in the interfaces
                                     positions.emplace_back();
@@ -588,11 +706,11 @@ int main_surject(int argc, char** argv) {
                                 }
                                 else {
                                     // this strand's surjection is unpaired
-                                    surjected_unpaired1.emplace_back(move(surjected1[i]));
+                                    surjected_unpaired1.emplace_back(std::move(surjected1[i]));
                                     
                                     // reorder the position to deal with the mismatch in the interfaces
                                     positions_unpaired1.emplace_back();
-                                    get<0>(positions_unpaired1.back()) = move(get<0>(positions1[i]));
+                                    get<0>(positions_unpaired1.back()) = std::move(get<0>(positions1[i]));
                                     get<1>(positions_unpaired1.back()) = get<2>(positions1[i]);
                                     get<2>(positions_unpaired1.back()) = get<1>(positions1[i]);
                                 }
@@ -600,11 +718,11 @@ int main_surject(int argc, char** argv) {
                             for (size_t i = 0; i < surjected2.size(); ++i) {
                                 if (!strand_idx1.count(make_pair(get<0>(positions2[i]), !get<2>(positions2[i])))) {
                                     // this strand's surjection is unpaired
-                                    surjected_unpaired2.emplace_back(move(surjected2[i]));
+                                    surjected_unpaired2.emplace_back(std::move(surjected2[i]));
                                     
                                     // reorder the position to deal with the mismatch in the interfaces
                                     positions_unpaired2.emplace_back();
-                                    get<0>(positions_unpaired2.back()) = move(get<0>(positions2[i]));
+                                    get<0>(positions_unpaired2.back()) = std::move(get<0>(positions2[i]));
                                     get<1>(positions_unpaired2.back()) = get<2>(positions2[i]);
                                     get<2>(positions_unpaired2.back()) = get<1>(positions2[i]);
                                 }
@@ -624,10 +742,12 @@ int main_surject(int argc, char** argv) {
                                             
                         // write to output
                         vector<int64_t> tlen_limits(surjected.size(), max_frag_len);
-                        mp_alignment_emitter.emit_pairs(src1.name(), src2.name(), move(surjected), &positions, &tlen_limits);
-                        mp_alignment_emitter.emit_singles(src1.name(), move(surjected_unpaired1), &positions_unpaired1);
-                        mp_alignment_emitter.emit_singles(src2.name(), move(surjected_unpaired2), &positions_unpaired2);
+                        mp_alignment_emitter.emit_pairs(src1.name(), src2.name(), std::move(surjected), &positions, &tlen_limits);
+                        mp_alignment_emitter.emit_singles(src1.name(), std::move(surjected_unpaired1), &positions_unpaired1);
+                        mp_alignment_emitter.emit_singles(src2.name(), std::move(surjected_unpaired2), &positions_unpaired2);
                         
+                        total_reads_surjected += 2;
+
                         if (watchdog) {
                             watchdog->check_out(thread_num);
                         }
@@ -646,6 +766,10 @@ int main_surject(int argc, char** argv) {
                             watchdog->check_in(thread_num, src.name());
                         }
 
+                        if (validate) {
+                            ensure_alignment_is_for_graph(src, *xgidx);
+                        }
+
                         multipath_alignment_t mp_src;
                         from_proto_multipath_alignment(src, mp_src);
                         
@@ -660,7 +784,7 @@ int main_surject(int argc, char** argv) {
                             
                             // positions are in different orders in these two interfaces
                             for (auto& position : multi_positions) {
-                                positions.emplace_back(move(get<0>(position)), get<2>(position), get<1>(position));
+                                positions.emplace_back(std::move(get<0>(position)), get<2>(position), get<1>(position));
                             }
                         }
                         else {
@@ -671,8 +795,10 @@ int main_surject(int argc, char** argv) {
                         }
                         
                         // write to output
-                        mp_alignment_emitter.emit_singles(src.name(), move(surjected), &positions);
+                        mp_alignment_emitter.emit_singles(src.name(), std::move(surjected), &positions);
                     
+                        total_reads_surjected++;
+
                         if (watchdog) {
                             watchdog->check_out(thread_num);
                         }
@@ -689,6 +815,19 @@ int main_surject(int argc, char** argv) {
     }
     
     cout.flush();
+
+    clock_t cpu_time_after = clock();
+
+    // Compute CPU time elapsed
+    double cpu_seconds = (cpu_time_after - cpu_time_before) / (double)CLOCKS_PER_SEC;
+
+    if (show_progress) {
+        // Log to standard error
+        cerr << "Surjected " << total_reads_surjected << " reads in " << cpu_seconds << " CPU-seconds" << endl;
+        if (cpu_seconds > 0) {
+            cerr << "Surjected at " << total_reads_surjected / cpu_seconds << " RPS per thread" << endl;
+        }
+    }
     
     return 0;
 }

@@ -11,21 +11,37 @@
 #include <sstream>
 #include <algorithm>
 #include <functional>
+#include <limits>
 
 #include "aligner.hpp"
 #include "handle.hpp"
+#include "path.hpp"
 #include <vg/vg.pb.h>
 #include "multipath_alignment.hpp"
+#include "algorithms/pad_band.hpp"
 
 
 namespace vg {
 
 using namespace std;
-
+    
+    /**
+     * Widget to surject alignments down to linear paths in the graph.
+     *
+     * Assumes the alignments actually go with the graph; the caller is
+     * repsonsible for ensuring that e.g. all nodes referenced by the
+     * alignments actually exist.
+     */
     class Surjector : public AlignerClient {
     public:
         
         Surjector(const PathPositionHandleGraph* graph);
+        
+        /// Override alignment score setting to let DP use slightly adjusted scores.
+        /// The provided scores will be adjusted to increase gap open cost
+        /// slightly when doing DP, but output scores will be scored with the
+        /// provided parameters.
+        virtual void set_alignment_scores(const int8_t* score_matrix, int8_t gap_open, int8_t gap_extend, int8_t full_length_bonus);
         
         /// Extract the portions of an alignment that are on a chosen set of paths and try to
         /// align realign the portions that are off of the chosen paths to the intervening
@@ -97,8 +113,18 @@ using namespace std;
                                                     bool preserve_deletions = false) const;
         
         /// a local type that represents a read interval matched to a portion of the alignment path
-        using path_chunk_t = pair<pair<string::const_iterator, string::const_iterator>, Path>;
+        using path_chunk_t = pair<pair<string::const_iterator, string::const_iterator>, path_t>;
+
+        /// When doing DP alignments, we use slightly adjusted alignment scores, which need to live in their own Aligner
+        std::unique_ptr<Aligner> dp_aligner;
         
+        /// When doing DP alignments, we multiply scores by this factor before slightly increasing gap open. (Changes won't take effect until set_alignment_scores() is called.)
+        int8_t dp_score_scale = 10;
+        /// When doing DP alignment, we increase gap open score by this much. (Changes won't take effect until set_alignment_scores() is called.)
+        int8_t dp_gap_open_extra_cost = 0;
+
+        
+
         /// the minimum length deletion that the spliced algorithm will interpret as a splice event
         int64_t min_splice_length = 20;
         
@@ -106,9 +132,20 @@ using namespace std;
 
         /// the minimum length apparent intron that we will try to repair
         int64_t min_splice_repair_length = 250;
+
+        /// the maximum length of a tail that we will try to align
+        size_t max_tail_length = 10000;
+
+        // the maximum number of estimated band cells that we are willing to try to fill when connecting anchors
+        uint64_t max_band_cells = 8000000000;
         
-        /// How big of a graph in bp should we ever try to align against for realigning surjection?
-        size_t max_subgraph_bases = 100 * 1024;
+        /// We have a different default max_subgraph_bases_per_read_base to use for spliced alignment.
+        static constexpr double SPLICED_DEFAULT_SUBGRAPH_LIMIT = 16 * 1024 * 1024 / 125.0;
+        /// And an accessible default max_subgraph_bases_per_read_base for normal alignment.
+        static constexpr double DEFAULT_SUBGRAPH_LIMIT = 100 * 1024 / 125.0;
+        /// How big of a graph (in graph bases per read base) should we ever try to align against for realigning surjection?
+        double max_subgraph_bases_per_read_base = DEFAULT_SUBGRAPH_LIMIT;
+       
         
         /// in spliced surject, downsample if the base-wise average coverage by chunks is this high
         int64_t min_fold_coverage_for_downsample = 8;
@@ -123,16 +160,33 @@ using namespace std;
         
         bool prune_suspicious_anchors = false;
         int64_t max_tail_anchor_prune = 4;
-        double low_complexity_p_value = .001;
+        static constexpr int64_t DEFAULT_MAX_SLIDE = 6;
+        /// Declare an anchor suspicious if it appears again at any offset up
+        /// to this limit or the anchor length.
+        int64_t max_slide = DEFAULT_MAX_SLIDE;
+        double low_complexity_p_value = .0075;
+        int64_t max_low_complexity_anchor_prune = 40;
+        int64_t max_low_complexity_anchor_trim = 65;
+        /// When examining anchors for low complexity, try and make them at
+        /// least this long. To ensure orientation symmetry, we will make
+        /// anchors with the oppsite parity (even if this is odd, or odd if
+        /// this is even) 1bp longer.
+        int64_t pad_suspicious_anchors_to_length = 12;
+        
+        // A function for computing band padding
+        std::function<size_t(const Alignment&, const HandleGraph&)> choose_band_padding;
         
         /// How many anchors (per path) will we use when surjecting using
         /// anchors?
         /// Excessive anchors will be pruned away.
-        size_t max_anchors = 200;
+        size_t max_anchors = std::numeric_limits<size_t>::max();
         
         bool annotate_with_all_path_scores = false;
         
     protected:
+
+        /// Do the extra score setup for the DP-only Aligner.
+        void set_dp_alignment_scores(const int8_t* score_matrix, int8_t gap_open, int8_t gap_extend, int8_t full_length_bonus);
         
         void surject_internal(const Alignment* source_aln, const multipath_alignment_t* source_mp_aln,
                               vector<Alignment>* alns_out, vector<multipath_alignment_t>* mp_alns_out,
@@ -185,6 +239,9 @@ using namespace std;
                                           vector<pair<step_handle_t, step_handle_t>>& ref_chunks,
                                           vector<tuple<size_t, size_t, int32_t>>& connections) const;
         
+        void prune_and_trim_anchors(const string& sequence, vector<path_chunk_t>& path_chunks,
+                                    vector<pair<step_handle_t, step_handle_t>>& step_ranges) const;
+        
         /// Compute the widest end-inclusive interval of path positions that
         /// the realigned sequence could align to, or an interval where start >
         /// end if there are no path chunks.
@@ -193,11 +250,6 @@ using namespace std;
                               bool rev_strand, const vector<path_chunk_t>& path_chunks,
                               const vector<pair<step_handle_t, step_handle_t>>& ref_chunks,
                               bool no_left_expansion, bool no_right_expansion) const;
-        
-        /// make a linear graph that corresponds to a path interval, possibly duplicating nodes in case of cycles
-        unordered_map<id_t, pair<id_t, bool>>
-        extract_linearized_path_graph(const PathPositionHandleGraph* graph, MutableHandleGraph* into,
-                                      path_handle_t path_handle, size_t first, size_t last) const;
         
         /// use the graph position bounds and the path range bounds to assign a path position to a surjected read
         void set_path_position(const PathPositionHandleGraph* graph, const pos_t& init_surj_pos,

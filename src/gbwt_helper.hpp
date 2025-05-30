@@ -67,18 +67,14 @@ gbwt::vector_type path_predecessors(const PathHandleGraph& graph, const std::str
 /// Determine the node width in bits for the GBWT nodes based on the given graph.
 gbwt::size_type gbwt_node_width(const HandleGraph& graph);
 
-/// Finish GBWT construction and optionally print the metadata.
-void finish_gbwt_constuction(gbwt::GBWTBuilder& builder,
-    const std::vector<std::string>& sample_names,
-    const std::vector<std::string>& contig_names,
-    size_t haplotype_count, bool print_metadata,
-    const std::string& header = "GBWT");
-
 //------------------------------------------------------------------------------
 
 /*
-    These are the proper ways of saving and loading GBWT structures.
-    Loading with `vg::io::VPKG::load_one` is also supported.
+    These are the proper ways of saving and loading GBWT structures. In case of
+    a failure, these will print an error message and exit the program.
+
+    The vg::io::VPKG interface is effectively the same, but it does not handle
+    errors in a consistent way.
 */
 
 /// Load a compressed GBWT from the file.

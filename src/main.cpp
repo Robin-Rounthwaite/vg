@@ -42,21 +42,15 @@ void vg_help(char** argv) {
      cerr << "For technical support, please visit: https://www.biostars.org/tag/vg/" << endl << endl;
  }
 
-// We make sure to compile main for the lowest common denominator architecture.
-// This macro is defined in the preflight header on supported compiler setups.
-// But to use it we have to declare and then define main.
-int main(int argc, char *argv[]) VG_PREFLIGHT_EVERYWHERE;
+/// Main entry point once we know we're on a supported CPU.
+int vg_main(int argc, char *argv[]) {
 
-int main(int argc, char *argv[]) {
-
-    // Make sure the system meets system requirements (i.e. has all the instructions we need)
-    preflight_check();
-    
     // Make sure we configure the memory allocator appropriately for our environment
-    configure_memory_allocator();
+    AllocatorConfig::configure();
     
     // Set up stack trace support from crash.hpp
     enable_crash_handling();
+    set_crash_context("Starting up");
 
     // Determine a sensible default number of threads and apply it.
     choose_good_thread_count();
@@ -82,6 +76,7 @@ int main(int argc, char *argv[]) {
         if (subcommand->get_category() == vg::subcommand::CommandCategory::DEPRECATED) {
             cerr << endl << "WARNING:[vg] Subcommand '" << argv[1] << "' is deprecated and is no longer being actively maintained. Future releases may eliminate it entirely." << endl << endl;
         }
+        set_crash_context("Starting '" +  std::string(argv[1]) + "' subcommand");
         return (*subcommand)(argc, argv);
     } else {
         // No subcommand found
@@ -91,4 +86,23 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+}
+
+// We make sure to compile main for the lowest common denominator architecture.
+// This macro is defined in the preflight header on supported compiler setups.
+// But to use it we have to declare and then define main.
+// Note that on GCC 13.1 the always-inline allocator functions can't be inlined
+// into code for architectures this old, causing an error if we try and
+// allocate or use std::string. So the real main() function can't use C++
+// allocators.
+int main(int argc, char *argv[]) VG_PREFLIGHT_EVERYWHERE;
+
+// TODO: What about static initialization code? It might use instructions not
+// supported on the current CPU!
+
+/// Make sure the system meets system requirements (i.e. has all the
+/// instructions we need), then call vg_main
+int main(int argc, char** argv) {
+    preflight_check();
+    return vg_main(argc, argv);
 }

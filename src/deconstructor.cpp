@@ -379,8 +379,13 @@ void Deconstructor::get_genotypes(vcflib::Variant& v, const vector<string>& name
         } else {
             string blank_gt = ".";
             if (gbwt_sample_to_phase_range.count(sample_name)) {
-                auto& phase_range = gbwt_sample_to_phase_range.at(sample_name);
-                for (int phase = phase_range.first + 1; phase <= phase_range.second; ++phase) {
+                // note: this is the same logic used when filling in actual genotypes
+                int min_phase, max_phase;
+                std::tie(min_phase, max_phase) = gbwt_sample_to_phase_range.at(sample_name);
+                // shift left by 1 unless min phase is 0
+                int sample_ploidy = min_phase == 0 ? max_phase + 1 : max_phase;
+                assert(sample_ploidy > 0);
+                for (int phase = 1; phase < sample_ploidy; ++phase) {
                     blank_gt += "|.";
                 }
             }
@@ -785,6 +790,26 @@ bool Deconstructor::deconstruct_site(const handle_t& snarl_start, const handle_t
         return false;
     }
 
+    if (ref_travs.size() > 1 && this->nested_decomposition) {
+#ifdef debug
+#pragma omp critical (cerr)
+        cerr << "Multiple ref traversals not yet supported with nested decomposition: removing all but first" << endl;
+#endif
+        size_t min_start_pos = numeric_limits<size_t>::max();
+        int64_t first_ref_trav;
+        for (int64_t i = 0; i < ref_travs.size(); ++i) {            
+            auto& ref_trav_idx = ref_travs[i];
+            step_handle_t start_step = trav_steps[ref_trav_idx].first;
+            step_handle_t end_step = trav_steps[ref_trav_idx].second;
+            size_t ref_trav_pos = min(graph->get_position_of_step(start_step), graph->get_position_of_step(end_step));
+            if (ref_trav_pos < min_start_pos) {
+                min_start_pos = ref_trav_pos;
+                first_ref_trav = i;
+            }
+        }
+        ref_travs = {ref_travs[first_ref_trav]};        
+    }
+
     // XXX CHECKME this assumes there is only one reference path here, and that multiple traversals are due to cycles
     
     // we collect windows around the reference traversals
@@ -1069,7 +1094,15 @@ bool Deconstructor::deconstruct_site(const handle_t& snarl_start, const handle_t
         if (!std::all_of(trav_to_allele.begin(), trav_to_allele.end(), [](int i) { return (i == 0 || i == -1); })) {
             // run vcffixup to add some basic INFO like AC
             vcf_fixup(v);
-            add_variant(v);
+            bool added = add_variant(v);
+            if (!added) {
+                stringstream ss;
+                ss << v;
+                cerr << "Warning [vg deconstruct]: Skipping variant at " << v.sequenceName << ":" << v.position
+                     << " with ID=" << v.id << " because its line length of " << ss.str().length() << " exceeds vg's limit of "
+                     << VCFOutputCaller::max_vcf_line_length << endl;
+                return false;            
+            }
         }
     }
     return true;
@@ -1104,6 +1137,10 @@ string Deconstructor::get_vcf_header() {
                 if (haplotype == PathMetadata::NO_HAPLOTYPE) {
                     haplotype = 0;
                 }
+                if (haplotype > 10) {
+                    cerr << "Warning [vg deconstruct]: Suspiciously large haplotype, " << haplotype
+                         << ", parsed from path, " << path_name << ": This will leed to giant GT entries.";
+                }
                 sample_to_haps[sample_name].insert((int)haplotype);
                 sample_names.insert(sample_name);
             }
@@ -1131,6 +1168,10 @@ string Deconstructor::get_vcf_header() {
                             // Default to 0.
                             phase = 0;
                         }
+                        if (phase > 10) {
+                            cerr << "Warning [vg deconstruct]: Suspiciously large haplotype, " << phase
+                                 << ", parsed from GBWT thread, " << path_name << ": This will leed to giant GT entries.";
+                        }
                         sample_to_haps[sample_name].insert((int)phase);
                         sample_names.insert(sample_name);
                     }
@@ -1140,9 +1181,10 @@ string Deconstructor::get_vcf_header() {
     }
 
     if (sample_to_haps.empty()) {
-        cerr << "Error [vg deconstruct]: No paths found for alt alleles in the graph. Note that "
-             << "exhaustive path-free traversal finding is no longer supported, and vg deconstruct "
-             << "now only works on embedded paths and GBWT threads." << endl;
+        cerr << "Error [vg deconstruct]: No paths other than selected reference(s) found in the graph, "
+             << "so no alt alleles can be generated. Note that exhaustive path-free traversal finding "
+             << "is no longer supported, and vg deconstruct now only works on embedded paths and GBWT "
+             << "threads." << endl;
         exit(1);
     }
 
@@ -1277,7 +1319,7 @@ void Deconstructor::deconstruct_graph(SnarlManager* snarl_manager) {
             queue.pop_back();
             snarls.push_back(snarl);
             const vector<const Snarl*>& children = snarl_manager->children_of(snarl);
-            snarls.insert(snarls.end(), children.begin(), children.end());
+            queue.insert(queue.end(), children.begin(), children.end());
         }
     } else {
         swap(snarls, queue);

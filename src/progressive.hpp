@@ -5,6 +5,7 @@
 // progress bar that can be turned on and off.
 
 #include <string>
+#include <functional>
 
 #include "progress_bar.hpp"
 
@@ -22,6 +23,16 @@ using namespace std;
 class Progressive {
 
 public:
+
+    /**
+     * Static callback-based progress system for places where we can't inherit from the class.
+     *
+     * Calls the callback with a progress function that either updates a
+     * progress bar on a reasonable schedule or doesn't, depending on
+     * show_progress.
+     */
+    static void with_progress(bool show_progress, const std::string& task, const std::function<void(const std::function<void(size_t, size_t)>& progress)>& callback);
+
     // Should progress bars be shown when the progress methods are called?
     bool show_progress = false;
     
@@ -48,6 +59,13 @@ public:
      */
     void create_progress(long count);
     /**
+     * Ensure a progress bar is active with the given number of items to
+     * process. If no bar is active, one is created with a default message or
+     * the last message passed to preload_progress(). Does nothing if
+     * show_progress is false.
+     */
+    void ensure_progress(long count);
+    /**
      * Update the progress bar, noting that the given number of items have been
      * processed. Does nothing if no progress bar is displayed.
      */
@@ -71,7 +89,7 @@ private:
     // What's the last progress value we've actually seen, either through an
     // explicit update or an increment?
     long progress_seen;
-    // What;s the actual progress bar renderer we're using?
+    // What's the actual progress bar renderer we're using?
     ProgressBar* progress = nullptr;
 };
 

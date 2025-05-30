@@ -1,4 +1,5 @@
 #include "subcommand.hpp"
+#include "../crash.hpp"
 #include "../utility.hpp"
 #include "../mapper.hpp"
 #include <vg/io/stream.hpp>
@@ -517,18 +518,12 @@ int main_find(int argc, char** argv) {
               
             } else if (!sorted_gaf_name.empty()) {
                 // Find in sorted GAF
-                // loop over ranges and print GAF records
-                for (auto range : ranges) {
-                    string reg = "{node}:" + convert(range.first) + "-" + convert(range.second);
-                    hts_itr_t *itr = tbx_itr_querys(gaf_tbx, reg.c_str());
-                    kstring_t str = {0,0,0};
-                    if ( itr ) {
-                        while (tbx_itr_next(gaf_fp, gaf_tbx, itr, &str) >= 0) {
-                            puts(str.s);
-                        }
-                        tbx_itr_destroy(itr);
-                    }
-                }
+                for_each_gaf_record_in_ranges(gaf_fp, gaf_tbx, ranges, [&](const std::string& record_string) {
+                    // For each unique matching GAF record's unparsed string
+
+                    // Handle the record (by printing it).
+                    std::cout << record_string << std::endl;
+                }); 
             }
         } else {
             cerr << "error [vg find]: Cannot find alignments on graph without a sorted GAM" << endl;
@@ -683,8 +678,9 @@ int main_find(int argc, char** argv) {
                     ofstream out(s.str().c_str());
                     vg::io::save_handle_graph(&graph, out);
                     out.close();
-                    // reset our graph
-                    dynamic_cast<DeletableHandleGraph&>(graph).clear();
+                    // reset our graph so it has no nodes or paths anymore
+                    graph.clear();
+                    crash_unless(graph.get_path_count() == 0);
                 }
                 if (subgraph_k) {
                     prep_graph(); // don't forget to prep the graph, or the kmer set will be wrong[

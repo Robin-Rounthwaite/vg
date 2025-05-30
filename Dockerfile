@@ -3,7 +3,7 @@
 # Use Google's non-rate-limited mirror of Docker Hub to get our base image.
 # This helps automated Quay builds because Quay hasn't built a caching system
 # and exposes pull rate limits to users.
-FROM mirror.gcr.io/library/ubuntu:20.04 AS base
+FROM mirror.gcr.io/library/ubuntu:22.04 AS base
 MAINTAINER vgteam
 
 RUN echo base > /stage.txt
@@ -14,11 +14,16 @@ WORKDIR /vg
 ENV DEBIAN_FRONTEND noninteractive
 ENV DEBCONF_NONINTERACTIVE_SEEN true
 
-FROM base AS build
+FROM base AS packages
 ARG THREADS=8
 ARG TARGETARCH
 
-RUN echo build > /stage.txt
+# If you didn't `make version` berfore building the Docker, you can provide a
+# version value here to claim to be.
+ARG VG_GIT_VERSION
+ENV VG_GIT_VERSION=${VG_GIT_VERSION:-unknown}
+
+RUN echo packages > /stage.txt
 
 RUN apt-get -qq -y update && \
     apt-get -qq -y upgrade && \
@@ -33,17 +38,20 @@ RUN apt-get -qq -y update && \
 # that starts with RUN, or comments. And we pull out line continuation slashes.
 # TODO: can we read them here and in the Makefile from the README instead?
 ###DEPS_BEGIN###
-RUN apt-get -qq -y update && apt-get -qq -y upgrade && apt-get -qq -y install \
+RUN apt-get -qq -y update && apt-get -qq -y upgrade && apt-get -y install \
     make git build-essential protobuf-compiler libprotoc-dev libjansson-dev libbz2-dev \
     libncurses5-dev automake gettext autopoint libtool jq bsdmainutils bc rs parallel npm \
     samtools curl unzip redland-utils librdf-dev cmake pkg-config wget gtk-doc-tools \
     raptor2-utils rasqal-utils bison flex gawk libgoogle-perftools-dev liblz4-dev liblzma-dev \
     libcairo2-dev libpixman-1-dev libffi-dev libcairo-dev libprotobuf-dev libboost-all-dev \
-    tabix bcftools libzstd-dev pybind11-dev python3-pybind11
+    tabix bcftools libzstd-dev pybind11-dev python3-pybind11 pandoc
 ###DEPS_END###
 
+FROM packages AS build
+
+RUN echo build > /stage.txt
+
 # Prepare to build submodule dependencies
-COPY source_me.sh /vg/source_me.sh
 COPY deps /vg/deps
 # To increase portability of the docker image, when building for amd64, set the
 # target CPU architecture to Nehalem (2008) rather than auto-detecting the
@@ -54,26 +62,17 @@ RUN if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then sed -i s/m
 RUN find . -name CMakeCache.txt | xargs rm -f
 # Build the dependencies
 COPY Makefile /vg/Makefile
-RUN . ./source_me.sh && CXXFLAGS="$(if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then echo " -march=nehalem "; fi)" CFLAGS="$(if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then echo " -march=nehalem "; fi)" make -j $((THREADS < $(nproc) ? THREADS : $(nproc))) deps
+RUN CXXFLAGS="$(if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then echo " -march=nehalem "; fi)" CFLAGS="$(if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then echo " -march=nehalem "; fi)" make -j $((THREADS < $(nproc) ? THREADS : $(nproc))) deps
 
-# Bring in the sources, which we need in order to build
+# Bring in the sources, which we need in order to build.
 COPY src /vg/src
 
 # Build all the object files for vg, but don't link.
 # Also pass the arch here
-RUN . ./source_me.sh && CXXFLAGS="$(if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then echo " -march=nehalem "; fi)" make -j $((THREADS < $(nproc) ? THREADS : $(nproc))) objs
-
-# Bring in any includes we pre-made, like the git version, if present
-COPY include /vg/include
-
-# Make sure version introspection is up to date
-RUN rm -f obj/version.o && . ./source_me.sh && CXXFLAGS="$(if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then echo " -march=nehalem "; fi)" make -j $((THREADS < $(nproc) ? THREADS : $(nproc))) obj/version.o
-
-# Announce the version file, which must exist by now
-RUN ls /vg/include && cat /vg/include/vg_git_version.hpp
+RUN CXXFLAGS="$(if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then echo " -march=nehalem "; fi)" make -j $((THREADS < $(nproc) ? THREADS : $(nproc))) objs
 
 # Do the final build and link, knowing the version. Trim down the resulting binary but make sure to include enough debug info for profiling.
-RUN . ./source_me.sh && CXXFLAGS="$(if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then echo " -march=nehalem "; fi)" make -j $((THREADS < $(nproc) ? THREADS : $(nproc))) static && strip -d bin/vg
+RUN CXXFLAGS="$(if [ -z "${TARGETARCH}" ] || [ "${TARGETARCH}" = "amd64" ] ; then echo " -march=nehalem "; fi)" make -j $((THREADS < $(nproc) ? THREADS : $(nproc))) static && strip -d bin/vg
 
 # Ship the scripts
 COPY scripts /vg/scripts

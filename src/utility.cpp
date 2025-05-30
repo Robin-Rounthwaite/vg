@@ -10,7 +10,12 @@
 #include <fstream>
 #include <iostream>
 #include <cctype>
+// We don't define _GNU_SOURCE to get the cpuset functions since we will
+// already have it for libstdc++ on the platforms where we need them
+#include <sched.h>
 
+// For TruncatedBGZFError
+#include <vg/io/blocked_gzip_input_stream.hpp>
 
 // For setting the temporary directory in submodules.
 #include <gcsa/utils.h>
@@ -118,7 +123,7 @@ void choose_good_thread_count() {
     if (count == 0) {
         // First priority: OMP_NUM_THREADS
         const char* value = getenv("OMP_NUM_THREADS");
-        if (value) {
+        if (value && *value != '\0') {
             // Read the value. Throws if it isn't a legit number.
             count = std::stoi(value);
         }
@@ -141,6 +146,34 @@ void choose_good_thread_count() {
                 // May come out to 0, in which case it is ignored.
                 count = (int) ceil(quota / (double) period);
             }
+        }
+    }
+
+#if !defined(__APPLE__) && defined(_GNU_SOURCE)
+    if (count == 0) {
+        // Next priority: CPU affinity mask (used by Slurm)
+        cpu_set_t mask;
+        if (sched_getaffinity(getpid(), sizeof(cpu_set_t), &mask)) {
+            // TODO: If you have >1024 bits in your mask, glibc can't deal and you will get EINVAL.
+            // We're supposed to then try increasingly large dynamically-allocated CPU flag sets until we find one that works.
+            auto problem = errno;
+            std::cerr << "warning[vg]: Cannot determine CPU count from affinity mask: " << strerror(problem) << std::endl;
+        } else {
+            // We're also supposed to intersect this mask with the actual
+            // existing processors, in case somebody flags on way more
+            // processors than actually exist. But Linux doesn't seem to do
+            // that by default, so we don't worry about it.
+            count = CPU_COUNT(&mask);
+        }
+    }
+#endif
+
+    if (count == 0) {
+        // Next priority: SLURM_JOB_CPUS_PER_NODE
+        const char* value = getenv("SLURM_JOB_CPUS_PER_NODE");
+        if (value && *value != '\0') {
+            // Read the value. Throws if it isn't a legit number.
+            count = std::stoi(value);
         }
     }
 
@@ -613,22 +646,28 @@ string get_output_file_name(int& optind, int argc, char** argv) {
 }
 
 void get_input_file(const string& file_name, function<void(istream&)> callback) {
-
-    if (file_name == "-") {
-        // Just use standard input
-        callback(std::cin);
-    } else {
-        // Open a file
-        ifstream in;
-        in.open(file_name.c_str());
-        if (!in.is_open()) {
-            // The user gave us a bad filename
-            cerr << "error:[get_input_file] could not open file \"" << file_name << "\"" << endl;
-            exit(1);
-        }
-        callback(in);
-    }
     
+    try {
+        if (file_name == "-") {
+            // Just use standard input
+            callback(std::cin);
+        } else {
+            // Open a file
+            ifstream in;
+            in.open(file_name.c_str());
+            if (!in.is_open()) {
+                // The user gave us a bad filename
+                cerr << "error:[get_input_file] could not open file \"" << file_name << "\"" << endl;
+                exit(1);
+            }
+            callback(in);
+            
+        }
+    } catch(vg::io::TruncatedBGZFError& e) {
+        // If we find a truncated input while working on this file, it's likely to be this file's fault.
+        cerr << "error:[get_input_file] detected truncated input while processing \"" << file_name << "\"" << endl;
+        exit(1);
+    }
 }
 
 pair<string, string> split_ext(const string& filename) {
@@ -859,6 +898,14 @@ bool parse(const string& arg, double& dest) {
     dest = std::stod(arg, &after);
     return(after == arg.size());
 }
+
+template<>
+bool parse(const string& arg, float& dest) {
+    size_t after;
+    dest = std::stof(arg, &after);
+    return(after == arg.size());
+}
+
 
 template<>
 bool parse(const string& arg, std::regex& dest) {

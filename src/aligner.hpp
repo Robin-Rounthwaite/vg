@@ -149,21 +149,28 @@ namespace vg {
         virtual void align_pinned_multi(Alignment& alignment, vector<Alignment>& alt_alignments, const HandleGraph& g,
                                         bool pin_left, int32_t max_alt_alns) const = 0;
         
-        /// store optimal global alignment against a graph within a specified band in the Alignment object
-        /// permissive banding auto detects the width of band needed so that paths can travel
-        /// through every node in the graph
+        /// Store optimal global alignment against a graph within a specified band in the Alignment object.
+        /// Permissive banding auto detects the width of band needed so that paths can travel
+        /// through every node in the graph.
+        ///
+        /// Throws BandMatricesTooBigException if the max_cells limit on DP matric size is hit.
         virtual void align_global_banded(Alignment& alignment, const HandleGraph& g,
                                          int32_t band_padding = 0, bool permissive_banding = true,
-                                         const unordered_map<handle_t, bool>* left_align_strand = nullptr) const = 0;
+                                         uint64_t max_cells = std::numeric_limits<uint64_t>::max()) const = 0;
         
-        /// store top scoring global alignments in the vector in descending score order up to a maximum number
-        /// of alternate alignments (including the optimal alignment). if there are fewer than the maximum
-        /// number of alignments in the return value, then the vector contains all possible alignments. the
-        /// optimal alignment will be stored in both the vector and the original alignment object
+        /// Store top scoring global alignments in the vector in descending score order up to a maximum number
+        /// of alternate alignments (including the optimal alignment). If there are fewer than the maximum
+        /// number of alignments in the return value, then the vector contains all possible alignments. The
+        /// optimal alignment will be stored in both the vector and the original alignment object.
+        ///
+        /// When multiple alignments have the same score, they are ordered deterministically but
+        /// arbitrarily.
+        ///
+        /// Throws BandMatricesTooBigException if the max_cells limit on DP matric size is hit.
         virtual void align_global_banded_multi(Alignment& alignment, vector<Alignment>& alt_alignments,
                                                const HandleGraph& g, int32_t max_alt_alns, int32_t band_padding = 0,
                                                bool permissive_banding = true,
-                                               const unordered_map<handle_t, bool>* left_align_strand = nullptr) const = 0;
+                                               uint64_t max_cells = std::numeric_limits<uint64_t>::max()) const = 0;
         /// xdrop aligner
         virtual void align_xdrop(Alignment& alignment, const HandleGraph& g, const vector<MaximalExactMatch>& mems,
                                  bool reverse_complemented, uint16_t max_gap_length = default_xdrop_max_gap_length) const = 0;
@@ -197,6 +204,8 @@ namespace vg {
         virtual int32_t score_full_length_bonus(bool left_side, const Alignment& alignment) const = 0;
                 
         /// Compute the score of a path against the given range of subsequence with the given qualities.
+        /// The Alignment is just to find the sequence begin and end to compare to seq_begin.
+        /// seq_begin is the first read base involved in the provided path to be scored.
         virtual int32_t score_partial_alignment(const Alignment& alignment, const HandleGraph& graph, const path_t& path,
                                                 string::const_iterator seq_begin, bool no_read_end_scoring = false) const = 0;
         
@@ -285,12 +294,14 @@ namespace vg {
         /// May include full length bonus or not. TODO: bool flags are bad.
         virtual int32_t score_discontiguous_alignment(const Alignment& aln,
             const function<size_t(pos_t, pos_t, size_t)>& estimate_distance,
-            bool strip_bonuses = false) const;
+            bool allow_left_bonus = true,
+            bool allow_right_bonus = true) const;
         
         /// Use the score values in the aligner to score the given alignment assuming
         /// that there are no gaps between Mappings in the Path
         virtual int32_t score_contiguous_alignment(const Alignment& aln,
-                                                   bool strip_bonuses = false) const;
+                                                   bool allow_left_bonus = true,
+                                                   bool allow_right_bonue = true) const;
 
         /// Without necessarily rescoring the entire alignment, return the score
         /// of the given alignment with bonuses removed. Assumes that bonuses
@@ -300,12 +311,21 @@ namespace vg {
         
         // members
         DeletionAligner deletion_aligner;
+        /// Base to number mapping
         int8_t* nt_table = nullptr;
+        /// Scoring matrix. Is NOT a 4x4 matrix you can pass to
+        /// set_alignment_scores; might have a 5th column for Ns, or be
+        /// fancily quality-adjusted.
         int8_t* score_matrix = nullptr;
+        /// Points scored for a match
         int8_t match;
+        /// Points scored for a mismatch (probably negative)
         int8_t mismatch;
+        /// Points scored for a gap open (probably negative)
         int8_t gap_open;
+        /// Points scored for a gap extension (probably negative)
         int8_t gap_extension;
+        /// Points scored for a full-length end
         int8_t full_length_bonus;
         
         // log of the base of the logarithm underlying the log-odds interpretation of the scores
@@ -356,20 +376,24 @@ namespace vg {
         void align_pinned_multi(Alignment& alignment, vector<Alignment>& alt_alignments, const HandleGraph& g,
                                 bool pin_left, int32_t max_alt_alns) const;
         
-        /// store optimal global alignment against a graph within a specified band in the Alignment object
-        /// permissive banding auto detects the width of band needed so that paths can travel
-        /// through every node in the graph
+        /// Store optimal global alignment against a graph within a specified band in the Alignment object.
+        /// Permissive banding auto detects the width of band needed so that paths can travel
+        /// through every node in the graph.
+        ///
+        /// Throws BandMatricesTooBigException if the max_cells limit on DP matric size is hit.
         void align_global_banded(Alignment& alignment, const HandleGraph& g,
                                  int32_t band_padding = 0, bool permissive_banding = true,
-                                 const unordered_map<handle_t, bool>* left_align_strand = nullptr) const;
+                                 uint64_t max_cells = std::numeric_limits<uint64_t>::max()) const;
         
         /// store top scoring global alignments in the vector in descending score order up to a maximum number
         /// of alternate alignments (including the optimal alignment). if there are fewer than the maximum
         /// number of alignments in the return value, then the vector contains all possible alignments. the
         /// optimal alignment will be stored in both the vector and the original alignment object
+        ///
+        /// Throws BandMatricesTooBigException if the max_cells limit on DP matric size is hit.
         void align_global_banded_multi(Alignment& alignment, vector<Alignment>& alt_alignments, const HandleGraph& g,
                                        int32_t max_alt_alns, int32_t band_padding = 0, bool permissive_banding = true,
-                                       const unordered_map<handle_t, bool>* left_align_strand = nullptr) const;
+                                       uint64_t max_cells = std::numeric_limits<uint64_t>::max()) const;
 
         /// xdrop aligner
         void align_xdrop(Alignment& alignment, const HandleGraph& g, const vector<MaximalExactMatch>& mems,
@@ -433,12 +457,12 @@ namespace vg {
         void align(Alignment& alignment, const HandleGraph& g, bool traceback_aln) const;
         void align_global_banded(Alignment& alignment, const HandleGraph& g,
                                  int32_t band_padding = 0, bool permissive_banding = true,
-                                 const unordered_map<handle_t, bool>* left_align_strand = nullptr) const;
+                                 uint64_t max_cells = std::numeric_limits<uint64_t>::max()) const;
         void align_pinned(Alignment& alignment, const HandleGraph& g, bool pin_left, bool xdrop = false,
                           uint16_t xdrop_max_gap_length = default_xdrop_max_gap_length) const;
         void align_global_banded_multi(Alignment& alignment, vector<Alignment>& alt_alignments, const HandleGraph& g,
                                        int32_t max_alt_alns, int32_t band_padding = 0, bool permissive_banding = true,
-                                       const unordered_map<handle_t, bool>* left_align_strand = nullptr) const;
+                                       uint64_t max_cells = std::numeric_limits<uint64_t>::max()) const;
         void align_pinned_multi(Alignment& alignment, vector<Alignment>& alt_alignments, const HandleGraph& g,
                                 bool pin_left, int32_t max_alt_alns) const;
                                 
@@ -519,6 +543,9 @@ namespace vg {
         /// Set the algner scoring parameters and create the stored aligner instances. The
         /// score matrix should by a 4 x 4 array in the order (ACGT).
         /// Other overloads of set_alignment_scores all call this one.
+        /// Note that an override of this method can't be called from the
+        /// constructor, so when overriding it, make sure to also do your extra
+        /// work in the constructor.
         virtual void set_alignment_scores(const int8_t* score_matrix, int8_t gap_open, int8_t gap_extend, int8_t full_length_bonus);
         
         /// Allocates an array to hold a 4x4 substitution matrix and returns it
@@ -531,7 +558,8 @@ namespace vg {
         // GSSW aligners
         unique_ptr<QualAdjAligner> qual_adj_aligner;
         unique_ptr<Aligner> regular_aligner;
-        
+   
+    protected:
         // GC content estimate that we need for building the aligners.
         double gc_content_estimate;
     };

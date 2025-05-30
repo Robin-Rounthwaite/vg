@@ -114,6 +114,11 @@ public:
     void align_pinned(Alignment& alignment, const HandleGraph& g, bool pin_left,
                       int8_t full_length_bonus, uint16_t max_gap_length = default_xdrop_max_gap_length);
     
+    /**
+     * Maximum number of bytes of Dozeu scratch space to retain permanently for each thread.
+     */
+    static constexpr size_t THREAD_MAX_RETAINED_BYTES = 2ULL * 1024 * 1024 * 1024;
+
 protected:
     /**
      * Represents a correspondance between a position in the subgraph we are
@@ -221,6 +226,9 @@ protected:
      * can emit it as is. If it is false, the nodes were filled right to
      * left, and the internal traceback comes out in right to left order,
      * so we need to flip it.
+     *
+     * All Mappings in the Alignment other than the first will have a zero
+     * offset in their Positions.
      */
     void calculate_and_save_alignment(Alignment& alignment, const OrderedGraph& graph,
                                       const vector<graph_pos_s>& head_positions,

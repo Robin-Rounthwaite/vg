@@ -577,19 +577,25 @@ bool VG::for_each_step_on_handle_impl(const handle_t& handle, const function<boo
 }
 
 handle_t VG::create_handle(const string& sequence) {
+<<<<<<< HEAD
     // if (sequence.empty()) {
     //     throw std::runtime_error("error:[vg::VG] tried to create an empty node");
     // }
     
+=======
+>>>>>>> upstream/master
     Node* node = create_node(sequence);
     return get_handle(node->id(), false);
 }
 
 handle_t VG::create_handle(const string& sequence, const nid_t& id) {
+<<<<<<< HEAD
     // if (sequence.empty()) {
     //     throw std::runtime_error("error:[vg::VG] tried to create an empty node with ID " + std::to_string(id));
     // }
     
+=======
+>>>>>>> upstream/master
     if (id <= 0) {
         throw std::runtime_error("error:[vg::VG] tried to create a node with non-positive ID " + std::to_string(id));
     }
@@ -631,6 +637,7 @@ void VG::destroy_edge(const handle_t& left, const handle_t& right) {
 }
     
 void VG::clear() {
+    clear_paths();
     graph.mutable_node()->Clear();
     graph.mutable_edge()->Clear();
     clear_indexes();
@@ -6040,7 +6047,7 @@ VG VG::dagify(uint32_t expand_scc_steps,
                 for (Edge* e : edges_of(get_node(id))) {
                     // We may have to modify the edge, so make a place to hold
                     // a modified copy. This lets us work as if all edges are
-                    // end to start wehn working on their from and to later.
+                    // end to start when working on their from and to later.
                     unique_ptr<Edge> clone;
                     if (e->from_start() && e->to_end()) {
                         // Flip doubly-reversing edges from the input, which
@@ -6123,7 +6130,7 @@ VG VG::dagify(uint32_t expand_scc_steps,
                     }
                 }
             }
-            // update the minimum minimim return length
+            // update the minimum minimum return length
             min_min_return_length = curr_min_min_return_length;
             // finish if we've reached our target min walk length
             if (target_min_walk_length &&

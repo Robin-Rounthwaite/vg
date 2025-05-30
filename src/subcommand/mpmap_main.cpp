@@ -15,6 +15,7 @@
 
 #include <vg/io/vpkg.hpp>
 #include "../algorithms/component.hpp"
+#include "../algorithms/pad_band.hpp"
 #include "../multipath_mapper.hpp"
 #include "../mem_accelerator.hpp"
 #include "../surjector.hpp"
@@ -102,6 +103,7 @@ void help_mpmap(char** argv) {
     << "input:" << endl
     << "  -f, --fastq FILE          input FASTQ (possibly gzipped), can be given twice for paired ends (for stdin use -)" << endl
     << "  -i, --interleaved         input contains interleaved paired ends" << endl
+    << "  -C, --comments-as-tags    intepret comments in name lines as SAM-style tags and annotate alignments with them" << endl
     << "algorithm presets:" << endl
     << "  -n, --nt-type TYPE        sequence type preset: 'DNA' for genomic data, 'RNA' for transcriptomic data [RNA]" << endl
     << "  -l, --read-length TYPE    read length preset: 'very-short', 'short', or 'long' (approx. <50bp, 50-500bp, and >500bp) [short]" << endl
@@ -110,7 +112,8 @@ void help_mpmap(char** argv) {
     << "  -F, --output-fmt TYPE     format to output alignments in: 'GAMP for' multipath alignments, 'GAM' or 'GAF' for single-path" << endl
     << "                            alignments, 'SAM', 'BAM', or 'CRAM' for linear reference alignments (may also require -S) [GAMP]" << endl
     << "  -S, --ref-paths FILE      paths in the graph either 1) one per line in a text file, or 2) in an HTSlib .dict, to treat as" << endl
-    << "                            reference sequences for HTSlib formats (see -F) [all paths]" << endl
+    << "                            reference sequences for HTSlib formats (see -F) [all reference paths, all generic paths]" << endl
+    << "      --ref-name NAME       reference assembly in the graph to use for HTSlib formats (see -F) [all references]" << endl 
     << "  -N, --sample NAME         add this sample name to output" << endl
     << "  -R, --read-group NAME     add this read group to output" << endl
     << "  -p, --suppress-progress   do not report progress to stderr" << endl
@@ -153,7 +156,7 @@ void help_mpmap(char** argv) {
     //<< "  --always-check-population    always try to population-score reads, even if there is only a single mapping" << endl
     //<< "  --delay-population           do not apply population scoring at intermediate stages of the mapping algorithm" << endl
     //<< "  --force-haplotype-count INT  assume that INT haplotypes ought to run through each fixed part of the graph, if nonzero [0]" << endl
-    //<< "  -C, --drop-subgraph FLOAT    drop alignment subgraphs whose MEMs cover this fraction less of the read than the best subgraph [0.2]" << endl
+    //<< "  --drop-subgraph FLOAT    drop alignment subgraphs whose MEMs cover this fraction less of the read than the best subgraph [0.2]" << endl
     //<< "  --prune-exp FLOAT            prune MEM anchors if their approximate likelihood is this root less than the optimal anchors [1.25]" << endl
     << "scoring:" << endl
     << "  -A, --no-qual-adjust      do not perform base quality adjusted alignments even when base qualities are available" << endl
@@ -215,6 +218,8 @@ int main_mpmap(int argc, char** argv) {
     #define OPT_RESEED_LENGTH 1035
     #define OPT_MAX_MOTIF_PAIRS 1036
     #define OPT_SUPPRESS_MISMAPPING_DETECTION 1037
+    #define OPT_DROP_SUBGRAPH 1038
+    #define OPT_REF_NAME 1039
     string matrix_file_name;
     string graph_name;
     string gcsa_name;
@@ -227,6 +232,7 @@ int main_mpmap(int argc, char** argv) {
     string fastq_name_2;
     string gam_file_name;
     string ref_paths_name;
+    std::unordered_set<std::string> reference_assembly_names;
     string intron_distr_name;
     int match_score = default_match;
     int mismatch_score = default_mismatch;
@@ -365,6 +371,7 @@ int main_mpmap(int argc, char** argv) {
     int min_splice_length = 20;
     int mem_accelerator_length = 12;
     bool no_output = false;
+    bool comments_as_tags = false;
     string out_format = "GAMP";
 
     // default presets
@@ -393,8 +400,10 @@ int main_mpmap(int argc, char** argv) {
             {"sample", required_argument, 0, 'N'},
             {"read-group", required_argument, 0, 'R'},
             {"interleaved", no_argument, 0, 'i'},
+            {"comments-as-tags", no_argument, 0, 'C'},
             {"same-strand", no_argument, 0, 'T'},
             {"ref-paths", required_argument, 0, 'S'},
+            {"ref-name", required_argument, 0, OPT_REF_NAME},
             {"output-fmt", required_argument, 0, 'F'},
             {"snarls", required_argument, 0, 's'},
             {"synth-tail-anchors", no_argument, 0, OPT_SUPPRESS_TAIL_ANCHORS},
@@ -444,7 +453,7 @@ int main_mpmap(int argc, char** argv) {
             {"greedy-min-dist", no_argument, 0, OPT_GREEDY_MIN_DIST},
             {"component-min-dist", no_argument, 0, OPT_COMPONENT_MIN_DIST},
             {"no-cluster", no_argument, 0, OPT_NO_CLUSTER},
-            {"drop-subgraph", required_argument, 0, 'C'},
+            {"drop-subgraph", required_argument, 0, OPT_DROP_SUBGRAPH},
             {"prune-exp", required_argument, 0, OPT_PRUNE_EXP},
             {"long-read-scoring", no_argument, 0, 'E'},
             {"not-spliced", no_argument, 0, 'X'},
@@ -468,7 +477,7 @@ int main_mpmap(int argc, char** argv) {
         };
 
         int option_index = 0;
-        c = getopt_long (argc, argv, "hx:g:H:d:f:G:N:R:iS:s:vXu:b:I:D:BP:Q:UpM:r:W:K:F:c:C:R:En:l:e:q:z:w:o:y:L:mAt:a",
+        c = getopt_long (argc, argv, "hx:g:H:d:f:G:N:R:iS:s:vXu:b:I:D:BP:Q:UpM:r:W:K:F:c:CR:En:l:e:q:z:w:o:y:L:mAt:a",
                          long_options, &option_index);
 
 
@@ -586,6 +595,10 @@ int main_mpmap(int argc, char** argv) {
                 interleaved_input = true;
                 break;
                 
+            case 'C':
+                comments_as_tags = true;
+                break;
+                
             case 'T':
                 same_strand = true;
                 break;
@@ -596,6 +609,10 @@ int main_mpmap(int argc, char** argv) {
                 
             case 'S':
                 ref_paths_name = optarg;
+                break;
+
+            case OPT_REF_NAME:
+                reference_assembly_names.insert(optarg);
                 break;
                 
             case 's':
@@ -791,7 +808,7 @@ int main_mpmap(int argc, char** argv) {
                 no_clustering = true;
                 break;
                 
-            case 'C':
+            case OPT_DROP_SUBGRAPH:
                 cluster_ratio = parse<double>(optarg);
                 break;
                 
@@ -1188,6 +1205,10 @@ int main_mpmap(int argc, char** argv) {
     if (!ref_paths_name.empty() && !hts_output) {
         cerr << "warning:[vg mpmap] Reference path file (-S) is only used when output format (-F) is SAM, BAM, or CRAM." << endl;
         ref_paths_name = "";
+    }
+    if (!reference_assembly_names.empty() && !hts_output) {
+        cerr << "warning:[vg mpmap] Reference assembly names (--ref-name) are only used when output format (-F) is SAM, BAM, or CRAM." << endl;
+        reference_assembly_names.clear();
     }
     
     if (num_alt_alns <= 0) {
@@ -1840,7 +1861,7 @@ int main_mpmap(int argc, char** argv) {
     
     // Load structures that we need for HTS lib outputs
     unordered_set<path_handle_t> surjection_paths;
-    vector<pair<string, int64_t>> path_names_and_length;
+    SequenceDictionary paths;
     unique_ptr<Surjector> surjector(nullptr);
     if (hts_output) {
         // init the data structures
@@ -1849,23 +1870,21 @@ int main_mpmap(int argc, char** argv) {
         surjector->adjust_alignments_for_base_quality = qual_adjusted;
         if (transcriptomic) {
             // FIXME: replicating the behavior in surject_main
-            surjector->max_subgraph_bases = 16 * 1024 * 1024;
+            surjector->max_subgraph_bases_per_read_base = Surjector::SPLICED_DEFAULT_SUBGRAPH_LIMIT;
         }
         
         if (!ref_paths_name.empty()) {
             log_progress("Choosing reference paths from " + ref_paths_name);
         } else {
-            log_progress("No reference path file given. Interpreting all non-alt-allele paths in graph as reference sequences.");
+            log_progress("No reference path file given. Autodetecting reference sequences.");
         }
         
         // Load all the paths in the right order
-        vector<tuple<path_handle_t, size_t, size_t>> paths = get_sequence_dictionary(ref_paths_name, {}, *path_position_handle_graph);
+        paths = get_sequence_dictionary(ref_paths_name, {}, reference_assembly_names, *path_position_handle_graph);
         // Make them into a set for directing surjection.
-        for (const auto& path_info : paths) {
-            surjection_paths.insert(get<0>(path_info));
+        for (const SequenceDictionaryEntry& path_info : paths) {
+            surjection_paths.insert(path_info.path_handle);
         }
-        // Copy out the metadata for making the emitter later
-        path_names_and_length = extract_path_metadata(paths, *path_position_handle_graph).first;
     }
     
     // barrier sync the background threads
@@ -1900,8 +1919,7 @@ int main_mpmap(int argc, char** argv) {
     }
     multipath_mapper.adjust_alignments_for_base_quality = qual_adjusted;
     multipath_mapper.strip_bonuses = strip_full_length_bonus;
-    multipath_mapper.band_padding_multiplier = band_padding_multiplier;
-    multipath_mapper.init_band_padding_memo();
+    multipath_mapper.choose_band_padding = vg::algorithms::pad_band_random_walk(band_padding_multiplier);
     
     // set mem finding parameters
     multipath_mapper.hit_max = hit_max;
@@ -2083,7 +2101,7 @@ int main_mpmap(int argc, char** argv) {
     // init a writer for the output
     MultipathAlignmentEmitter* emitter = new MultipathAlignmentEmitter("-", thread_count, out_format,
                                                                        path_position_handle_graph,
-                                                                       &path_names_and_length);
+                                                                       &paths);
     emitter->set_read_group(read_group);
     emitter->set_sample_name(sample_name);
     if (transcriptomic) {
@@ -2107,7 +2125,8 @@ int main_mpmap(int argc, char** argv) {
         if (watchdog) {
             watchdog->check_in(thread_num, alignment.name());
         }
-        
+
+        check_quality_length(alignment);
         toUppercaseInPlace(*alignment.mutable_sequence());
         
         bool is_rna = uses_Us(alignment);
@@ -2173,6 +2192,8 @@ int main_mpmap(int argc, char** argv) {
             watchdog->check_in(thread_num, alignment_1.name());
         }
         
+        check_quality_length(alignment_1);
+        check_quality_length(alignment_2);
         toUppercaseInPlace(*alignment_1.mutable_sequence());
         toUppercaseInPlace(*alignment_2.mutable_sequence());
         
@@ -2357,14 +2378,14 @@ int main_mpmap(int argc, char** argv) {
         
         if (interleaved_input) {
             fastq_paired_interleaved_for_each_parallel_after_wait(fastq_name_1, do_paired_alignments,
-                                                                  multi_threaded_condition);
+                                                                  multi_threaded_condition, comments_as_tags);
         }
         else if (fastq_name_2.empty()) {
-            fastq_unpaired_for_each_parallel(fastq_name_1, do_unpaired_alignments);
+            fastq_unpaired_for_each_parallel(fastq_name_1, do_unpaired_alignments, comments_as_tags);
         }
         else {
             fastq_paired_two_files_for_each_parallel_after_wait(fastq_name_1, fastq_name_2, do_paired_alignments,
-                                                                multi_threaded_condition);
+                                                                multi_threaded_condition, comments_as_tags);
         }
     }
     
@@ -2380,10 +2401,10 @@ int main_mpmap(int argc, char** argv) {
             
             if (interleaved_input) {
                 vg::io::for_each_interleaved_pair_parallel_after_wait(gam_in, do_paired_alignments,
-                                                                      multi_threaded_condition);
+                                                                      multi_threaded_condition, comments_as_tags);
             }
             else {
-                vg::io::for_each_parallel(gam_in, do_unpaired_alignments);
+                vg::io::for_each_parallel(gam_in, do_unpaired_alignments, comments_as_tags);
             }
         };
         get_input_file(gam_file_name, execute);
