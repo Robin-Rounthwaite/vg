@@ -577,25 +577,11 @@ bool VG::for_each_step_on_handle_impl(const handle_t& handle, const function<boo
 }
 
 handle_t VG::create_handle(const string& sequence) {
-<<<<<<< HEAD
-    // if (sequence.empty()) {
-    //     throw std::runtime_error("error:[vg::VG] tried to create an empty node");
-    // }
-    
-=======
->>>>>>> upstream/master
     Node* node = create_node(sequence);
     return get_handle(node->id(), false);
 }
 
 handle_t VG::create_handle(const string& sequence, const nid_t& id) {
-<<<<<<< HEAD
-    // if (sequence.empty()) {
-    //     throw std::runtime_error("error:[vg::VG] tried to create an empty node with ID " + std::to_string(id));
-    // }
-    
-=======
->>>>>>> upstream/master
     if (id <= 0) {
         throw std::runtime_error("error:[vg::VG] tried to create a node with non-positive ID " + std::to_string(id));
     }
