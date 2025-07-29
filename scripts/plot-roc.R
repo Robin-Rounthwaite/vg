@@ -125,6 +125,10 @@ max.log10 <- 0
 range.log10 <- min.log10 : max.log10
 range.unlogged = 10^range.log10
 
+# just robin debug prints, shouldn't ever leave his fork. (not sure if used in downstream scripting analysis, so that's why I'm leaving them for now.)
+# print(tbl_df(dat.roc), n=10000)
+# print(dat.roc)
+
 dat.plot <- ggplot(dat.roc, aes( x= FPR, y = TPR, color = aligner, label=mq)) +
     geom_line() + geom_text_repel(data = subset(dat.roc, mq %% 60 == 0), size=3.5, point.padding=unit(0.7, "lines"), segment.alpha=I(1/2.5)) +
     geom_point(aes(size=Positive+Negative)) +
