@@ -72,8 +72,9 @@ void help_normalize(char** argv) {
         << " because small snarls usually need surrounding context to assist with effective "
         << "realignment.)" << endl
         << "  -t, --threads N               The number of threads used in the normalization"
-        << "process. Default:14."
-        << "  -T, --gbwt_threads            The number of threads used in the gbwt update" << "process. Default:14." //todo: maybe lower this if it turns out that the 14 threads is what's causing signal 9 crash in mustard.
+        << " process. Default:14."
+        << "  -T, --gbwt_threads            The number of threads used in the gbwt update" 
+        << " process. Default:14." //todo: maybe lower this if it turns out that the 14 threads is what's causing signal 9 crash in mustard.
         << endl
         << "  -i, --input_normalize_regions_file      An input file that contains" 
         << " regions to be normalized. One region per line, each region will consist of" 

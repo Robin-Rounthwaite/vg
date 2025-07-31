@@ -1,6 +1,6 @@
 #include "0_oo_normalize_snarls.hpp"
 #include <spoa/spoa/spoa.hpp>
-#include <abpoa/abpoa.h>
+// #include <abpoa/abpoa.h>
 #include "../msa_converter.hpp"
 // extern "C" {
 // #include <libkalign.h>
