@@ -73,7 +73,7 @@ INCLUDE_FLAGS :=-I$(CWD)/$(INC_DIR) -I. -I$(CWD)/$(SRC_DIR) -I$(CWD)/$(UNITTEST_
 # These need to come before library search paths from LDFLAGS or we won't
 # prefer linking vg-installed dependencies over system ones.
 LD_LIB_DIR_FLAGS := -L$(CWD)/$(LIB_DIR)
-LD_LIB_FLAGS := -lvcflib -lwfa2 -ltabixpp -lgssw -lssw -lsublinearLS -lpthread -lncurses -lgcsa2 -lgbwtgraph -lgbwt -lkff -ldivsufsort -ldivsufsort64 -lvcfh -lraptor2 -lpinchesandcacti -l3edgeconnected -lsonlib -lfml -lstructures -lbdsg -lxg -lsdsl -lzstd -lhandlegraph -lspoa -labpoa
+LD_LIB_FLAGS := -lvcflib -lwfa2 -ltabixpp -lgssw -lssw -lsublinearLS -lpthread -lncurses -lgcsa2 -lgbwtgraph -lgbwt -lkff -ldivsufsort -ldivsufsort64 -lvcfh -lraptor2 -lpinchesandcacti -l3edgeconnected -lsonlib -lfml -lstructures -lbdsg -lxg -lsdsl -lzstd -lhandlegraph -lspoa #-labpoa
 # We omit Boost Program Options for now; we find it in a platform-dependent way.
 # By default it has no suffix
 BOOST_SUFFIX=""
@@ -368,9 +368,9 @@ IPS4O_DIR=deps/ips4o
 BBHASH_DIR=deps/BBHash
 MIO_DIR=deps/mio
 ATOMIC_QUEUE_DIR=deps/atomic_queue
-SEQAN_DIR=deps/seqan
+# SEQAN_DIR=deps/seqan
 SPOA_DIR=deps/spoa
-ABPOA_DIR=deps/abPOA
+# ABPOA_DIR=deps/abPOA
 # KALIGN_DIR=deps/kalign
 
 # Dependencies that go into libvg's archive
@@ -409,7 +409,7 @@ LIB_DEPS += $(LIB_DIR)/libhandlegraph.a
 LIB_DEPS += $(LIB_DIR)/libbdsg.a
 LIB_DEPS += $(LIB_DIR)/libxg.a
 LIB_DEPS += $(LIB_DIR)/libspoa.a
-LIB_DEPS += $(LIB_DIR)/libabpoa.a
+# LIB_DEPS += $(LIB_DIR)/libabpoa.a
 # LIB_DEPS += $(LIB_DIR)/liblibkalign.a
 ifneq ($(shell uname -s),Darwin)
     # On non-Mac (i.e. Linux), where ELF binaries are used, pull in libdw which
@@ -521,7 +521,7 @@ DEPS += $(INC_DIR)/raptor2/raptor2.h
 DEPS += $(INC_DIR)/BooPHF.h
 DEPS += $(INC_DIR)/mio/mmap.hpp
 DEPS += $(INC_DIR)/atomic_queue.h
-DEPS += $(INC_DIR)/seqan/align.h
+# DEPS += $(INC_DIR)/seqan/align.h
 # DEPS += $(INC_DIR)/msa.h #kalign
 
 .PHONY: clean clean-tests get-deps deps lint test set-path objs static static-docker docs man .pre-build version
@@ -912,9 +912,9 @@ $(INC_DIR)/mmmultimap.hpp: $(MMMULTIMAP_DIR)/src/mmmultimap.hpp $(MMMULTIMAP_DIR
 $(INC_DIR)/ips4o.hpp: $(IPS4O_DIR)/ips4o.hpp $(IPS4O_DIR)/ips4o/*
 	+cp -r $(IPS4O_DIR)/ips4o* $(CWD)/$(INC_DIR)/
 
-# seqan
-$(INC_DIR)/seqan/align.h: $(SEQAN_DIR)/include/*
-	+. ./source_me.sh && cp -r $(SEQAN_DIR)/include/seqan/ $(CWD)/$(INC_DIR)/
+# # seqan
+# $(INC_DIR)/seqan/align.h: $(SEQAN_DIR)/include/*
+# 	+. ./source_me.sh && cp -r $(SEQAN_DIR)/include/seqan/ $(CWD)/$(INC_DIR)/
 
 # spoa
 $(LIB_DIR)/libspoa.a: $(SPOA_DIR)/include/* $(SPOA_DIR)/src/*
@@ -924,11 +924,11 @@ $(LIB_DIR)/libspoa.a: $(SPOA_DIR)/include/* $(SPOA_DIR)/src/*
 # $(LIB_DIR)/liblibkalign.a: $(KALIGN_DIR)/src/CMakeLists.txt
 # 	+. ./source_me.sh && cd $(KALIGN_DIR) && rm -Rf build && mkdir build && cd build && cmake .. && $(MAKE) $(FILTER) && cp src/liblibkalign.a $(CWD)/$(LIB_DIR) && cp src/libkalign.h $(CWD)/$(INC_DIR)/
 
-# abpoa
-$(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/include/abpoa.h $(ABPOA_DIR)/include/simd_instruction.h #$(ABPOA_DIR)/lib/libabpoa.a
-# $(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/src/*.c $(ABPOA_DIR)/src/*.h
-# $(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/src/abpoa.c
-	+. ./source_me.sh && cd $(ABPOA_DIR) && $(MAKE) $(FILTER) && cp lib/libabpoa.a $(CWD)/$(LIB_DIR) && cp -r include/ $(CWD)/$(INC_DIR)/abpoa/
+# # abpoa
+# $(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/include/abpoa.h $(ABPOA_DIR)/include/simd_instruction.h #$(ABPOA_DIR)/lib/libabpoa.a
+# # $(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/src/*.c $(ABPOA_DIR)/src/*.h
+# # $(LIB_DIR)/libabpoa.a: $(ABPOA_DIR)/src/abpoa.c
+# 	+. ./source_me.sh && cd $(ABPOA_DIR) && $(MAKE) $(FILTER) && cp lib/libabpoa.a $(CWD)/$(LIB_DIR) && cp -r include/ $(CWD)/$(INC_DIR)/abpoa/
 
 # The xg repo has a cmake build system based all around external projects, and
 # we need it to use our installed versions of everything instead.
