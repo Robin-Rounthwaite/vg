@@ -19,20 +19,20 @@ using namespace std;
 using namespace vg;
 using namespace vg::subcommand;
 
+void help_vpkg_wrap(char** argv) {
+    cerr<< "usage: " << argv[0] << " vpkg_wrap [options] <graph.vg> >[vpkg_wrapped.hg]" << endl
+        << "Wraps given vg graph into vpkg format, saves as vg." << endl
+        << endl
+        << "options:" << endl
+        // << "    -v, --input_vg       unwrapped vg." << endl;
+        << "  -h, --help             print this help message to stderr and exit" << endl;
+}
+
+
 void test(const HandleGraph &graph){
     handle_t handle = graph.get_handle(2);
     cerr << "seq of handle 2 " << graph.get_sequence(handle);
 }
-
-void help_vpkg_wrap(char **argv) {
-    cerr
-        << "usage: " << argv[0] << " vpkg_wrap [options] <graph.vg> >[vpkg_wrapped.hg]" << endl
-        << "Wraps given vg graph into vpkg format, saves as vg." << endl
-        << endl
-        << "options:" << endl;
-        // << "    -v, --input_vg       unwrapped vg." << endl;
-}
-
 
 int main_vpkg_wrap(int argc, char **argv) {
 
@@ -53,7 +53,7 @@ int main_vpkg_wrap(int argc, char **argv) {
              {0, 0, 0, 0}};
 
         int option_index = 0;
-        c = getopt_long(argc, argv, "hv:", long_options, &option_index);
+        c = getopt_long(argc, argv, "h?v:", long_options, &option_index);
 
         // Detect the end of the options.
         if (c == -1)
@@ -65,6 +65,12 @@ int main_vpkg_wrap(int argc, char **argv) {
             input_vg = optarg;
             break;
 
+        case 'h':
+        case '?':
+            help_vpkg_wrap(argv);
+            exit(1);
+            break;
+            
         default:
             abort();
         }

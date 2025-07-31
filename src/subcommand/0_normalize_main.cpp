@@ -40,6 +40,81 @@ using namespace vg::subcommand;
 
 
 
+
+void help_normalize(char** argv) {
+  cerr  << "usage: " << argv[0] << " normalize [options] <graph.vg> >[normalized.vg]"
+        << endl
+        << "Modifies snarls, outputs modified on stdout." << endl
+        << endl
+        << "options:" << endl
+        << "necessary options: " << endl
+        << "  -g, --gbwt FILE               gbwt corresponding to input graph." << endl
+        << "  -d, --distance_index          distance index corresponding to input graph." << endl
+        << "recommended options: " << endl
+        << "  -r, --gbwt_graph              the gbwt_graph corresponding to the input graph "
+        << "and gbwt. If not supplied, will be temporarily generated." << endl
+        << "  -o, --output_gbwt             name for the gbwt corresponding to the "
+        << "normalized graph. Default is normalized.gbwt."
+        << "optional options: " << endl
+        // << "  -O, --output_gbwt_graph   name for the gbwt_graph corresponding to the normalized graph and gbwt. Default is normalized.gbwt.gg."
+        << "  -l, --max_handle_size         currently, default is 32, to match the default "
+            "handle size of most graphs. This "
+            "changes what the largest size of handle can be in normalized regions. "
+        << endl
+        << "  -m, --max_region_size         This determines the maximum size of an"
+        << " alignment region, during cluster_snarls. Default is 750, based on sPOA's"
+        << " known high functionality for MSAs of ~500-1000 bases per string. (But"
+        << " further experimentation could be helpful.)" << endl
+        << "  -n, --max_region_gap          This determines the maximum length of "
+        << "sequence found between snarls that can still be clustered into a single"
+        << " snarl. Once exceeded, a new cluster is started with the next snarl. Set"
+        << " to 0 if you want each snarl to be evaluated individually. (not recommended,"
+        << " because small snarls usually need surrounding context to assist with effective "
+        << "realignment.)" << endl
+        << "  -t, --threads N               The number of threads used in the normalization"
+        << "process. Default:14."
+        << "  -T, --gbwt_threads            The number of threads used in the gbwt update" << "process. Default:14." //todo: maybe lower this if it turns out that the 14 threads is what's causing signal 9 crash in mustard.
+        << endl
+        << "  -i, --input_normalize_regions_file      An input file that contains" 
+        << " regions to be normalized. One region per line, each region will consist of" 
+        << " two ints separated by a space. Note: region merging and segregation of"
+        << " regions won't be done. So make sure that none of the regions overlap one"
+        << " another. (i.e. share a source or sink)."
+        << endl
+        << "  -s, --output_segregate_regions_only_file       specify the output file"
+        << " for the segregation of the graph into segregated "
+        << "regions, and generates an updated gbwt. This is essentially a save-state of"
+        << " the program halfway through running normalize, and allows for easy tests of"
+        << "normalize on the segregated graph without having to update the gbwt. (the"
+        << " program must also output a new gbwt, gg, and graph to be used with this"
+        << " file.) (debugging tool)" << endl
+        << "  -S, --input_segregate_regions_only_file       input from a previous run "
+        << "that had an output of segregate_regions_only. This. along with the"
+        << " segregated regions gbwt, gg, and graph, contains all the program needs to"
+        << " continue a run "
+        << "of normalize after the first segregation of regions. (distance index "
+        << "may be passed to the program untouched.)." << endl
+        << "  -G, --original_gbwt           used only if -S is given. It is required with "
+        << "-S. This allows normalize to make the final updated gbwt and gbwt-graph,"
+        << " which requires the gbwt and gbwt graph used during segregation." << endl
+        << "  -R, --original_gbwt_graph     used only if -S is given. Required "
+        << "with -S. This allows normalize to make the final updated gbwt and gbwt-graph,"
+        << "which requires the gbwt and gbwt graph used during segregation." << endl
+        << "  -j, --skip_desegregate        Instead of desegregating the regions in "
+        << "the graph (requiring two full updates to the gbwt), simply save the "
+        << "normalized graph in the segregated_regions format." << endl
+        << "  -u, --run_tests               run tests to make sure that normalize is still" 
+        << " functioning properly." << endl
+        << "  -b, --debug_print             print some information during normalization for" << " debugging." << endl
+        << "  -D, --debug_get_snarl_nodes A:B       runs robin-defined debug code"
+        << " using given objects, and nothing else." << endl //todo: move the original implementation - the one that finds all nodes between two nodes - to vg find.
+        << "  -E, --debug_export_gbwt_desegregate_data <filename.txt>       after"
+        << " normalization, instead of updating the gbwt, export the data passed to the"
+        << " update-gbwt code." << endl
+        << "  -h, --help                    print this help message to stderr and exit" << endl;
+}
+
+
 SubHandleGraph extract_subgraph(const HandleGraph &graph,
                                                  const vg::id_t leftmost_id,
                                                  const vg::id_t rightmost_id) {
@@ -117,57 +192,6 @@ SubHandleGraph extract_subgraph(const HandleGraph &graph,
 }
 
 
-void help_normalize(char **argv) {
-  cerr
-        << "usage: " << argv[0] << " normalize [options] <graph.vg> >[normalized.vg]"
-        << endl
-        << "Modifies snarls, outputs modified on stdout." << endl
-        << endl
-        << "options:" << endl
-        << "necessary options: " << endl
-        << "    -g, --gbwt       gbwt corresponding to input graph." << endl
-        << "    -d, --distance_index       distance index corresponding to input graph." << endl
-        << "recommended options: " << endl
-        << "    -r, --gbwt_graph       the gbwt_graph corresponding to the input graph and gbwt. If not supplied, will be temporarily generated." << endl
-        << "    -o, --output_gbwt   name for the gbwt corresponding to the normalized graph. Default is normalized.gbwt."
-        << "optional options: " << endl
-        // << "    -O, --output_gbwt_graph   name for the gbwt_graph corresponding to the normalized graph and gbwt. Default is normalized.gbwt.gg."
-        << "    -l, --max_handle_size       currently, default is 32, to match the default "
-            "handle size of most graphs. This "
-            "changes what the largest size of handle can be in normalized regions. "
-        << endl
-        << "    -m, --max_region_size       This determines the maximum size of an alignment region, during cluster_snarls. Default is 750, based on sPOA's known high functionality for MSAs of ~500-1000 bases per string. (But further experimentation could be helpful.)" << endl
-        << "    -n, --max_region_gap       This determines the maximum length of sequence found between snarls that can still be clustered into a single snarl. Once exceeded, a new cluster is started with the next snarl. Set to 0 if you want each snarl to be evaluated individually. (not recommended, because small snarls usually need surrounding context to assist with effective realignment.)" << endl
-        << "    -t, --threads      The number of threads used in the normalization process. Default:14."
-        << "    -T, --gbwt_threads      The number of threads used in the gbwt update process. Default:14." //todo: maybe lower this if it turns out that the 14 threads is what's causing signal 9 crash in mustard.
-        << endl
-        << "    -i, --input_normalize_regions_file      An input file that contains regions to be normalized. One region per line, each region will consist of two ints separated by a space. Note: region merging and segregation of regions won't be done. So make sure that none of the regions overlap one another. (i.e. share a source or sink)."
-        << endl
-        << "    -s, --output_segregate_regions_only_file       specify the output file for the segregation of the graph into segregated "
-            "regions, and generates an updated gbwt. This is essentially a save-state of the program halfway through running normalize, and allows for easy tests of "
-            "normalize on the segregated graph without having to update the gbwt. (the program must also output a new gbwt, gg, and graph to be used with this file.)"
-            "(debugging tool)" << endl
-        << "    -S, --input_segregate_regions_only_file       input from a previous run "
-            "that had an output of segregate_regions_only. This. along with the segregated "
-            "regions gbwt, gg, and graph, contains all the program needs to continue a run "
-            "of normalize after the first segregation of regions. (distance index "
-            "may be passed to the program untouched.)." << endl
-        << "    -G, --original_gbwt       used only if -S is given. It is required with "
-        "-S. This allows normalize to make the final updated gbwt and gbwt-graph, which "
-        "requires the gbwt and gbwt graph used during segregation." << endl
-        << "    -R, --original_gbwt_graph       used only if -S is given. It is required "
-        "with -S. This allows normalize to make the final updated gbwt and gbwt-graph, "
-        "which requires the gbwt and gbwt graph used during segregation." << endl
-        << "    -j, --skip_desegregate       Instead of desegregating the regions in "
-        "the graph (requiring two full updates to the gbwt), simply save the normalized "
-        "graph in the segregated_regions format." << endl
-        << "    -u, --run_tests       run tests to make sure that normalize is still functioning properly." << endl
-        << "    -b, --debug_print       print some information during normalization for debugging." << endl
-        << "    -D, --debug_get_snarl_nodes A:B       runs robin-defined debug code using given objects, and nothing else." << endl //todo: move the original implementation - the one that finds all nodes between two nodes - to vg find.
-        << "    -E, --debug_export_gbwt_desegregate_data <filename.txt>       after normalization, instead of updating the gbwt, export the data passed to the update-gbwt code." << endl
-        << "    -h, --help      print this help info." << endl;
-}
-
 int main_normalize(int argc, char **argv) {
 
     if (argc == 2) {
@@ -229,7 +253,7 @@ int main_normalize(int argc, char **argv) {
             {"debug_export_gbwt_desegregate_data", required_argument, 0, 'E'},
             {0, 0, 0, 0}};
         int option_index = 0;
-        c = getopt_long(argc, argv, "hg:d:r:o:l:m:n:t:T:i:s:S:G:R:jubD:E:", long_options,
+        c = getopt_long(argc, argv, "h?g:d:r:o:l:m:n:t:T:i:s:S:G:R:jubD:E:", long_options,
                         &option_index);
         // Detect the end of the options.
         if (c == -1)
